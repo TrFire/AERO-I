@@ -3,15 +3,13 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO FINAL - LAYOUT COMPACTO TELA INICIAL (15/01/2026)
+    VERSÃO FINAL - AJUSTES DE UNIDADE (15/01/2026)
     ============================================================================
     FUNCIONALIDADES:
-    - Tela Inicial: Layout otimizado para telas menores (Formulário compacto)
-    - Login: Filtra usuários pela unidade selecionada.
-    - Admin Global: "THAWILLYS ROCHA" acessa todas as unidades.
-    - Cadastro de Usuários: Exige seleção da unidade.
-    - Migração: Atribui "PARQUE LOGISTICO AERO I" a usuários legados.
-    - Histórico, Rondas e demais funções preservadas.
+    - Migração Padrão: Cria "NOVA UNIDADE" se o banco estiver vazio.
+    - Edição Completa: Permite alterar Nome e Endereço das unidades.
+    - Login Vinculado & Logoff Automático.
+    - Rondas por Turno & Auditoria Automática.
     - Banco de Dados em Nuvem (Firebase).
     ============================================================================
     -->
@@ -182,8 +180,6 @@
             const [selectedUnit, setSelectedUnit] = useState("");
             const [password, setPassword] = useState("");
 
-            // Filtra os usuários com base na unidade selecionada
-            // ADMIN_USER sempre aparece, independente da unidade
             const filteredUsers = useMemo(() => {
                 if (!selectedUnit) return [];
                 return usersList.filter(u => u.unit === selectedUnit || u.name === ADMIN_USER);
@@ -194,7 +190,6 @@
                 const user = usersList.find(u => u.name === selectedName);
                 
                 if (user && user.pass === password) {
-                    // Verificação extra de segurança no login, embora a lista já esteja filtrada
                     if (user.name === ADMIN_USER || user.unit === selectedUnit) {
                         onConfirm(selectedName, selectedUnit);
                     } else {
@@ -213,7 +208,6 @@
                     <div className="flex items-center gap-2 mb-4 bg-black/20 px-3 py-1 rounded-full"><div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div><p className="text-white/90 text-xs font-bold">ONLINE</p></div>
                     
                     <div className="bg-white dark:bg-gray-900 p-5 rounded-2xl shadow-2xl w-full max-w-sm space-y-3">
-                        {/* SELEÇÃO DE UNIDADE */}
                         <div>
                             <label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">Unidade *</label>
                             <div className="relative">
@@ -274,12 +268,24 @@
                 showConfirm("Tem certeza que deseja excluir esta unidade?", () => onDeleteUnit(id), "error");
             };
 
+            const handleEditAttempt = (u) => {
+                const newName = prompt("Editar Nome da Unidade:", u.name);
+                if (newName === null) return; 
+
+                const newAddr = prompt("Editar Endereço da Unidade:", u.address);
+                if (newAddr === null) return;
+
+                if (newName && newAddr && (newName !== u.name || newAddr !== u.address)) {
+                    onUpdateUnit(u.id, { name: newName.toUpperCase(), address: newAddr.toUpperCase() });
+                }
+            };
+
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-6 animate-fade-in relative overflow-y-auto">
                     <div className="absolute top-4 left-4"><button onClick={() => onNavigate('menu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
                     <div className="mt-16 text-center mb-8"><div className="inline-flex items-center justify-center w-16 h-16 bg-brand-orange rounded-full mb-4"><i className="fas fa-building text-2xl text-white"></i></div><h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">NOVA UNIDADE</h2><p className="text-gray-500 dark:text-gray-400 text-sm">Cadastrar local de trabalho</p></div>
                     <div className="space-y-4">
-                        <div><label className="text-sm font-bold text-gray-700 dark:text-gray-300 block mb-2">Nome da Unidade</label><input value={newUnit.name} onChange={e => setNewUnit({...newUnit, name: e.target.value})} placeholder="EX: PARQUE LOGISTICO AERO I" className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 uppercase" /></div>
+                        <div><label className="text-sm font-bold text-gray-700 dark:text-gray-300 block mb-2">Nome da Unidade</label><input value={newUnit.name} onChange={e => setNewUnit({...newUnit, name: e.target.value})} placeholder="EX: NOVA UNIDADE" className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 uppercase" /></div>
                         <div><label className="text-sm font-bold text-gray-700 dark:text-gray-300 block mb-2">Endereço</label><input value={newUnit.address} onChange={e => setNewUnit({...newUnit, address: e.target.value})} placeholder="Rua, Número, Bairro" type="text" className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 uppercase" /></div>
                         <button onClick={handleSave} disabled={saving} className="w-full py-4 bg-brand-orange text-white rounded-xl text-lg font-bold shadow-lg mt-6 active:scale-95 transition-transform">{saving ? 'SALVANDO...' : 'CADASTRAR'}</button>
                     </div>
@@ -291,7 +297,7 @@
                                     <div key={u.id} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-4 rounded-xl flex items-center justify-between shadow-sm">
                                         <div className="flex flex-col"><span className="font-bold text-gray-800 dark:text-white text-sm">{u.name}</span><span className="text-xs text-gray-400">{u.address}</span></div>
                                         <div className="flex gap-2">
-                                            <button onClick={() => { const newAddr = prompt(`Novo endereço para ${u.name}:`, u.address); if(newAddr && newAddr !== u.address) onUpdateUnit(u.id, { address: newAddr }); }} className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center hover:bg-blue-200"><i className="fas fa-pen text-xs"></i></button>
+                                            <button onClick={() => handleEditAttempt(u)} className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center hover:bg-blue-200"><i className="fas fa-pen text-xs"></i></button>
                                             <button onClick={() => handleDeleteAttempt(u.id)} className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center hover:bg-red-200"><i className="fas fa-trash text-xs"></i></button>
                                         </div>
                                     </div>
@@ -637,154 +643,70 @@
             const [scanRes, setScanRes] = useState(null);
             const [notification, setNotification] = useState({ isOpen: false, message: '', type: 'info', isConfirmation: false, onConfirm: null });
 
-            const showAlert = (message, type = 'info') => { setNotification({ isOpen: true, message, type, isConfirmation: false, onConfirm: null }); };
+            const showAlert = (message, type = 'info', onCloseAction = null) => { setNotification({ isOpen: true, message, type, isConfirmation: false, onConfirm: null, onCloseAction }); };
             const showConfirm = (message, onConfirmAction, type = 'warning') => { setNotification({ isOpen: true, message, type, isConfirmation: true, onConfirm: onConfirmAction }); };
-            const closeNotification = () => setNotification({ ...notification, isOpen: false });
+            const closeNotification = () => { if(notification.onCloseAction) notification.onCloseAction(); setNotification({ ...notification, isOpen: false, onCloseAction: null }); };
 
-            // FUNÇÃO DE AUDITORIA AUTOMÁTICA DE RONDAS
+            useEffect(() => {
+                if (page === 'responsible') return;
+                const TIMEOUT_MS = 5 * 60 * 1000; 
+                let timeoutId;
+                const triggerLogout = () => { showAlert("Sessão encerrada por inatividade (5 min).", "warning", () => { localStorage.removeItem('trfire_user'); window.location.reload(); }); };
+                const resetTimer = () => { if(timeoutId) clearTimeout(timeoutId); timeoutId = setTimeout(triggerLogout, TIMEOUT_MS); };
+                const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
+                events.forEach(e => document.addEventListener(e, resetTimer));
+                resetTimer();
+                return () => { if(timeoutId) clearTimeout(timeoutId); events.forEach(e => document.removeEventListener(e, resetTimer)); };
+            }, [page]); 
+
             const checkAndGenerateMissedRounds = async (currentDb) => {
                 if (!dbFirestore) return;
-                
                 const now = new Date();
                 const currentHour = now.getHours();
-                
                 let targetShiftStart = null;
                 let targetShiftEnd = null;
                 let shiftNameID = ""; 
-
-                if (currentHour >= 18) {
-                    const todayMorning = new Date(now); todayMorning.setHours(6, 0, 0, 0);
-                    const todayAfternoon = new Date(now); todayAfternoon.setHours(17, 59, 59, 999);
-                    targetShiftStart = todayMorning;
-                    targetShiftEnd = todayAfternoon;
-                    shiftNameID = `DIURNO_${now.toISOString().slice(0,10)}`;
-                } 
-                else if (currentHour >= 6) {
-                    const yesterdayNight = new Date(now); yesterdayNight.setDate(yesterdayNight.getDate() - 1); yesterdayNight.setHours(18, 0, 0, 0);
-                    const todayEarlyMorning = new Date(now); todayEarlyMorning.setHours(5, 59, 59, 999);
-                    targetShiftStart = yesterdayNight;
-                    targetShiftEnd = todayEarlyMorning;
-                    shiftNameID = `NOTURNO_${yesterdayNight.toISOString().slice(0,10)}`;
-                }
-                else {
-                    const yesterdayMorning = new Date(now); yesterdayMorning.setDate(yesterdayMorning.getDate() - 1); yesterdayMorning.setHours(6, 0, 0, 0);
-                    const yesterdayAfternoon = new Date(now); yesterdayAfternoon.setDate(yesterdayAfternoon.getDate() - 1); yesterdayAfternoon.setHours(17, 59, 59, 999);
-                    targetShiftStart = yesterdayMorning;
-                    targetShiftEnd = yesterdayAfternoon;
-                    shiftNameID = `DIURNO_${yesterdayMorning.toISOString().slice(0,10)}`;
-                }
-
+                if (currentHour >= 18) { const todayMorning = new Date(now); todayMorning.setHours(6, 0, 0, 0); const todayAfternoon = new Date(now); todayAfternoon.setHours(17, 59, 59, 999); targetShiftStart = todayMorning; targetShiftEnd = todayAfternoon; shiftNameID = `DIURNO_${now.toISOString().slice(0,10)}`; } 
+                else if (currentHour >= 6) { const yesterdayNight = new Date(now); yesterdayNight.setDate(yesterdayNight.getDate() - 1); yesterdayNight.setHours(18, 0, 0, 0); const todayEarlyMorning = new Date(now); todayEarlyMorning.setHours(5, 59, 59, 999); targetShiftStart = yesterdayNight; targetShiftEnd = todayEarlyMorning; shiftNameID = `NOTURNO_${yesterdayNight.toISOString().slice(0,10)}`; }
+                else { const yesterdayMorning = new Date(now); yesterdayMorning.setDate(yesterdayMorning.getDate() - 1); yesterdayMorning.setHours(6, 0, 0, 0); const yesterdayAfternoon = new Date(now); yesterdayAfternoon.setDate(yesterdayAfternoon.getDate() - 1); yesterdayAfternoon.setHours(17, 59, 59, 999); targetShiftStart = yesterdayMorning; targetShiftEnd = yesterdayAfternoon; shiftNameID = `DIURNO_${yesterdayMorning.toISOString().slice(0,10)}`; }
                 if (!targetShiftStart) return;
-
                 for (const loc of ROUND_LOCATIONS) {
-                    const hasInspection = currentDb.some(item => {
-                        if (item.type !== 'RONDA' || item.deleted || item.sector !== loc) return false;
-                        const itemDate = new Date(item.created_at);
-                        return itemDate >= targetShiftStart && itemDate <= targetShiftEnd;
-                    });
-
+                    const hasInspection = currentDb.some(item => { if (item.type !== 'RONDA' || item.deleted || item.sector !== loc) return false; const itemDate = new Date(item.created_at); return itemDate >= targetShiftStart && itemDate <= targetShiftEnd; });
                     const autoDocId = `AUTO_${shiftNameID}_${loc.replace(/\s+/g, '')}`;
                     const alreadyAutoRegistered = currentDb.some(item => item.id === autoDocId);
-
-                    if (!hasInspection && !alreadyAutoRegistered) {
-                        try {
-                            await setDoc(doc(dbFirestore, "inspections", autoDocId), {
-                                type: 'RONDA',
-                                sector: loc,
-                                equipmentName: 'AUDITORIA AUTOMÁTICA',
-                                status: 'NÃO REALIZADA',
-                                auto: true, 
-                                obs: 'Inspeção não realizada dentro do horário estipulado.',
-                                responsible: 'SISTEMA',
-                                created_at: targetShiftEnd.toISOString(), 
-                                deleted: false
-                            });
-                        } catch (e) {
-                            console.error("Erro ao gerar registro automático", e);
-                        }
-                    }
+                    if (!hasInspection && !alreadyAutoRegistered) { try { await setDoc(doc(dbFirestore, "inspections", autoDocId), { type: 'RONDA', sector: loc, equipmentName: 'AUDITORIA AUTOMÁTICA', status: 'NÃO REALIZADA', auto: true, obs: 'Inspeção não realizada dentro do horário estipulado.', responsible: 'SISTEMA', created_at: targetShiftEnd.toISOString(), deleted: false }); } catch (e) { console.error("Erro ao gerar registro automático", e); } }
                 }
             };
 
             useEffect(() => {
                 if(!dbFirestore) return;
-
-                // Monitorar Inspeções
                 const q = query(collection(dbFirestore, "inspections"), orderBy("created_at", "desc"));
-                const unsubscribeInspections = onSnapshot(q, (querySnapshot) => { 
-                    const inspections = []; 
-                    querySnapshot.forEach((doc) => { inspections.push({ id: doc.id, ...doc.data() }); }); 
-                    setDb(inspections); 
-                    checkAndGenerateMissedRounds(inspections);
-                }, (error) => { console.error("Erro ao buscar dados:", error); });
-                
-                // Monitorar Usuários (Migração de Dados: Unidade Padrão)
+                const unsubscribeInspections = onSnapshot(q, (querySnapshot) => { const inspections = []; querySnapshot.forEach((doc) => { inspections.push({ id: doc.id, ...doc.data() }); }); setDb(inspections); checkAndGenerateMissedRounds(inspections); }, (error) => { console.error("Erro ao buscar dados:", error); });
                 const usersCollection = collection(dbFirestore, "users");
                 const qUsers = query(usersCollection, orderBy("name"));
                 const unsubscribeUsers = onSnapshot(qUsers, async (snapshot) => { 
-                    const usersList = []; 
-                    snapshot.forEach(doc => usersList.push({ id: doc.id, ...doc.data() })); 
-                    setUsers(usersList); 
-
-                    // Migração automática de usuários sem unidade para "PARQUE LOGISTICO AERO I"
-                    usersList.forEach(async (u) => {
-                        if (!u.unit) {
-                            try {
-                                const userRef = doc(dbFirestore, "users", u.id);
-                                await updateDoc(userRef, { unit: "PARQUE LOGISTICO AERO I" });
-                            } catch(e) { console.error("Erro migração user", e); }
-                        }
-                    });
+                    const usersList = []; snapshot.forEach(doc => usersList.push({ id: doc.id, ...doc.data() })); setUsers(usersList); 
+                    usersList.forEach(async (u) => { if (!u.unit) { try { const userRef = doc(dbFirestore, "users", u.id); await updateDoc(userRef, { unit: "PARQUE LOGISTICO AERO I" }); } catch(e) { console.error("Erro migração user", e); } } });
                 });
-
-                // Monitorar Unidades (com migração automática se vazio para "PARQUE LOGISTICO AERO I")
                 const unitsCollection = collection(dbFirestore, "units");
                 const qUnits = query(unitsCollection, orderBy("name"));
-                const unsubscribeUnits = onSnapshot(qUnits, async (snapshot) => {
-                    const unitsList = [];
-                    snapshot.forEach(doc => unitsList.push({ id: doc.id, ...doc.data() }));
-                    
-                    if (unitsList.length === 0) {
-                        console.log("Nenhuma unidade encontrada. Criando padrão...");
-                        await addDoc(unitsCollection, { name: "PARQUE LOGISTICO AERO I", address: "RODOVIA HELIO SMIDT" });
-                    } else {
-                        setUnits(unitsList);
-                    }
-                });
-
+                const unsubscribeUnits = onSnapshot(qUnits, async (snapshot) => { const unitsList = []; snapshot.forEach(doc => unitsList.push({ id: doc.id, ...doc.data() })); if (unitsList.length === 0) { console.log("Nenhuma unidade encontrada. Criando padrão..."); await addDoc(unitsCollection, { name: "NOVA UNIDADE", address: "ENDEREÇO INDEFINIDO" }); } else { setUnits(unitsList); } });
                 return () => { unsubscribeInspections(); unsubscribeUsers(); unsubscribeUnits(); };
             }, []);
 
             const handleStartInspection = (type) => { setInspectionType(type); setPage('scan'); };
             const handleRoundStart = (location) => { setRoundLocation(location); setInspectionType('RONDA'); setPage('scan'); };
-            
-            const handleSave = async (formData) => { 
-                if(!dbFirestore) { showAlert("Erro: Banco de dados não conectado.", "error"); return; } 
-                try { await addDoc(collection(dbFirestore, "inspections"), { ...formData, unit: currentUnit }); setPage('list'); } 
-                catch (e) { showAlert("Erro ao salvar na nuvem.", "error"); } 
-            };
-
-            // CRUD Usuários
+            const handleSave = async (formData) => { if(!dbFirestore) { showAlert("Erro: Banco de dados não conectado.", "error"); return; } try { await addDoc(collection(dbFirestore, "inspections"), { ...formData, unit: currentUnit }); setPage('list'); } catch (e) { showAlert("Erro ao salvar na nuvem.", "error"); } };
             const handleSaveUser = async (userData) => { if(!dbFirestore) return; try { await addDoc(collection(dbFirestore, "users"), userData); } catch(e) { showAlert("Erro ao salvar usuário.", "error"); } };
             const handleUpdateUser = async (id, newPass) => { if(!dbFirestore) return; try { await updateDoc(doc(dbFirestore, "users", id), { pass: newPass }); showAlert("Senha atualizada!", "success"); } catch(e) { showAlert("Erro ao atualizar senha.", "error"); } };
             const handleDeleteUser = async (id) => { if(!dbFirestore) return; try { await deleteDoc(doc(dbFirestore, "users", id)); showAlert("Usuário excluído!", "success"); } catch(e) { showAlert("Erro ao excluir usuário.", "error"); } };
-
-            // CRUD Unidades
             const handleSaveUnit = async (unitData) => { if(!dbFirestore) return; try { await addDoc(collection(dbFirestore, "units"), unitData); } catch(e) { showAlert("Erro ao salvar unidade.", "error"); } };
             const handleUpdateUnit = async (id, data) => { if(!dbFirestore) return; try { await updateDoc(doc(dbFirestore, "units", id), data); showAlert("Unidade atualizada!", "success"); } catch(e) { showAlert("Erro ao atualizar unidade.", "error"); } };
             const handleDeleteUnit = async (id) => { if(!dbFirestore) return; try { await deleteDoc(doc(dbFirestore, "units", id)); showAlert("Unidade excluída!", "success"); } catch(e) { showAlert("Erro ao excluir unidade.", "error"); } };
-
             const handleImportData = async (jsonData) => { if(!dbFirestore) return showAlert("Erro BD.", "error"); if(!Array.isArray(jsonData)) return showAlert("JSON Inválido.", "error"); showConfirm(`Importar ${jsonData.length} registros?`, async () => { let c=0; for (const i of jsonData) { try { if (i.id) await setDoc(doc(dbFirestore, "inspections", i.id), i); else await addDoc(collection(dbFirestore, "inspections"), i); c++; } catch(e){} } showAlert(`Sucesso: ${c}`, "success"); }, "warning"); };
             const handleToggleDelete = async (id, status) => { if(!dbFirestore) return; try { const docRef = doc(dbFirestore, "inspections", id); await updateDoc(docRef, { deleted: status }); } catch (e) { showAlert("Erro ao atualizar.", "error"); } };
             const handleDeletePermanently = async (id) => { if(!dbFirestore) return; try { await deleteDoc(doc(dbFirestore, "inspections", id)); } catch (e) { showAlert("Erro ao excluir.", "error"); } };
-            
-            const handleLogin = (name, unitName) => { 
-                localStorage.setItem('trfire_user', name); 
-                localStorage.setItem('trfire_unit', unitName);
-                setResponsible(name); 
-                setCurrentUnit(unitName);
-                setPage('menu'); 
-            };
+            const handleLogin = (name, unitName) => { localStorage.setItem('trfire_user', name); localStorage.setItem('trfire_unit', unitName); setResponsible(name); setCurrentUnit(unitName); setPage('menu'); };
 
             return (
                 <>

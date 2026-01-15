@@ -3,14 +3,13 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO FINAL - AJUSTES DE UNIDADE (15/01/2026)
+    VERSÃO FINAL - USUÁRIO ADMIN PADRÃO (15/01/2026)
     ============================================================================
-    FUNCIONALIDADES:
-    - Migração Padrão: Cria "NOVA UNIDADE" se o banco estiver vazio.
-    - Edição Completa: Permite alterar Nome e Endereço das unidades.
-    - Login Vinculado & Logoff Automático.
-    - Rondas por Turno & Auditoria Automática.
-    - Banco de Dados em Nuvem (Firebase).
+    CONFIGURAÇÃO:
+    - Projeto Firebase: database-aero-i
+    - Usuário Mestre: ADMIN (Senha: Admin1605)
+    - Fallback de Login: Input manual se lista vazia (Aceita apenas ADMIN)
+    - Gestão de Unidades e Usuários
     ============================================================================
     -->
 
@@ -102,22 +101,22 @@
         const { jsPDF } = window.jspdf;
 
         // =========================================================================
-        // CONFIGURAÇÃO FIREBASE
+        // CONFIGURAÇÃO FIREBASE (ATUALIZADA)
         // =========================================================================
-        const hardcodedConfig = {
-            apiKey: "AIzaSyCD6T_Fe-maCzrp79k1hfEEyo9iKkqLPEM",
-            authDomain: "tr-fire-app-8762c.firebaseapp.com",
-            projectId: "tr-fire-app-8762c",
-            storageBucket: "tr-fire-app-8762c.firebasestorage.app",
-            messagingSenderId: "2601619994",
-            appId: "1:2601619994:web:93881f2f647d2f4624b7a3"
+        const firebaseConfig = {
+            apiKey: "AIzaSyDgTmxXzb0jNi2CYsbs03FaxsnasdYVhxo",
+            authDomain: "database-aero-i.firebaseapp.com",
+            projectId: "database-aero-i",
+            storageBucket: "database-aero-i.firebasestorage.app",
+            messagingSenderId: "263237040018",
+            appId: "1:263237040018:web:7e1bde9d70d55bf22a334b"
         };
 
         let dbFirestore = null;
         let app = null;
 
         try {
-            app = initializeApp(hardcodedConfig);
+            app = initializeApp(firebaseConfig);
             dbFirestore = getFirestore(app);
             console.log("Firebase conectado com sucesso!");
         } catch (error) {
@@ -132,7 +131,9 @@
         const LOCATION_OPTIONS = ["ANJUN", "AZUL CARGO", "AREAS COMUNS", "EQ. RESERVA", "LATAM", "MELI", "POWER SOURCE", "TOTAL EXP."];
         const ROUND_LOCATIONS = ["CASA DE BOMBAS", "TANQUE DE DIESEL", "RESERVA DE INCÊNDIO", "GERADORES"];
         const ROUND_AREAS = ["G-100", "G-200", "G-300"];
-        const ADMIN_USER = "THAWILLYS ROCHA"; 
+        
+        // ADMINS GLOBAIS
+        const ADMIN_USERS = ["THAWILLYS ROCHA", "ADMIN"]; 
 
         const formatDate = (dateStr) => {
             if (!dateStr) return '-';
@@ -180,23 +181,39 @@
             const [selectedUnit, setSelectedUnit] = useState("");
             const [password, setPassword] = useState("");
 
+            // Filtra usuários pela unidade ou se é admin
             const filteredUsers = useMemo(() => {
                 if (!selectedUnit) return [];
-                return usersList.filter(u => u.unit === selectedUnit || u.name === ADMIN_USER);
+                return usersList.filter(u => u.unit === selectedUnit || ADMIN_USERS.includes(u.name));
             }, [selectedUnit, usersList]);
+
+            // Se a lista de usuários filtrados estiver vazia, permite digitação manual (modo de recuperação/inicialização)
+            const isManualInput = filteredUsers.length === 0 && selectedUnit;
 
             const handleLoginAttempt = () => {
                 if (!selectedName || !password || !selectedUnit) return;
-                const user = usersList.find(u => u.name === selectedName);
                 
-                if (user && user.pass === password) {
-                    if (user.name === ADMIN_USER || user.unit === selectedUnit) {
-                        onConfirm(selectedName, selectedUnit);
+                const nameUpper = selectedName.toUpperCase();
+
+                if (isManualInput) {
+                    // Modo manual: aceita APENAS "ADMIN" e senha "Admin1605"
+                    if (nameUpper === "ADMIN" && password === "Admin1605") {
+                        onConfirm(nameUpper, selectedUnit);
                     } else {
-                        showAlert("Usuário não pertence a esta unidade.", "error");
+                        showAlert("Usuário não encontrado. Para acesso inicial, use ADMIN.", "error");
                     }
                 } else {
-                    showAlert("Senha incorreta. Tente novamente.", "error");
+                    // Modo lista: valida contra o banco
+                    const user = usersList.find(u => u.name === nameUpper);
+                    if (user && user.pass === password) {
+                        if (ADMIN_USERS.includes(user.name) || user.unit === selectedUnit) {
+                            onConfirm(nameUpper, selectedUnit);
+                        } else {
+                            showAlert("Usuário não pertence a esta unidade.", "error");
+                        }
+                    } else {
+                        showAlert("Senha incorreta. Tente novamente.", "error");
+                    }
                 }
             };
 
@@ -224,11 +241,23 @@
                         <div>
                             <label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">Responsável *</label>
                             <div className="relative">
-                                <select value={selectedName} onChange={(e) => { setSelectedName(e.target.value); setPassword(""); }} className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white appearance-none font-bold text-gray-700 text-sm" disabled={!selectedUnit}>
-                                    <option value="">{selectedUnit ? "Selecione o Responsável..." : "Aguardando Unidade..."}</option>
-                                    {filteredUsers.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
-                                </select>
-                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-700 dark:text-gray-300"><i className="fas fa-chevron-down"></i></div>
+                                {isManualInput ? (
+                                    <input 
+                                        type="text" 
+                                        value={selectedName} 
+                                        onChange={(e) => setSelectedName(e.target.value.toUpperCase())} 
+                                        placeholder="Digite ADMIN..." 
+                                        className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-brand-orange dark:border-brand-orange focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 text-sm"
+                                    />
+                                ) : (
+                                    <>
+                                        <select value={selectedName} onChange={(e) => { setSelectedName(e.target.value); setPassword(""); }} className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white appearance-none font-bold text-gray-700 text-sm" disabled={!selectedUnit}>
+                                            <option value="">{selectedUnit ? "Selecione o Responsável..." : "Aguardando Unidade..."}</option>
+                                            {filteredUsers.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
+                                        </select>
+                                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-700 dark:text-gray-300"><i className="fas fa-chevron-down"></i></div>
+                                    </>
+                                )}
                             </div>
                         </div>
 
@@ -285,7 +314,7 @@
                     <div className="absolute top-4 left-4"><button onClick={() => onNavigate('menu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
                     <div className="mt-16 text-center mb-8"><div className="inline-flex items-center justify-center w-16 h-16 bg-brand-orange rounded-full mb-4"><i className="fas fa-building text-2xl text-white"></i></div><h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">NOVA UNIDADE</h2><p className="text-gray-500 dark:text-gray-400 text-sm">Cadastrar local de trabalho</p></div>
                     <div className="space-y-4">
-                        <div><label className="text-sm font-bold text-gray-700 dark:text-gray-300 block mb-2">Nome da Unidade</label><input value={newUnit.name} onChange={e => setNewUnit({...newUnit, name: e.target.value})} placeholder="EX: NOVA UNIDADE" className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 uppercase" /></div>
+                        <div><label className="text-sm font-bold text-gray-700 dark:text-gray-300 block mb-2">Nome da Unidade</label><input value={newUnit.name} onChange={e => setNewUnit({...newUnit, name: e.target.value})} placeholder="EX: PARQUE LOGISTICO AERO I" className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 uppercase" /></div>
                         <div><label className="text-sm font-bold text-gray-700 dark:text-gray-300 block mb-2">Endereço</label><input value={newUnit.address} onChange={e => setNewUnit({...newUnit, address: e.target.value})} placeholder="Rua, Número, Bairro" type="text" className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 uppercase" /></div>
                         <button onClick={handleSave} disabled={saving} className="w-full py-4 bg-brand-orange text-white rounded-xl text-lg font-bold shadow-lg mt-6 active:scale-95 transition-transform">{saving ? 'SALVANDO...' : 'CADASTRAR'}</button>
                     </div>
@@ -382,7 +411,7 @@
 
         const MenuScreen = ({ onNavigate, responsibleName, currentUnit, onStartInspection }) => {
             const [time, setTime] = useState(new Date());
-            const isAdmin = responsibleName === ADMIN_USER;
+            const isAdmin = ADMIN_USERS.includes(responsibleName);
             useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
             const handleLogout = () => { localStorage.removeItem('trfire_user'); window.location.reload(); };
 
@@ -564,7 +593,7 @@
             const [expandedSections, setExpandedSections] = useState({}); 
             const fileInputRef = useRef(null);
             const [viewMonth, setViewMonth] = useState(new Date().toISOString().slice(0, 7));
-            const isAdmin = currentUser === ADMIN_USER;
+            const isAdmin = ADMIN_USERS.includes(currentUser);
             const toggleSection = (section) => { setExpandedSections(prev => ({ ...prev, [section]: !prev[section] })); };
             const responsibles = useMemo(() => [...new Set(data.map(item => item.responsible).filter(Boolean))], [data]);
             const availableMonths = useMemo(() => { const months = new Set(data.filter(i => i.created_at).map(item => item.created_at.slice(0, 7))); months.add(new Date().toISOString().slice(0, 7)); return Array.from(months).sort().reverse(); }, [data]);
@@ -682,12 +711,38 @@
                 if(!dbFirestore) return;
                 const q = query(collection(dbFirestore, "inspections"), orderBy("created_at", "desc"));
                 const unsubscribeInspections = onSnapshot(q, (querySnapshot) => { const inspections = []; querySnapshot.forEach((doc) => { inspections.push({ id: doc.id, ...doc.data() }); }); setDb(inspections); checkAndGenerateMissedRounds(inspections); }, (error) => { console.error("Erro ao buscar dados:", error); });
+                
+                // Monitorar Usuários (Migração de Dados: Unidade Padrão e Criação do ADMIN)
                 const usersCollection = collection(dbFirestore, "users");
                 const qUsers = query(usersCollection, orderBy("name"));
                 const unsubscribeUsers = onSnapshot(qUsers, async (snapshot) => { 
-                    const usersList = []; snapshot.forEach(doc => usersList.push({ id: doc.id, ...doc.data() })); setUsers(usersList); 
-                    usersList.forEach(async (u) => { if (!u.unit) { try { const userRef = doc(dbFirestore, "users", u.id); await updateDoc(userRef, { unit: "PARQUE LOGISTICO AERO I" }); } catch(e) { console.error("Erro migração user", e); } } });
+                    const usersList = []; 
+                    snapshot.forEach(doc => usersList.push({ id: doc.id, ...doc.data() })); 
+                    setUsers(usersList); 
+
+                    // Migração automática de usuários sem unidade para "PARQUE LOGISTICO AERO I"
+                    usersList.forEach(async (u) => {
+                        if (!u.unit && u.name !== "ADMIN") { // ADMIN tem unit GLOBAL ou especial, mas aqui vamos deixar passar ou atribuir
+                           // Não atribui unidade ao ADMIN se ele for especial, ou atribui GLOBAL
+                           // Vamos focar nos usuários normais
+                           if (u.name !== "ADMIN") {
+                                try {
+                                    const userRef = doc(dbFirestore, "users", u.id);
+                                    await updateDoc(userRef, { unit: "PARQUE LOGISTICO AERO I" });
+                                } catch(e) { console.error("Erro migração user", e); }
+                           }
+                        }
+                    });
+                    
+                    // CRIAÇÃO AUTOMÁTICA DO ADMIN SE NÃO EXISTIR
+                    const adminExists = usersList.some(u => u.name === "ADMIN");
+                    if (!adminExists) {
+                        console.log("Criando usuário ADMIN padrão...");
+                        // Unidade 'GLOBAL' ou vazia, já que o filtro de login trata ADMIN como exceção
+                        await addDoc(usersCollection, { name: "ADMIN", pass: "Admin1605", unit: "GLOBAL" });
+                    }
                 });
+
                 const unitsCollection = collection(dbFirestore, "units");
                 const qUnits = query(unitsCollection, orderBy("name"));
                 const unsubscribeUnits = onSnapshot(qUnits, async (snapshot) => { const unitsList = []; snapshot.forEach(doc => unitsList.push({ id: doc.id, ...doc.data() })); if (unitsList.length === 0) { console.log("Nenhuma unidade encontrada. Criando padrão..."); await addDoc(unitsCollection, { name: "NOVA UNIDADE", address: "ENDEREÇO INDEFINIDO" }); } else { setUnits(unitsList); } });

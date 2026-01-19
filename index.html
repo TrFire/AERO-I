@@ -3,13 +3,14 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO OTIMIZADA (19/01/2026) - QUOTA SAVER & ADMIN ONLY AUTOMATION
+    VERSÃO ESTÁVEL V4 (19/01/2026) - APP DEFINITION FIX
     ============================================================================
     CONFIGURAÇÃO:
     - Projeto Firebase: database-aero-i
     - Autenticação: 100% via banco de dados (Firestore)
-    - Otimização: Limite de 1000 registros no histórico p/ economizar leitura
-    - Segurança: Auditorias automáticas executadas APENAS pelo ADMIN
+    - Otimização: Limite de 150 registros + Tratamento de Erros
+    - Segurança: Auditorias e Limpezas apenas via ADMIN
+    - Correção: Definição explicita da função App para evitar ReferenceError
     ============================================================================
     -->
 
@@ -98,10 +99,11 @@
         import { getFirestore, collection, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, doc, setDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const { useState, useEffect, useRef, useMemo } = React;
-        const { jsPDF } = window.jspdf;
+        const ReactDOM = window.ReactDOM;
+        const jsPDF = window.jspdf ? window.jspdf.jsPDF : null;
 
         // =========================================================================
-        // CONFIGURAÇÃO FIREBASE (ATUALIZADA)
+        // CONFIGURAÇÃO FIREBASE
         // =========================================================================
         const firebaseConfig = {
             apiKey: "AIzaSyDgTmxXzb0jNi2CYsbs03FaxsnasdYVhxo",
@@ -195,12 +197,13 @@
             const [selectedName, setSelectedName] = useState("");
             const [selectedUnit, setSelectedUnit] = useState("");
             const [password, setPassword] = useState("");
+            const [showPassword, setShowPassword] = useState(false);
 
             const handleLoginAttempt = () => {
                 const nameUpper = selectedName.toUpperCase().trim();
                 
                 if (!nameUpper || !password) {
-                    return; // Botão já deve estar desabilitado, mas por segurança
+                    return; 
                 }
 
                 // VALIDAÇÃO 1: Se não for ADMIN, obriga selecionar Unidade
@@ -230,13 +233,10 @@
                 }
 
                 // Login Sucesso
-                // Se for ADMIN sem unidade selecionada, passamos "GLOBAL" ou vazio
                 const finalUnit = selectedUnit || "GLOBAL";
                 onConfirm(userFound.name, finalUnit, userFound.unit === "GLOBAL" || userFound.name === "ADMIN");
             };
 
-            // Habilita o botão se tiver Nome e Senha. 
-            // A Unidade só é obrigatória se o nome NÃO for ADMIN.
             const isButtonEnabled = selectedName && password && (selectedUnit || selectedName.toUpperCase().trim() === "ADMIN");
 
             return (
@@ -275,8 +275,21 @@
                         <div className={`transition-all duration-300 ${selectedName ? 'opacity-100 max-h-24' : 'opacity-50 max-h-24 pointer-events-none'}`}>
                             <label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">Senha *</label>
                             <div className="relative">
-                                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Digite sua senha..." className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 placeholder-gray-400 text-sm" disabled={!selectedName} />
-                                <div className="absolute inset-y-0 right-0 flex items-center px-4 text-gray-400"><i className="fas fa-lock"></i></div>
+                                <input 
+                                    type={showPassword ? "text" : "password"} 
+                                    value={password} 
+                                    onChange={(e) => setPassword(e.target.value)} 
+                                    placeholder="Digite sua senha..." 
+                                    className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 placeholder-gray-400 text-sm pr-12" 
+                                    disabled={!selectedName} 
+                                />
+                                <button 
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="absolute inset-y-0 right-0 flex items-center px-4 text-gray-400 hover:text-brand-orange transition-colors"
+                                >
+                                    <i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                                </button>
                             </div>
                         </div>
 
@@ -423,8 +436,6 @@
         const MenuScreen = ({ onNavigate, responsibleName, currentUnit, onStartInspection }) => {
             const [time, setTime] = useState(new Date());
             
-            // Verificação de Admin segura (sem hardcode)
-            // Se o usuário logado tiver a unidade "GLOBAL" ou for explicitamente "ADMIN", é administrador.
             const isAdmin = responsibleName === "ADMIN" || currentUnit === "GLOBAL";
 
             useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
@@ -751,9 +762,9 @@
                 </div>
             );
         };
-
+        
         // =========================================================================
-        // APP COMPONENT
+        // APP COMPONENT (Main)
         // =========================================================================
         const App = () => {
             const [page, setPage] = useState(localStorage.getItem('trfire_user') ? 'menu' : 'responsible');
@@ -899,8 +910,7 @@
                     querySnapshot.forEach((doc) => { inspections.push({ id: doc.id, ...doc.data() }); }); 
                     setDb(inspections); 
                     
-                    // OTIMIZAÇÃO CRÍTICA: Só o ADMIN executa a auditoria automática de rondas perdidas
-                    // (Isso evita conflitos de múltiplos usuários criando o mesmo registro automático ao mesmo tempo)
+                    // OTIMIZAÇÃO CRÍTICA: Só o ADMIN executa a auditoria automática
                     if (localStorage.getItem('trfire_user') === 'ADMIN') {
                         checkAndGenerateMissedRounds(inspections);
                     }

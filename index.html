@@ -3,13 +3,13 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO FINAL AJUSTADA (15/01/2026) - COM LIMPEZA AUTOMÁTICA
+    VERSÃO OTIMIZADA (19/01/2026) - QUOTA SAVER & ADMIN ONLY AUTOMATION
     ============================================================================
     CONFIGURAÇÃO:
     - Projeto Firebase: database-aero-i
     - Autenticação: 100% via banco de dados (Firestore)
-    - Unidades: Lista vazia até cadastro pelo ADMIN (Auto-limpeza de "NOVA UNIDADE")
-    - Login: Campo de nome sempre livre; ADMIN acessa sem unidade selecionada
+    - Otimização: Limite de 1000 registros no histórico p/ economizar leitura
+    - Segurança: Auditorias automáticas executadas APENAS pelo ADMIN
     ============================================================================
     -->
 
@@ -95,7 +95,7 @@
 
     <script type="text/babel" data-type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, doc, setDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, doc, setDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const { useState, useEffect, useRef, useMemo } = React;
         const { jsPDF } = window.jspdf;
@@ -129,7 +129,25 @@
         const LOGO_SRC = "logo.png"; 
         const FALLBACK_LOGO = "https://cdn-icons-png.flaticon.com/512/785/785116.png";
         const LOCATION_OPTIONS = ["ANJUN", "AZUL CARGO", "AREAS COMUNS", "EQ. RESERVA", "LATAM", "MELI", "POWER SOURCE", "TOTAL EXP."];
-        const ROUND_LOCATIONS = ["CASA DE BOMBAS", "TANQUE DE DIESEL", "RESERVA DE INCÊNDIO", "GERADORES"];
+        
+        // LISTA DE RONDAS ATUALIZADA E ORDENADA (G-100 -> G-300)
+        const ROUND_LOCATIONS = [
+            // G-100
+            "CASA DE BOMBAS / G-100",
+            "TANQUE DE DIESEL / G-100",
+            "RTI / G-100",
+            "GERADOR / G-100",
+            
+            // G-200 (Antigos renomeados)
+            "CASA DE BOMBAS / G-200",
+            "TANQUE DE DIESEL / G-200",
+            "RTI / G-200",
+            "GERADOR / G-200",
+            
+            // G-300
+            "GERADOR / G-300"
+        ];
+        
         const ROUND_AREAS = ["G-100", "G-200", "G-300"];
         
         const formatDate = (dateStr) => {
@@ -588,11 +606,15 @@
             const [showBin, setShowBin] = useState(false);
             const [filters, setFilters] = useState({ startDate: '', endDate: '', type: '', responsible: '', moduleLocation: '' });
             const [expandedSections, setExpandedSections] = useState({}); 
+            const [selectedIds, setSelectedIds] = useState(new Set()); // Estado para seleção múltipla
             const fileInputRef = useRef(null);
             const [viewMonth, setViewMonth] = useState(new Date().toISOString().slice(0, 7));
             
             // Verificação Admin (Igual ao Menu)
             const isAdmin = currentUser === "ADMIN";
+
+            // Limpa seleção ao sair da lixeira
+            useEffect(() => { setSelectedIds(new Set()); }, [showBin]);
 
             const toggleSection = (section) => { setExpandedSections(prev => ({ ...prev, [section]: !prev[section] })); };
             const responsibles = useMemo(() => [...new Set(data.map(item => item.responsible).filter(Boolean))], [data]);
@@ -602,12 +624,50 @@
             const activeData = data.filter(item => { if (item.deleted) return false; if (!item.created_at) return false; if (item.created_at.slice(0, 7) !== viewMonth) return false; const itemDate = new Date(item.created_at).setHours(0,0,0,0); const start = filters.startDate ? new Date(filters.startDate).setHours(0,0,0,0) : null; const end = filters.endDate ? new Date(filters.endDate).setHours(23,59,59,999) : null; if (start && itemDate < start) return false; if (end && itemDate > end) return false; if (filters.type && (item.type || 'EXTINTOR') !== filters.type) return false; if (filters.responsible && item.responsible !== filters.responsible) return false; if (filters.moduleLocation && item.moduleLocation !== filters.moduleLocation) return false; return true; });
             const groupedData = useMemo(() => { return { EXTINTOR: activeData.filter(i => (i.type || 'EXTINTOR') === 'EXTINTOR'), HIDRANTE: activeData.filter(i => i.type === 'HIDRANTE'), RONDA: activeData.filter(i => i.type === 'RONDA') }; }, [activeData]);
             const displayList = showBin ? deletedData : activeData;
+            
+            // Funções de Seleção em Massa
+            const handleSelectAll = () => {
+                if (selectedIds.size === displayList.length) {
+                    setSelectedIds(new Set());
+                } else {
+                    setSelectedIds(new Set(displayList.map(i => i.id)));
+                }
+            };
+
+            const toggleSelection = (id) => {
+                const newSet = new Set(selectedIds);
+                if (newSet.has(id)) newSet.delete(id);
+                else newSet.add(id);
+                setSelectedIds(newSet);
+            };
+
+            const confirmBulkRestore = () => {
+                if (selectedIds.size === 0) return;
+                showConfirm(`Restaurar ${selectedIds.size} itens selecionados?`, async () => {
+                    const promises = Array.from(selectedIds).map(id => onToggleDelete(id, false));
+                    await Promise.all(promises);
+                    setSelectedIds(new Set());
+                    showAlert(`${selectedIds.size} itens restaurados!`, "success");
+                }, "info");
+            };
+
+            const confirmBulkDelete = () => {
+                if (selectedIds.size === 0) return;
+                showConfirm(`EXCLUIR PERMANENTEMENTE ${selectedIds.size} itens?`, async () => {
+                    const promises = Array.from(selectedIds).map(id => onDeletePermanently(id));
+                    await Promise.all(promises);
+                    setSelectedIds(new Set());
+                    showAlert(`${selectedIds.size} itens excluídos!`, "success");
+                }, "error");
+            };
+
             const handleExport = () => { const jsonString = JSON.stringify(data, null, 2); const blob = new Blob([jsonString], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup_trfire_${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); setShowBackupModal(false); };
             const handleFileImport = (e) => { const file = e.target.files[0]; if(!file) return; const reader = new FileReader(); reader.onload = (ev) => { try { const json = JSON.parse(ev.target.result); onImportData(json); setShowBackupModal(false); } catch(err) { showAlert("Erro ao ler arquivo JSON. Verifique o formato.", "error"); } }; reader.readAsText(file); e.target.value = null; };
             const generateSpecificPDF = async (type) => { setShowPdfModal(false); const reportData = activeData.filter(item => (item.type || (type === 'RONDA' ? '' : 'EXTINTOR')) === type); if(reportData.length === 0) return showAlert(`Sem dados ATIVOS de ${type} para gerar relatório neste mês.`, "warning"); const doc = new jsPDF({ orientation: "landscape" }); doc.setFillColor(243, 244, 246); doc.rect(0, 0, 297, 40, 'F'); doc.setTextColor(33, 33, 33); doc.setFontSize(22); let title = ""; if (type === 'EXTINTOR') title = "CHECK-LIST EXTINTORES MENSAL"; else if (type === 'HIDRANTE') title = "CHECK-LIST HIDRANTES MENSAL"; else if (type === 'RONDA') title = "RELATÓRIO DE RONDAS PREVENTIVAS"; doc.text(title, 14, 25); doc.setFontSize(10); doc.setTextColor(100, 100, 100); doc.text(`Mês de Referência: ${formatMonthDisplay(viewMonth).toUpperCase()} | Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 35); doc.setFontSize(9); doc.setTextColor(33, 33, 33); doc.text("Parque Logístico: AERO GRU I", 280, 28, { align: "right" }); doc.text("Empresa: Vilella Assessoria em Segurança do Trabalho", 280, 35, { align: "right" }); let body = []; let head = []; if (type === 'EXTINTOR') { head = [['Módulo/Local?', 'Equipamento', 'Data/Hora', 'Resp.', 'Placa Sinal.?', 'Pint. de Solo?', 'Lacre Rompido?', 'Eq. Obstruído?', 'Próx. Recarga?', 'T. Hidro?', 'Observações']]; body = reportData.map(i => [ i.moduleLocation || '-', i.equipmentName, new Date(i.created_at).toLocaleDateString('pt-BR') + ' ' + new Date(i.created_at).toLocaleTimeString('pt-BR').slice(0,5), i.responsible || '-', i.hasId ? 'SIM' : 'NÃO', i.floorSign ? 'SIM' : 'NÃO', i.q1 ? 'SIM' : 'NÃO', i.q2 ? 'SIM' : 'NÃO', i.nextRecharge || '-', i.nextHydro || '-', i.obs || '' ]); } else if (type === 'HIDRANTE') { head = [['Módulo/Local?', 'Equipamento', 'Data/Hora', 'Resp.', 'Eq. Completo?', 'Eq. Obstruído?', 'Lacre Rompido?', 'Próx. T-Hidro', 'Observações']]; body = reportData.map(i => [ i.moduleLocation || '-', i.equipmentName, new Date(i.created_at).toLocaleDateString('pt-BR') + ' ' + new Date(i.created_at).toLocaleTimeString('pt-BR').slice(0,5), i.responsible || '-', i.h_complete ? 'SIM' : 'NÃO', i.h_unobstructed ? 'NÃO' : 'SIM', i.h_seal_broken ? 'SIM' : 'NÃO', i.nextHydro || '-', i.obs || '' ]); } else if (type === 'RONDA') { head = [['Local', 'Área Técnica', 'Data/Hora', 'Resp.', 'Galpão', 'Status', 'Obs']]; body = reportData.map(i => [ i.sector || '-', i.equipmentName || '-', new Date(i.created_at).toLocaleDateString('pt-BR') + ' ' + new Date(i.created_at).toLocaleTimeString('pt-BR').slice(0,5), i.responsible || '-', i.moduleLocation || '-', i.status || '-', i.obs || '' ]); } doc.autoTable({ head: head, body: body, startY: 45, theme: 'grid', headStyles: { fillColor: [224, 224, 224], textColor: [0, 0, 0], fontStyle: 'bold', lineWidth: 0.1, lineColor: [200, 200, 200] }, styles: { fontSize: 8, textColor: [50, 50, 50], lineColor: [230, 230, 230], lineWidth: 0.1 }, alternateRowStyles: { fillColor: [255, 255, 255] } }); doc.save(`TRFIRE_Relatorio_${type}_${viewMonth}.pdf`); };
             const renderItem = (item) => {
                 const isHid = item.type === 'HIDRANTE';
                 const isRonda = item.type === 'RONDA';
+                const isSelected = selectedIds.has(item.id);
                 let statusColor = 'bg-gray-100 text-gray-700';
                 let statusText = '---';
                 if (isRonda) { 
@@ -620,12 +680,26 @@
                     }
                 } else if (isHid) { statusColor = (item.h_complete && item.h_unobstructed && !item.h_seal_broken) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = (item.h_complete && item.h_unobstructed && !item.h_seal_broken) ? 'OK' : 'IRREGULAR'; } else { statusColor = (!item.q1 && !item.q2) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = (!item.q1) ? 'OK' : 'VIOLADO'; }
                 return (
-                    <div key={item.id} className={`p-4 rounded-xl shadow-sm border-l-4 flex justify-between items-center transition-all ${showBin ? 'bg-red-50 dark:bg-red-900/10 border-red-500 opacity-80' : 'bg-white dark:bg-gray-800 border-brand-red'}`}>
-                        <div><div className="flex items-center gap-2"><span className={`text-xs font-bold px-1 rounded ${isRonda ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>{item.type || 'EXT'}</span><span className="font-bold text-gray-800 dark:text-white text-sm">{item.equipmentName || item.sector}</span></div>{isRonda && <div className="text-xs text-gray-500 font-bold mt-1">Local: {item.sector} {item.moduleLocation ? `| ${item.moduleLocation}` : ''}</div>}<div className="text-xs text-gray-500 mt-1 flex gap-2"><span><i className="far fa-clock mr-1"></i>{formatDate(item.created_at)}</span><span className="text-gray-400">| {item.responsible || 'SISTEMA'}</span></div>{!showBin && (<span className={`inline-block mt-1 text-[10px] px-2 py-0.5 rounded font-bold ${statusColor}`}>{statusText}</span>)}{isRonda && item.photo && (<div className="mt-1"><i className="fas fa-camera text-gray-400"></i> <span className="text-[10px] text-gray-400">Foto anexada</span></div>)}</div>
+                    <div key={item.id} className={`p-4 rounded-xl shadow-sm border-l-4 flex justify-between items-center transition-all ${showBin ? (isSelected ? 'bg-red-100 border-red-600' : 'bg-red-50 dark:bg-red-900/10 border-red-500 opacity-80') : 'bg-white dark:bg-gray-800 border-brand-red'}`}>
+                        <div className="flex items-center gap-3">
+                            {showBin && isAdmin && (
+                                <div onClick={() => toggleSelection(item.id)} className={`w-6 h-6 rounded border-2 flex items-center justify-center cursor-pointer transition-colors ${isSelected ? 'bg-red-600 border-red-600 text-white' : 'border-red-300 bg-white'}`}>
+                                    {isSelected && <i className="fas fa-check text-xs"></i>}
+                                </div>
+                            )}
+                            <div><div className="flex items-center gap-2"><span className={`text-xs font-bold px-1 rounded ${isRonda ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>{item.type || 'EXT'}</span><span className="font-bold text-gray-800 dark:text-white text-sm">{item.equipmentName || item.sector}</span></div>{isRonda && <div className="text-xs text-gray-500 font-bold mt-1">Local: {item.sector} {item.moduleLocation ? `| ${item.moduleLocation}` : ''}</div>}<div className="text-xs text-gray-500 mt-1 flex gap-2"><span><i className="far fa-clock mr-1"></i>{formatDate(item.created_at)}</span><span className="text-gray-400">| {item.responsible || 'SISTEMA'}</span></div>{!showBin && (<span className={`inline-block mt-1 text-[10px] px-2 py-0.5 rounded font-bold ${statusColor}`}>{statusText}</span>)}{isRonda && item.photo && (<div className="mt-1"><i className="fas fa-camera text-gray-400"></i> <span className="text-[10px] text-gray-400">Foto anexada</span></div>)}</div>
+                        </div>
                         <div className="flex flex-col items-end gap-2">
                             {showBin ? (<div className="flex items-center gap-2"><button onClick={() => { if (item.responsible !== currentUser) return showAlert("🚫 Ação Negada: Permitido somente pelo usuário " + item.responsible + ".", "error"); onToggleDelete(item.id, false); }} className="bg-green-100 text-green-600 hover:bg-green-200 w-10 h-10 rounded-full flex items-center justify-center shadow-sm transition-all active:scale-95" title="Restaurar"><i className="fas fa-trash-restore"></i></button>{isAdmin && (<button onClick={() => { showConfirm("⚠️ ATENÇÃO: Deseja excluir este registro PERMANENTEMENTE? Esta ação não pode ser desfeita.", () => onDeletePermanently(item.id), "error"); }} className="bg-red-100 text-red-600 hover:bg-red-200 w-10 h-10 rounded-full flex items-center justify-center shadow-sm transition-all active:scale-95" title="Eliminar Definitivamente"><i className="fas fa-times"></i></button>)}</div>) : (
-                                !item.auto && (
-                                    <button onClick={() => { if (item.responsible !== currentUser) return showAlert("🚫 Ação Negada: Permitido somente pelo usuário " + item.responsible + ".", "error"); showConfirm("Mover para lixeira?", () => onToggleDelete(item.id, true), "warning"); }} className="bg-gray-100 text-red-500 hover:bg-red-50 w-10 h-10 rounded-full flex items-center justify-center shadow-sm transition-all active:scale-95" title="Excluir"><i className="fas fa-trash"></i></button>
+                                (!item.auto || isAdmin) && (
+                                    <button onClick={() => { 
+                                        if (item.auto) {
+                                            if (!isAdmin) return showAlert("Apenas Administrador pode excluir registros automáticos.", "error");
+                                        } else if (item.responsible !== currentUser) {
+                                            return showAlert("🚫 Ação Negada: Permitido somente pelo usuário " + item.responsible + ".", "error");
+                                        }
+                                        showConfirm("Mover para lixeira?", () => onToggleDelete(item.id, true), "warning"); 
+                                    }} className="bg-gray-100 text-red-500 hover:bg-red-50 w-10 h-10 rounded-full flex items-center justify-center shadow-sm transition-all active:scale-95" title="Excluir"><i className="fas fa-trash"></i></button>
                                 )
                             )}
                         </div>
@@ -639,6 +713,27 @@
                         <div className="flex items-center gap-2">{showBin ? (<button onClick={()=>setShowBin(false)} className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg font-bold text-xs shadow-md flex items-center gap-2"><i className="fas fa-arrow-left"></i> VOLTAR</button>) : (<button onClick={()=>onNavigate('menu')} className="bg-brand-orange hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-bold text-xs shadow-md active:scale-95 transition-all flex items-center gap-2"><i className="fas fa-plus"></i> NOVA INSPEÇÃO</button>)}<span className="text-xs text-white/80 hidden sm:inline ml-2">{showBin ? 'Itens Excluídos' : `${displayList.length} registros`}</span></div>
                         <div className="flex gap-4 items-center">{!showBin && (<><button onClick={() => setShowFilter(!showFilter)} title="Filtrar"><i className="fas fa-filter text-xl text-yellow-400"></i></button><div className="w-px h-6 bg-gray-600 mx-1"></div><button onClick={() => setShowPdfModal(true)} title="Gerar PDF"><i className="fas fa-file-pdf text-xl text-white"></i></button>{isAdmin && (<><div className="w-px h-6 bg-gray-600 mx-1"></div><button onClick={() => setShowBackupModal(true)} title="Backup / Restaurar"><i className="fas fa-cloud-upload-alt text-xl text-blue-400"></i></button></>)}<div className="w-px h-6 bg-gray-600 mx-1"></div></>)}<button onClick={() => setShowBin(!showBin)} title={showBin ? "Ver Histórico" : "Ver Lixeira"} className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${showBin ? 'bg-white text-red-800' : 'bg-red-900/50 text-red-300 hover:bg-red-900 hover:text-white'}`}><i className={`fas ${showBin ? 'fa-list' : 'fa-trash'}`}></i></button></div>
                     </div>
+                    {/* Bulk Actions Bar for Admin */}
+                    {showBin && isAdmin && displayList.length > 0 && (
+                        <div className="bg-red-700 text-white p-3 flex justify-between items-center animate-fade-in shadow-inner">
+                            <div className="flex items-center gap-3">
+                                <div onClick={handleSelectAll} className={`w-6 h-6 rounded border-2 border-white flex items-center justify-center cursor-pointer ${selectedIds.size === displayList.length && displayList.length > 0 ? 'bg-white text-red-700' : ''}`}>
+                                    {selectedIds.size === displayList.length && displayList.length > 0 && <i className="fas fa-check text-xs"></i>}
+                                </div>
+                                <span className="text-xs font-bold uppercase cursor-pointer" onClick={handleSelectAll}>Selecionar Todos</span>
+                            </div>
+                            {selectedIds.size > 0 && (
+                                <div className="flex gap-2">
+                                    <button onClick={confirmBulkRestore} className="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-md active:scale-95 transition-all flex items-center gap-1">
+                                        <i className="fas fa-trash-restore"></i> Restaurar ({selectedIds.size})
+                                    </button>
+                                    <button onClick={confirmBulkDelete} className="bg-white text-red-700 hover:bg-gray-100 px-3 py-1.5 rounded-lg text-xs font-bold shadow-md active:scale-95 transition-all flex items-center gap-1">
+                                        <i className="fas fa-times"></i> Excluir ({selectedIds.size})
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
                     {showPdfModal && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm animate-fade-in text-center"><h3 className="text-lg font-bold mb-2 dark:text-white">Gerar Relatório</h3><p className="text-sm font-bold text-brand-red mb-6 uppercase border-b pb-2">{formatMonthDisplay(viewMonth)}</p><div className="space-y-3"><button onClick={() => generateSpecificPDF('EXTINTOR')} className="w-full py-3 bg-brand-red text-white font-bold rounded-xl shadow-md active:scale-95">Relatório de EXTINTORES</button><button onClick={() => generateSpecificPDF('HIDRANTE')} className="w-full py-3 bg-brand-orange text-white font-bold rounded-xl shadow-md active:scale-95">Relatório de HIDRANTES</button><button onClick={() => generateSpecificPDF('RONDA')} className="w-full py-3 bg-brand-blue text-white font-bold rounded-xl shadow-md active:scale-95">Relatório de RONDAS</button><button onClick={() => setShowPdfModal(false)} className="w-full py-3 bg-gray-200 text-gray-700 font-bold rounded-xl mt-2">Cancelar</button></div></div></div>)}
                     {showBackupModal && isAdmin && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm animate-fade-in text-center"><h3 className="text-lg font-bold mb-4 dark:text-white flex items-center justify-center gap-2"><i className="fas fa-database text-blue-500"></i> Backup & Restauração</h3><p className="text-xs text-gray-500 mb-6">Ferramenta exclusiva para {ADMIN_USERS[1]}</p><div className="space-y-3"><button onClick={handleExport} className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2"><i className="fas fa-download"></i> EXPORTAR TUDO</button><div className="relative"><input type="file" ref={fileInputRef} onChange={handleFileImport} accept=".json" className="hidden" /><button onClick={() => fileInputRef.current.click()} className="w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2"><i className="fas fa-upload"></i> IMPORTAR DADOS</button></div><button onClick={() => setShowBackupModal(false)} className="w-full py-3 bg-gray-200 text-gray-700 font-bold rounded-xl mt-4">Fechar</button></div></div></div>)}
                     {showFilter && !showBin && (<div className="absolute top-16 right-4 z-50 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-64 animate-fade-in"><h3 className="font-bold mb-3 dark:text-white text-sm uppercase">Filtrar por</h3><div className="space-y-3"><div><label className="text-xs text-gray-500 block mb-1">De</label><input type="date" value={filters.startDate} onChange={e=>setFilters({...filters, startDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Até</label><input type="date" value={filters.endDate} onChange={e=>setFilters({...filters, endDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Tipo</label><select value={filters.type} onChange={e=>setFilters({...filters, type: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option><option value="EXTINTOR">Extintor</option><option value="HIDRANTE">Hidrante</option></select></div><div><label className="text-xs text-gray-500 block mb-1">Responsável</label><select value={filters.responsible} onChange={e=>setFilters({...filters, responsible: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{responsibles.map(r => <option key={r} value={r}>{r}</option>)}</select></div><div><label className="text-xs text-gray-500 block mb-1">Módulo/Local</label><select value={filters.moduleLocation} onChange={e=>setFilters({...filters, moduleLocation: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{LOCATION_OPTIONS.map(l => <option key={l} value={l}>{l}</option>)}</select></div><div className="flex gap-2 pt-2"><button onClick={() => setFilters({startDate:'', endDate:'', type:'', responsible:'', moduleLocation:''})} className="flex-1 py-1 text-xs font-bold text-gray-500 bg-gray-200 dark:bg-gray-700 rounded">Limpar</button><button onClick={() => setShowFilter(false)} className="flex-1 py-1 text-xs font-bold text-white bg-brand-red rounded">Fechar</button></div></div></div>)}
@@ -692,25 +787,135 @@
                 if (!dbFirestore) return;
                 const now = new Date();
                 const currentHour = now.getHours();
+                
                 let targetShiftStart = null;
                 let targetShiftEnd = null;
-                let shiftNameID = ""; 
-                if (currentHour >= 18) { const todayMorning = new Date(now); todayMorning.setHours(6, 0, 0, 0); const todayAfternoon = new Date(now); todayAfternoon.setHours(17, 59, 59, 999); targetShiftStart = todayMorning; targetShiftEnd = todayAfternoon; shiftNameID = `DIURNO_${now.toISOString().slice(0,10)}`; } 
-                else if (currentHour >= 6) { const yesterdayNight = new Date(now); yesterdayNight.setDate(yesterdayNight.getDate() - 1); yesterdayNight.setHours(18, 0, 0, 0); const todayEarlyMorning = new Date(now); todayEarlyMorning.setHours(5, 59, 59, 999); targetShiftStart = yesterdayNight; targetShiftEnd = todayEarlyMorning; shiftNameID = `NOTURNO_${yesterdayNight.toISOString().slice(0,10)}`; }
-                else { const yesterdayMorning = new Date(now); yesterdayMorning.setDate(yesterdayMorning.getDate() - 1); yesterdayMorning.setHours(6, 0, 0, 0); const yesterdayAfternoon = new Date(now); yesterdayAfternoon.setDate(yesterdayAfternoon.getDate() - 1); yesterdayAfternoon.setHours(17, 59, 59, 999); targetShiftStart = yesterdayMorning; targetShiftEnd = yesterdayAfternoon; shiftNameID = `DIURNO_${yesterdayMorning.toISOString().slice(0,10)}`; }
-                if (!targetShiftStart) return;
-                for (const loc of ROUND_LOCATIONS) {
-                    const hasInspection = currentDb.some(item => { if (item.type !== 'RONDA' || item.deleted || item.sector !== loc) return false; const itemDate = new Date(item.created_at); return itemDate >= targetShiftStart && itemDate <= targetShiftEnd; });
-                    const autoDocId = `AUTO_${shiftNameID}_${loc.replace(/\s+/g, '')}`;
-                    const alreadyAutoRegistered = currentDb.some(item => item.id === autoDocId);
-                    if (!hasInspection && !alreadyAutoRegistered) { try { await setDoc(doc(dbFirestore, "inspections", autoDocId), { type: 'RONDA', sector: loc, equipmentName: 'AUDITORIA AUTOMÁTICA', status: 'NÃO REALIZADA', auto: true, obs: 'Inspeção não realizada dentro do horário estipulado.', responsible: 'SISTEMA', created_at: targetShiftEnd.toISOString(), deleted: false }); } catch (e) { console.error("Erro ao gerar registro automático", e); } }
+                let shiftNameID = "";
+
+                // Função auxiliar para data local YYYY-MM-DD (Evita bugs de fuso horário no ID)
+                const getLocalISODate = (d) => {
+                    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                };
+
+                if (currentHour >= 18) { 
+                    // Checa Turno Diurno de HOJE (06:00 - 17:59) - Só gera após as 18:00
+                    const todayMorning = new Date(now); todayMorning.setHours(6, 0, 0, 0); 
+                    const todayAfternoon = new Date(now); todayAfternoon.setHours(17, 59, 59, 999); 
+                    
+                    targetShiftStart = todayMorning; 
+                    targetShiftEnd = todayAfternoon; 
+                    shiftNameID = `DIURNO_${getLocalISODate(now)}`; 
+                } 
+                else if (currentHour >= 6) { 
+                    // Checa Turno Noturno de ONTEM (18:00 - 05:59 HOJE) - Só gera após as 06:00
+                    const yesterdayNight = new Date(now); yesterdayNight.setDate(yesterdayNight.getDate() - 1); yesterdayNight.setHours(18, 0, 0, 0); 
+                    const todayEarlyMorning = new Date(now); todayEarlyMorning.setHours(5, 59, 59, 999); 
+                    
+                    targetShiftStart = yesterdayNight; 
+                    targetShiftEnd = todayEarlyMorning; 
+                    shiftNameID = `NOTURNO_${getLocalISODate(yesterdayNight)}`; 
                 }
+                else { 
+                    // Madrugada (< 06:00). Checa Turno Diurno de ONTEM.
+                    // O Turno Noturno atual AINDA NÃO ACABOU, então não geramos falha para ele.
+                    const yesterdayMorning = new Date(now); yesterdayMorning.setDate(yesterdayMorning.getDate() - 1); yesterdayMorning.setHours(6, 0, 0, 0); 
+                    const yesterdayAfternoon = new Date(now); yesterdayAfternoon.setDate(yesterdayAfternoon.getDate() - 1); yesterdayAfternoon.setHours(17, 59, 59, 999); 
+                    
+                    targetShiftStart = yesterdayMorning; 
+                    targetShiftEnd = yesterdayAfternoon; 
+                    shiftNameID = `DIURNO_${getLocalISODate(yesterdayMorning)}`; 
+                }
+                
+                if (!targetShiftStart) return;
+
+                // GARANTIA FINAL: Só prossegue se o agora for maior que o fim do turno alvo
+                if (now <= targetShiftEnd) return;
+
+                for (const loc of ROUND_LOCATIONS) {
+                    // Verifica se existe inspeção FEITA (não deletada) neste intervalo e local
+                    const hasInspection = currentDb.some(item => { 
+                        if (item.type !== 'RONDA' || item.deleted || item.sector !== loc) return false; 
+                        const itemDate = new Date(item.created_at); 
+                        return itemDate >= targetShiftStart && itemDate <= targetShiftEnd; 
+                    });
+                    
+                    // AQUI ESTÁ A CORREÇÃO DE "PERFEIÇÃO":
+                    // Remove caracteres especiais (incluindo a barra /) para o ID do documento ser válido
+                    const safeLocId = loc.replace(/[^a-zA-Z0-9]/g, '');
+                    const autoDocId = `AUTO_${shiftNameID}_${safeLocId}`;
+                    const alreadyAutoRegistered = currentDb.some(item => item.id === autoDocId);
+                    
+                    // Se não foi feita e ainda não tem registro automático, cria
+                    if (!hasInspection && !alreadyAutoRegistered) { 
+                        try { 
+                            await setDoc(doc(dbFirestore, "inspections", autoDocId), { 
+                                type: 'RONDA', 
+                                sector: loc, // O nome no histórico continua bonito: "CASA DE BOMBAS / G-100"
+                                equipmentName: 'AUDITORIA AUTOMÁTICA', 
+                                status: 'NÃO REALIZADA', 
+                                auto: true, 
+                                obs: 'Inspeção não realizada dentro do horário estipulado.', 
+                                responsible: 'SISTEMA', 
+                                created_at: targetShiftEnd.toISOString(), 
+                                deleted: false 
+                            }); 
+                        } catch (e) { 
+                            console.error("Erro ao gerar registro automático", e); 
+                        } 
+                    }
+                }
+            };
+
+            // NOVA FUNÇÃO: Limpeza automática da lixeira após 72h
+            const checkAndCleanupTrash = async (currentDb) => {
+                if (!dbFirestore) return;
+                const now = new Date();
+                const DELETE_THRESHOLD_MS = 72 * 60 * 60 * 1000; // 72 horas em milissegundos
+
+                currentDb.forEach(async (item) => {
+                    // Só processa se estiver marcado como deletado E tiver data de exclusão registrada
+                    if (item.deleted && item.deleted_at) {
+                        const deletedDate = new Date(item.deleted_at);
+                        // Se a diferença de tempo for maior que 72h
+                        if ((now - deletedDate) > DELETE_THRESHOLD_MS) {
+                            try {
+                                await deleteDoc(doc(dbFirestore, "inspections", item.id));
+                                console.log(`[AUTO-CLEANUP] Item ${item.id} removido definitivamente (Expirou 72h).`);
+                            } catch (e) {
+                                console.error("Erro na limpeza automática da lixeira:", e);
+                            }
+                        }
+                    }
+                });
             };
 
             useEffect(() => {
                 if(!dbFirestore) return;
-                const q = query(collection(dbFirestore, "inspections"), orderBy("created_at", "desc"));
-                const unsubscribeInspections = onSnapshot(q, (querySnapshot) => { const inspections = []; querySnapshot.forEach((doc) => { inspections.push({ id: doc.id, ...doc.data() }); }); setDb(inspections); checkAndGenerateMissedRounds(inspections); }, (error) => { console.error("Erro ao buscar dados:", error); });
+                // ALTERAÇÃO: Reduzido de 1000 para 150 para evitar "Quota Exceeded"
+                const q = query(collection(dbFirestore, "inspections"), orderBy("created_at", "desc"), limit(150));
+                
+                const unsubscribeInspections = onSnapshot(q, (querySnapshot) => { 
+                    const inspections = []; 
+                    querySnapshot.forEach((doc) => { inspections.push({ id: doc.id, ...doc.data() }); }); 
+                    setDb(inspections); 
+                    
+                    // OTIMIZAÇÃO CRÍTICA: Só o ADMIN executa a auditoria automática de rondas perdidas
+                    // (Isso evita conflitos de múltiplos usuários criando o mesmo registro automático ao mesmo tempo)
+                    if (localStorage.getItem('trfire_user') === 'ADMIN') {
+                        checkAndGenerateMissedRounds(inspections);
+                    }
+
+                    // Limpeza Automática da Lixeira (Regra 72h): 
+                    // Executa para TODOS os usuários (existentes e novos) de forma anônima e oculta em background.
+                    checkAndCleanupTrash(inspections);
+                    
+                }, (error) => { 
+                    console.error("Erro ao buscar dados:", error);
+                    // Adicionei log específico se for erro de quota
+                    if (error.code === 'resource-exhausted') {
+                        console.warn("Quota do Firestore excedida. Aguarde ou faça upgrade.");
+                    }
+                });
                 
                 // Monitorar Usuários (Migração de Dados: Unidade Padrão e Criação do ADMIN)
                 const usersCollection = collection(dbFirestore, "users");
@@ -749,9 +954,11 @@
                     const unitsList = []; 
                     snapshot.forEach(doc => {
                         const d = doc.data();
-                        // LIMPEZA AUTOMÁTICA: Remove "NOVA UNIDADE" do banco se existir
+                        // LIMPEZA AUTOMÁTICA: Remove "NOVA UNIDADE" do banco se existir (APENAS SE FOR ADMIN)
                         if (d.name === "NOVA UNIDADE") {
-                            deleteDoc(doc.ref).catch(e => console.error("Erro ao excluir auto:", e));
+                            if (localStorage.getItem('trfire_user') === 'ADMIN') {
+                                deleteDoc(doc.ref).catch(e => console.error("Erro ao excluir auto:", e));
+                            }
                         } else {
                             unitsList.push({ id: doc.id, ...d });
                         }
@@ -771,7 +978,26 @@
             const handleUpdateUnit = async (id, data) => { if(!dbFirestore) return; try { await updateDoc(doc(dbFirestore, "units", id), data); showAlert("Unidade atualizada!", "success"); } catch(e) { showAlert("Erro ao atualizar unidade.", "error"); } };
             const handleDeleteUnit = async (id) => { if(!dbFirestore) return; try { await deleteDoc(doc(dbFirestore, "units", id)); showAlert("Unidade excluída!", "success"); } catch(e) { showAlert("Erro ao excluir unidade.", "error"); } };
             const handleImportData = async (jsonData) => { if(!dbFirestore) return showAlert("Erro BD.", "error"); if(!Array.isArray(jsonData)) return showAlert("JSON Inválido.", "error"); showConfirm(`Importar ${jsonData.length} registros?`, async () => { let c=0; for (const i of jsonData) { try { if (i.id) await setDoc(doc(dbFirestore, "inspections", i.id), i); else await addDoc(collection(dbFirestore, "inspections"), i); c++; } catch(e){} } showAlert(`Sucesso: ${c}`, "success"); }, "warning"); };
-            const handleToggleDelete = async (id, status) => { if(!dbFirestore) return; try { const docRef = doc(dbFirestore, "inspections", id); await updateDoc(docRef, { deleted: status }); } catch (e) { showAlert("Erro ao atualizar.", "error"); } };
+            
+            // ATUALIZAÇÃO DO HANDLETOGGLEDELETE PARA INCLUIR TIMESTAMP
+            const handleToggleDelete = async (id, status) => { 
+                if(!dbFirestore) return; 
+                try { 
+                    const docRef = doc(dbFirestore, "inspections", id); 
+                    const updateData = { deleted: status };
+                    // Se for enviado para a lixeira (status = true), grava a data de agora
+                    if (status) {
+                        updateData.deleted_at = new Date().toISOString();
+                    } else {
+                        // Se for restaurado, limpa a data
+                        updateData.deleted_at = null;
+                    }
+                    await updateDoc(docRef, updateData); 
+                } catch (e) { 
+                    showAlert("Erro ao atualizar.", "error"); 
+                } 
+            };
+            
             const handleDeletePermanently = async (id) => { if(!dbFirestore) return; try { await deleteDoc(doc(dbFirestore, "inspections", id)); } catch (e) { showAlert("Erro ao excluir.", "error"); } };
             const handleLogin = (name, unitName) => { localStorage.setItem('trfire_user', name); localStorage.setItem('trfire_unit', unitName); setResponsible(name); setCurrentUnit(unitName); setPage('menu'); };
 

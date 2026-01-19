@@ -3,14 +3,14 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V4 (19/01/2026) - APP DEFINITION FIX
+    VERSÃO ESTÁVEL V6 (19/01/2026) - FIX SYNTAX ERROR
     ============================================================================
     CONFIGURAÇÃO:
     - Projeto Firebase: database-aero-i
     - Autenticação: 100% via banco de dados (Firestore)
     - Otimização: Limite de 150 registros + Tratamento de Erros
     - Segurança: Auditorias e Limpezas apenas via ADMIN
-    - Correção: Definição explicita da função App para evitar ReferenceError
+    - Correção: Removidas linhas de configuração inválidas dentro do componente App
     ============================================================================
     -->
 
@@ -766,7 +766,8 @@
         // =========================================================================
         // APP COMPONENT (Main)
         // =========================================================================
-        const App = () => {
+        // Use "function App()" to ensure it is hoisted and defined before root.render calls it
+        function App() {
             const [page, setPage] = useState(localStorage.getItem('trfire_user') ? 'menu' : 'responsible');
             const [responsible, setResponsible] = useState(localStorage.getItem('trfire_user') || '');
             const [currentUnit, setCurrentUnit] = useState(localStorage.getItem('trfire_unit') || '');

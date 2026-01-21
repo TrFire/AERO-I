@@ -3,11 +3,12 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V6.1 (19/01/2026) - FIX CRASH BACKUP
+    VERSÃO ESTÁVEL V6.11 (21/01/2026) - SYNTAX FIX
     ============================================================================
-    CORREÇÃO CRÍTICA:
-    - Corrigido erro "ADMIN_USERS is not defined" que causava tela branca ao
-      abrir o modal de Backup.
+    CORREÇÕES:
+    - Resolvido SyntaxError no final do script (Unexpected token).
+    - Verificação rigorosa de fecho de chaves e parênteses em todos os componentes.
+    - Estrutura de inicialização do React simplificada para evitar erros de parser.
     ============================================================================
     -->
 
@@ -73,6 +74,15 @@
         .animate-scale-in { animation: scaleIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes scaleIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+        
+        /* Toggle Switch Styles */
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #F57C00;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #F57C00;
+        }
     </style>
     
     <script>
@@ -301,16 +311,28 @@
             const [newUnit, setNewUnit] = useState({ name: '', address: '' });
             const [saving, setSaving] = useState(false);
             const [showList, setShowList] = useState(false);
+            const [editingId, setEditingId] = useState(null);
 
             const handleSave = async () => {
                 if (!newUnit.name || !newUnit.address) return showAlert("Preencha nome e endereço.", "warning");
                 setSaving(true);
-                await onSaveUnit({
-                    name: newUnit.name.toUpperCase(),
-                    address: newUnit.address.toUpperCase()
-                });
+                
+                if (editingId) {
+                    await onUpdateUnit(editingId, {
+                        name: newUnit.name.toUpperCase(),
+                        address: newUnit.address.toUpperCase()
+                    });
+                    setEditingId(null);
+                    showAlert("Unidade atualizada com sucesso!", "success");
+                } else {
+                    await onSaveUnit({
+                        name: newUnit.name.toUpperCase(),
+                        address: newUnit.address.toUpperCase()
+                    });
+                    showAlert("Unidade cadastrada com sucesso!", "success");
+                }
+                
                 setSaving(false);
-                showAlert("Unidade cadastrada com sucesso!", "success");
                 setNewUnit({ name: '', address: '' });
             };
 
@@ -318,36 +340,43 @@
                 showConfirm("Tem certeza que deseja excluir esta unidade?", () => onDeleteUnit(id), "error");
             };
 
-            const handleEditAttempt = (u) => {
-                const newName = prompt("Editar Nome da Unidade:", u.name);
-                if (newName === null) return; 
+            const handleEditClick = (u) => {
+                setEditingId(u.id);
+                setNewUnit({ name: u.name, address: u.address });
+                setShowList(false);
+                const container = document.querySelector('.overflow-y-auto');
+                if(container) container.scrollTo({ top: 0, behavior: 'smooth' });
+            };
 
-                const newAddr = prompt("Editar Endereço da Unidade:", u.address);
-                if (newAddr === null) return;
-
-                if (newName && newAddr && (newName !== u.name || newAddr !== u.address)) {
-                    onUpdateUnit(u.id, { name: newName.toUpperCase(), address: newAddr.toUpperCase() });
-                }
+            const handleCancelEdit = () => {
+                setEditingId(null);
+                setNewUnit({ name: '', address: '' });
             };
 
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-6 animate-fade-in relative overflow-y-auto">
-                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate('menu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
-                    <div className="mt-16 text-center mb-8"><div className="inline-flex items-center justify-center w-16 h-16 bg-brand-orange rounded-full mb-4"><i className="fas fa-building text-2xl text-white"></i></div><h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">NOVA UNIDADE</h2><p className="text-gray-500 dark:text-gray-400 text-sm">Cadastrar local de trabalho</p></div>
+                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate('adminMenu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
+                    <div className="mt-16 text-center mb-8"><div className="inline-flex items-center justify-center w-16 h-16 bg-brand-orange rounded-full mb-4"><i className="fas fa-building text-2xl text-white"></i></div><h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">{editingId ? 'EDITAR UNIDADE' : 'NOVA UNIDADE'}</h2><p className="text-gray-500 dark:text-gray-400 text-sm">Gerenciar locais de trabalho</p></div>
                     <div className="space-y-4">
                         <div><label className="text-sm font-bold text-gray-700 dark:text-gray-300 block mb-2">Nome da Unidade</label><input value={newUnit.name} onChange={e => setNewUnit({...newUnit, name: e.target.value})} placeholder="EX: PARQUE LOGISTICO AERO I" className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 uppercase" /></div>
                         <div><label className="text-sm font-bold text-gray-700 dark:text-gray-300 block mb-2">Endereço</label><input value={newUnit.address} onChange={e => setNewUnit({...newUnit, address: e.target.value})} placeholder="Rua, Número, Bairro" type="text" className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 uppercase" /></div>
-                        <button onClick={handleSave} disabled={saving} className="w-full py-4 bg-brand-orange text-white rounded-xl text-lg font-bold shadow-lg mt-6 active:scale-95 transition-transform">{saving ? 'SALVANDO...' : 'CADASTRAR'}</button>
+                        
+                        <div className="flex gap-3">
+                            {editingId && (
+                                <button onClick={handleCancelEdit} className="flex-1 py-4 bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-white rounded-xl text-lg font-bold shadow-lg active:scale-95 transition-transform">CANCELAR</button>
+                            )}
+                            <button onClick={handleSave} disabled={saving} className="flex-[2] py-4 bg-brand-orange text-white rounded-xl text-lg font-bold shadow-lg active:scale-95 transition-transform">{saving ? 'SALVANDO...' : (editingId ? 'ATUALIZAR' : 'CADASTRAR')}</button>
+                        </div>
                     </div>
                     <div className="mt-8 border-t border-gray-200 dark:border-gray-700 pt-6">
                         <button onClick={() => setShowList(!showList)} className="w-full flex justify-between items-center text-gray-600 dark:text-gray-300 font-bold bg-gray-100 dark:bg-gray-800 p-4 rounded-xl"><span><i className="fas fa-building mr-2"></i> Unidades Cadastradas ({unitsList.length})</span><i className={`fas fa-chevron-${showList ? 'up' : 'down'}`}></i></button>
                         {showList && (
                             <div className="mt-4 space-y-3">
                                 {unitsList.map(u => (
-                                    <div key={u.id} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-4 rounded-xl flex items-center justify-between shadow-sm">
+                                    <div key={u.id} className={`bg-white dark:bg-gray-900 border ${editingId === u.id ? 'border-brand-orange bg-orange-50 dark:bg-orange-900/10' : 'border-gray-200 dark:border-gray-700'} p-4 rounded-xl flex items-center justify-between shadow-sm transition-colors`}>
                                         <div className="flex flex-col"><span className="font-bold text-gray-800 dark:text-white text-sm">{u.name}</span><span className="text-xs text-gray-400">{u.address}</span></div>
                                         <div className="flex gap-2">
-                                            <button onClick={() => handleEditAttempt(u)} className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center hover:bg-blue-200"><i className="fas fa-pen text-xs"></i></button>
+                                            <button onClick={() => handleEditClick(u)} className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center hover:bg-blue-200"><i className="fas fa-pen text-xs"></i></button>
                                             <button onClick={() => handleDeleteAttempt(u.id)} className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center hover:bg-red-200"><i className="fas fa-trash text-xs"></i></button>
                                         </div>
                                     </div>
@@ -383,8 +412,8 @@
 
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-6 animate-fade-in relative overflow-y-auto">
-                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate('menu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
-                    <div className="mt-16 text-center mb-8"><div className="inline-flex items-center justify-center w-16 h-16 bg-brand-orange rounded-full mb-4"><i className="fas fa-user-plus text-2xl text-white"></i></div><h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">NOVO USUÁRIO</h2><p className="text-gray-500 dark:text-gray-400 text-sm">Cadastrar inspetor</p></div>
+                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate('adminMenu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
+                    <div className="mt-16 text-center mb-8"><div className="inline-flex items-center justify-center w-16 h-16 bg-brand-orange rounded-full mb-4"><i className="fas fa-user-plus text-2xl text-white"></i></div><h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">NOVO USUÁRIO</h2><p className="text-gray-500 dark:text-gray-400 text-sm">Cadastrar Bombeiro Civil</p></div>
                     
                     <div className="space-y-4">
                         {/* Seleção de Unidade no Cadastro */}
@@ -430,10 +459,141 @@
             );
         };
 
-        const MenuScreen = ({ onNavigate, responsibleName, currentUnit, onStartInspection }) => {
+        const AccessControlScreen = ({ onNavigate, usersList, onUpdatePermissions }) => {
+            const [selectedUser, setSelectedUser] = useState(null);
+
+            const PERMISSIONS = [
+                { id: 'EXTINTOR', label: 'Extintores' },
+                { id: 'HIDRANTE', label: 'Hidrantes' },
+                { id: 'HISTORICO', label: 'Histórico' },
+                { id: 'RONDA', label: 'Ronda Diária' }
+            ];
+
+            const togglePermission = (permId) => {
+                if (!selectedUser) return;
+                const currentPerms = selectedUser.permissions || [];
+                let newPerms;
+                if (currentPerms.includes(permId)) {
+                    newPerms = currentPerms.filter(p => p !== permId);
+                } else {
+                    newPerms = [...currentPerms, permId];
+                }
+                
+                const updatedUser = { ...selectedUser, permissions: newPerms };
+                setSelectedUser(updatedUser);
+                onUpdatePermissions(selectedUser.id, newPerms);
+            };
+
+            return (
+                <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-6 animate-fade-in relative overflow-y-auto">
+                    <div className="absolute top-4 left-4">
+                        <button onClick={() => selectedUser ? setSelectedUser(null) : onNavigate('adminMenu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm">
+                            <i className="fas fa-arrow-left"></i>
+                        </button>
+                    </div>
+                    
+                    <div className="mt-16 text-center mb-8">
+                        <div className="inline-flex items-center justify-center w-16 h-16 bg-purple-600 rounded-full mb-4">
+                            <i className="fas fa-user-lock text-2xl text-white"></i>
+                        </div>
+                        <h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">{selectedUser ? 'Permissões' : 'Controle de Acessos'}</h2>
+                        <p className="text-gray-500 dark:text-gray-400 text-sm">{selectedUser ? `Definindo acessos para ${selectedUser.name}` : 'Selecione um Bombeiro Civil'}</p>
+                    </div>
+
+                    {!selectedUser ? (
+                        <div className="space-y-3">
+                            {usersList.filter(u => u.name !== 'ADMIN').map(u => (
+                                <div key={u.id} onClick={() => setSelectedUser(u)} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-4 rounded-xl flex items-center justify-between shadow-sm active:scale-95 transition-transform cursor-pointer">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-500">
+                                            <i className="fas fa-user"></i>
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="font-bold text-gray-800 dark:text-white text-sm">{u.name}</span>
+                                            <span className="text-[10px] text-gray-400">{(u.permissions || []).length} permissões ativas</span>
+                                        </div>
+                                    </div>
+                                    <i className="fas fa-chevron-right text-gray-300"></i>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="space-y-4 animate-fade-in">
+                            {PERMISSIONS.map(perm => {
+                                const isEnabled = (selectedUser.permissions || ['EXTINTOR', 'HIDRANTE', 'HISTORICO']).includes(perm.id); // Default logic fallback
+                                return (
+                                    <div key={perm.id} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-4 rounded-xl flex items-center justify-between shadow-sm">
+                                        <span className="font-bold text-gray-700 dark:text-white">{perm.label}</span>
+                                        <div className="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in">
+                                            <input 
+                                                type="checkbox" 
+                                                name={`toggle-${perm.id}`} 
+                                                id={`toggle-${perm.id}`} 
+                                                checked={isEnabled}
+                                                onChange={() => togglePermission(perm.id)}
+                                                className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"
+                                            />
+                                            <label 
+                                                htmlFor={`toggle-${perm.id}`} 
+                                                className={`toggle-label block overflow-hidden h-6 rounded-full cursor-pointer ${isEnabled ? 'bg-brand-orange' : 'bg-gray-300'}`}
+                                            ></label>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            <div className="mt-6 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-900 text-center">
+                                <p className="text-xs text-blue-600 dark:text-blue-300">As alterações são salvas automaticamente.</p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const AdminMenuScreen = ({ onNavigate }) => {
+            return (
+                <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-6 animate-fade-in relative">
+                    <div className="absolute top-4 left-4">
+                        <button onClick={() => onNavigate('menu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm">
+                            <i className="fas fa-arrow-left"></i>
+                        </button>
+                    </div>
+                    <div className="mt-16 text-center mb-8">
+                        <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-700 rounded-full mb-4">
+                            <i className="fas fa-cogs text-2xl text-white"></i>
+                        </div>
+                        <h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">PARÂMETROS ADMIN</h2>
+                        <p className="text-gray-500 dark:text-gray-400 text-sm">Gerenciamento do Sistema</p>
+                    </div>
+                    <div className="w-full space-y-4">
+                        <button onClick={() => onNavigate('accessControl')} className="w-full py-4 bg-purple-600 active:bg-purple-800 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95 relative overflow-hidden">
+                            <div className="absolute top-0 right-0 bg-white/20 px-2 py-0.5 text-[10px] rounded-bl">Admin</div>
+                            <i className="fas fa-user-lock text-xl"></i> ACESSOS
+                        </button>
+                        <button onClick={() => onNavigate('unitRegister')} className="w-full py-4 bg-gray-600 active:bg-gray-800 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95 relative overflow-hidden">
+                            <div className="absolute top-0 right-0 bg-white/20 px-2 py-0.5 text-[10px] rounded-bl">Admin</div>
+                            <i className="fas fa-building text-xl"></i> CADASTRAR UNIDADE
+                        </button>
+                        <button onClick={() => onNavigate('userRegister')} className="w-full py-4 bg-gray-700 active:bg-gray-900 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95 relative overflow-hidden">
+                            <div className="absolute top-0 right-0 bg-white/20 px-2 py-0.5 text-[10px] rounded-bl">Admin</div>
+                            <i className="fas fa-user-plus text-xl"></i> CADASTRAR USUÁRIO
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const MenuScreen = ({ onNavigate, responsibleName, currentUnit, onStartInspection, usersList }) => {
             const [time, setTime] = useState(new Date());
             
             const isAdmin = responsibleName === "ADMIN" || currentUnit === "GLOBAL";
+            
+            // Lógica de Permissões
+            const currentUserObj = usersList.find(u => u.name === responsibleName);
+            // Default: Se não tiver campo permissions (usuário antigo), tem acesso básico. Se for array vazio, sem acesso.
+            const userPerms = currentUserObj?.permissions || ['EXTINTOR', 'HIDRANTE', 'HISTORICO']; 
+            
+            const hasAccess = (perm) => isAdmin || userPerms.includes(perm);
 
             useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
             const handleLogout = () => { localStorage.removeItem('trfire_user'); window.location.reload(); };
@@ -452,17 +612,34 @@
                         <div className="text-center"><h1 className="text-2xl font-extrabold tracking-tight">TR FIRE <span className="text-brand-orange">INSPEÇÕES</span></h1><p className="text-gray-500 mt-1 font-mono text-xs">{time.toLocaleDateString('pt-BR', {weekday: 'long', day:'numeric', month:'long'})}<br/>{time.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}</p></div>
                         <div className="text-center w-full -mb-2"><h2 className="text-base font-black text-gray-800 dark:text-white uppercase tracking-wider mb-1">MENU PRINCIPAL</h2><p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Selecione uma categoria</p></div>
                         <div className="w-full space-y-3 pb-4">
-                            {isAdmin && (
-                                <button onClick={() => onNavigate('roundsLocation')} className="w-full py-4 bg-brand-blue active:bg-blue-800 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95 relative overflow-hidden"><div className="absolute top-0 right-0 bg-white/20 px-2 py-0.5 text-[10px] rounded-bl">Admin</div><i className="fas fa-clipboard-check text-2xl"></i> RONDA DIÁRIA</button>
+                            {/* Verifica Permissão RONDA */}
+                            {hasAccess('RONDA') && (
+                                <button onClick={() => onNavigate('roundsLocation')} className="w-full py-4 bg-brand-blue active:bg-blue-800 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95 relative overflow-hidden">
+                                    {isAdmin && <div className="absolute top-0 right-0 bg-white/20 px-2 py-0.5 text-[10px] rounded-bl">Admin</div>}
+                                    <i className="fas fa-clipboard-check text-2xl"></i> RONDA DIÁRIA
+                                </button>
                             )}
-                            <button onClick={() => onStartInspection('EXTINTOR')} className="w-full py-4 bg-brand-red active:bg-red-800 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95"><i className="fas fa-fire-extinguisher text-2xl"></i> EXTINTORES</button>
-                            <button onClick={() => onStartInspection('HIDRANTE')} className="w-full py-4 bg-brand-orange active:bg-orange-800 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95"><i className="fas fa-faucet text-2xl"></i> HIDRANTES</button>
-                            <button onClick={() => onNavigate('list')} className="w-full py-4 bg-gray-800 active:bg-gray-900 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95"><i className="fas fa-database text-xl"></i> HISTÓRICO</button>
+                            
+                            {/* Verifica Permissão EXTINTOR */}
+                            {hasAccess('EXTINTOR') && (
+                                <button onClick={() => onStartInspection('EXTINTOR')} className="w-full py-4 bg-brand-red active:bg-red-800 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95"><i className="fas fa-fire-extinguisher text-2xl"></i> EXTINTORES</button>
+                            )}
+                            
+                            {/* Verifica Permissão HIDRANTE */}
+                            {hasAccess('HIDRANTE') && (
+                                <button onClick={() => onStartInspection('HIDRANTE')} className="w-full py-4 bg-brand-orange active:bg-orange-800 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95"><i className="fas fa-faucet text-2xl"></i> HIDRANTES</button>
+                            )}
+                            
+                            {/* Verifica Permissão HISTORICO */}
+                            {hasAccess('HISTORICO') && (
+                                <button onClick={() => onNavigate('list')} className="w-full py-4 bg-gray-800 active:bg-gray-900 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95"><i className="fas fa-database text-xl"></i> HISTÓRICO</button>
+                            )}
+                            
                             {isAdmin && (
-                                <>
-                                    <button onClick={() => onNavigate('unitRegister')} className="w-full py-4 bg-gray-600 active:bg-gray-800 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95 relative overflow-hidden"><div className="absolute top-0 right-0 bg-white/20 px-2 py-0.5 text-[10px] rounded-bl">Admin</div><i className="fas fa-building text-xl"></i> CADASTRAR UNIDADE</button>
-                                    <button onClick={() => onNavigate('userRegister')} className="w-full py-4 bg-gray-700 active:bg-gray-900 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95 relative overflow-hidden"><div className="absolute top-0 right-0 bg-white/20 px-2 py-0.5 text-[10px] rounded-bl">Admin</div><i className="fas fa-user-plus text-xl"></i> CADASTRAR USUÁRIO</button>
-                                </>
+                                <button onClick={() => onNavigate('adminMenu')} className="w-full py-4 bg-gray-800 active:bg-gray-900 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95 relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 bg-white/20 px-2 py-0.5 text-[10px] rounded-bl">Admin</div>
+                                    <i className="fas fa-cogs text-xl"></i> PARÂMETROS ADMIN
+                                </button>
                             )}
                         </div>
                     </div>
@@ -470,33 +647,45 @@
             );
         };
 
-        const RoundsLocationScreen = ({ onNavigate, onSelectLocation, db }) => {
+        const RoundsLocationScreen = ({ onNavigate, onSelectLocation, db, responsibleName }) => {
             const [shiftInfo, setShiftInfo] = useState({ name: '', start: null, end: null });
+            // Forçar re-render a cada minuto para atualizar o timer, embora o cálculo seja feito no render
+            const [tick, setTick] = useState(0); 
 
             useEffect(() => {
-                const now = new Date();
-                const hour = now.getHours();
-                let start = new Date(now);
-                let end = new Date(now);
-                let name = "";
+                const updateShift = () => {
+                    const now = new Date();
+                    const hour = now.getHours();
+                    let start = new Date(now);
+                    let end = new Date(now);
+                    let name = "";
 
-                if (hour >= 6 && hour < 18) {
-                    name = "Turno Diurno (06:00 - 17:59)";
-                    start.setHours(6, 0, 0, 0);
-                    end.setHours(17, 59, 59, 999);
-                } else {
-                    name = "Turno Noturno (18:00 - 05:59)";
-                    if (hour >= 18) {
-                        start.setHours(18, 0, 0, 0);
-                        end.setDate(end.getDate() + 1);
-                        end.setHours(5, 59, 59, 999);
+                    if (hour >= 6 && hour < 18) {
+                        name = "Turno Diurno (06:00 - 17:59)";
+                        start.setHours(6, 0, 0, 0);
+                        end.setHours(17, 59, 59, 999);
                     } else {
-                        start.setDate(start.getDate() - 1);
-                        start.setHours(18, 0, 0, 0);
-                        end.setHours(5, 59, 59, 999);
+                        name = "Turno Noturno (18:00 - 05:59)";
+                        if (hour >= 18) {
+                            start.setHours(18, 0, 0, 0);
+                            end.setDate(end.getDate() + 1);
+                            end.setHours(5, 59, 59, 999);
+                        } else {
+                            start.setDate(start.getDate() - 1);
+                            start.setHours(18, 0, 0, 0);
+                            end.setHours(5, 59, 59, 999);
+                        }
                     }
-                }
-                setShiftInfo({ name, start, end });
+                    setShiftInfo({ name, start, end });
+                };
+                
+                updateShift();
+                const interval = setInterval(() => {
+                    setTick(t => t + 1); // Força atualização do timer
+                    updateShift();
+                }, 60000); // Atualiza a cada minuto
+                
+                return () => clearInterval(interval);
             }, []);
 
             const isLocationDone = (location) => {
@@ -508,6 +697,27 @@
                 });
             };
 
+            const getTimeBadge = () => {
+                if (!shiftInfo.end) return null;
+                const now = new Date();
+                const diffMs = shiftInfo.end - now;
+                
+                if (diffMs <= 0) return null; // Turno acabou
+
+                const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
+                const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+                
+                let text = "";
+                if (diffHrs > 0) text = `+${diffHrs}H`;
+                else text = `+${diffMins}m`;
+
+                return (
+                    <div className="absolute right-12 top-1/2 -translate-y-1/2 bg-brand-orange text-white rounded-lg px-2 py-1.5 font-black text-xs shadow-md border border-white/20 animate-pulse">
+                        {text}
+                    </div>
+                );
+            };
+
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-6 animate-fade-in relative">
                     <div className="absolute top-4 left-4"><button onClick={() => onNavigate('menu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
@@ -515,6 +725,11 @@
                         <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 dark:bg-blue-900 rounded-full mb-4"><i className="fas fa-map-marker-alt text-2xl text-blue-600 dark:text-blue-400"></i></div>
                         <h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">LOCAIS DE RONDA</h2>
                         <div className="mt-2 inline-block bg-blue-50 dark:bg-blue-900/30 px-3 py-1 rounded-full border border-blue-100 dark:border-blue-800"><p className="text-blue-600 dark:text-blue-300 text-xs font-bold uppercase"><i className="far fa-clock mr-1"></i> {shiftInfo.name}</p></div>
+                        {/* Exibição do Nome do Bombeiro Civil */}
+                        <div className="mt-3 flex flex-col items-center animate-fade-in">
+                            <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider mb-1">Bombeiro Civil</span>
+                            <span className="text-sm font-black text-gray-800 dark:text-white bg-gray-100 dark:bg-gray-800 px-3 py-1 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">{responsibleName}</span>
+                        </div>
                     </div>
                     <div className="flex-1 overflow-y-auto space-y-3 pb-6">
                         {ROUND_LOCATIONS.map(loc => {
@@ -522,6 +737,7 @@
                             return (
                                 <button key={loc} onClick={() => onSelectLocation(loc)} className={`w-full py-5 bg-white dark:bg-gray-800 border-2 ${done ? 'border-green-500' : 'border-gray-100 dark:border-gray-700 hover:border-blue-500'} text-gray-700 dark:text-white rounded-2xl text-lg font-bold shadow-sm flex items-center justify-between px-6 transition-all active:scale-95 group relative overflow-hidden`}>
                                     <div className="flex flex-col items-start"><span>{loc}</span><span className={`text-[10px] font-bold uppercase mt-1 ${done ? 'text-green-500' : 'text-orange-500'}`}>{done ? <><i className="fas fa-check-circle"></i> Realizado</> : <><i className="fas fa-exclamation-circle"></i> Pendente</>}</span></div>
+                                    {!done && getTimeBadge()}
                                     <i className={`fas ${done ? 'fa-check text-green-500' : 'fa-chevron-right text-gray-300 group-hover:text-blue-500'}`}></i>
                                 </button>
                             );
@@ -564,7 +780,7 @@
             );
         };
 
-        const RoundsFormScreen = ({ initialData, onNavigate, onSave, responsibleName, roundLocation, showAlert }) => {
+        const RoundsFormScreen = ({ initialData, onNavigate, onSave, responsibleName, roundLocation, currentUnit, showAlert }) => {
             const [isSaving, setIsSaving] = useState(false);
             const [form, setForm] = useState({ type: 'RONDA', sector: roundLocation, equipmentName: initialData?.equipmentName || '', moduleLocation: '', status: '', photo: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false });
             const fileInputRef = useRef(null);
@@ -575,7 +791,18 @@
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black">
                     <div className="bg-white dark:bg-gray-900 p-4 shadow-sm flex items-center justify-between sticky top-0 z-20"><div className="flex flex-col"><div className="flex items-center"><button onClick={() => onNavigate('roundsLocation')} className="w-8 h-8 flex items-center justify-center text-gray-600 dark:text-white mr-2"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold text-gray-800 dark:text-white">Ronda Preventiva</h2></div><span className="text-xs text-gray-500 ml-10">Local: <b>{roundLocation}</b></span></div><button onClick={save} disabled={isSaving} className="bg-brand-blue text-white px-4 py-2 rounded-lg font-bold shadow-sm active:scale-95 transition-transform text-sm flex items-center">{isSaving ? <i className="fas fa-spinner fa-spin mr-2"></i> : <i className="fas fa-save mr-2"></i>} {isSaving ? 'SALVANDO' : 'SALVAR'}</button></div>
                     <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                        <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-900"><label className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase">Área Técnica (QR Code)</label><input value={form.equipmentName} onChange={e=>setForm({...form, equipmentName:e.target.value})} placeholder="Escaneie ou digite..." className="w-full bg-transparent font-bold text-lg border-b border-blue-300 focus:outline-none py-1 dark:text-white"/></div>
+                        <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-900">
+                            {/* Novo Campo: Unidade Conectada */}
+                            <div className="mb-3 border-b border-blue-200 dark:border-blue-800 pb-2">
+                                <label className="text-[10px] font-bold text-blue-500 dark:text-blue-300 uppercase tracking-wider block mb-1">Unidade Conectada</label>
+                                <div className="flex items-center gap-2 text-blue-800 dark:text-blue-100 font-bold">
+                                    <i className="fas fa-building text-sm"></i>
+                                    <span>{currentUnit || 'Global'}</span>
+                                </div>
+                            </div>
+                            <label className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase">Área Técnica (QR Code)</label>
+                            <input value={form.equipmentName} onChange={e=>setForm({...form, equipmentName:e.target.value})} placeholder="Escaneie ou digite..." className="w-full bg-transparent font-bold text-lg border-b border-blue-300 focus:outline-none py-1 dark:text-white"/>
+                        </div>
                         <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm space-y-4">
                             <div><label className="text-xs text-gray-500 font-bold block mb-1">Galpão/Local *</label><div className="relative"><select value={form.moduleLocation} onChange={e=>setForm({...form, moduleLocation:e.target.value})} className="w-full p-3 bg-gray-100 dark:bg-gray-700 rounded-lg font-bold dark:text-white appearance-none"><option value="">Selecione...</option>{ROUND_AREAS.map(opt => <option key={opt} value={opt}>{opt}</option>)}</select><div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-500"><i className="fas fa-chevron-down"></i></div></div></div>
                             <div><label className="text-xs text-gray-500 font-bold block mb-1">Status *</label><div className="relative"><select value={form.status} onChange={e=>setForm({...form, status:e.target.value})} className={`w-full p-3 rounded-lg font-bold appearance-none ${form.status === 'Conforme' ? 'bg-green-100 text-green-700' : form.status === 'Não Conforme' ? 'bg-red-100 text-red-700' : 'bg-gray-100 dark:bg-gray-700 dark:text-white'}`}><option value="">Selecione...</option><option value="Conforme">Conforme</option><option value="Não Conforme">Não Conforme</option></select><div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-500"><i className="fas fa-chevron-down"></i></div></div></div>
@@ -614,14 +841,12 @@
             const [showBin, setShowBin] = useState(false);
             const [filters, setFilters] = useState({ startDate: '', endDate: '', type: '', responsible: '', moduleLocation: '' });
             const [expandedSections, setExpandedSections] = useState({}); 
-            const [selectedIds, setSelectedIds] = useState(new Set()); // Estado para seleção múltipla
+            const [selectedIds, setSelectedIds] = useState(new Set()); 
             const fileInputRef = useRef(null);
             const [viewMonth, setViewMonth] = useState(new Date().toISOString().slice(0, 7));
             
-            // Verificação Admin (Igual ao Menu)
             const isAdmin = currentUser === "ADMIN";
 
-            // Limpa seleção ao sair da lixeira
             useEffect(() => { setSelectedIds(new Set()); }, [showBin]);
 
             const toggleSection = (section) => { setExpandedSections(prev => ({ ...prev, [section]: !prev[section] })); };
@@ -633,7 +858,6 @@
             const groupedData = useMemo(() => { return { EXTINTOR: activeData.filter(i => (i.type || 'EXTINTOR') === 'EXTINTOR'), HIDRANTE: activeData.filter(i => i.type === 'HIDRANTE'), RONDA: activeData.filter(i => i.type === 'RONDA') }; }, [activeData]);
             const displayList = showBin ? deletedData : activeData;
             
-            // Funções de Seleção em Massa
             const handleSelectAll = () => {
                 if (selectedIds.size === displayList.length) {
                     setSelectedIds(new Set());
@@ -763,7 +987,6 @@
         // =========================================================================
         // APP COMPONENT (Main)
         // =========================================================================
-        // Use "function App()" to ensure it is hoisted and defined before root.render calls it
         function App() {
             const [page, setPage] = useState(localStorage.getItem('trfire_user') ? 'menu' : 'responsible');
             const [responsible, setResponsible] = useState(localStorage.getItem('trfire_user') || '');
@@ -981,6 +1204,19 @@
             const handleSave = async (formData) => { if(!dbFirestore) { showAlert("Erro: Banco de dados não conectado.", "error"); return; } try { await addDoc(collection(dbFirestore, "inspections"), { ...formData, unit: currentUnit }); setPage('list'); } catch (e) { showAlert("Erro ao salvar na nuvem.", "error"); } };
             const handleSaveUser = async (userData) => { if(!dbFirestore) return; try { await addDoc(collection(dbFirestore, "users"), userData); } catch(e) { showAlert("Erro ao salvar usuário.", "error"); } };
             const handleUpdateUser = async (id, newPass) => { if(!dbFirestore) return; try { await updateDoc(doc(dbFirestore, "users", id), { pass: newPass }); showAlert("Senha atualizada!", "success"); } catch(e) { showAlert("Erro ao atualizar senha.", "error"); } };
+            
+            // ATUALIZAÇÃO: Gerenciar permissões
+            const handleUpdateUserPermissions = async (id, newPermissions) => {
+                if (!dbFirestore) return;
+                try {
+                    await updateDoc(doc(dbFirestore, "users", id), { permissions: newPermissions });
+                    // Não mostra alerta aqui para não interromper o fluxo rápido de edição
+                } catch(e) {
+                    console.error("Erro ao atualizar permissões", e);
+                    showAlert("Erro ao salvar permissão.", "error");
+                }
+            };
+
             const handleDeleteUser = async (id) => { if(!dbFirestore) return; try { await deleteDoc(doc(dbFirestore, "users", id)); showAlert("Usuário excluído!", "success"); } catch(e) { showAlert("Erro ao excluir usuário.", "error"); } };
             const handleSaveUnit = async (unitData) => { if(!dbFirestore) return; try { await addDoc(collection(dbFirestore, "units"), unitData); } catch(e) { showAlert("Erro ao salvar unidade.", "error"); } };
             const handleUpdateUnit = async (id, data) => { if(!dbFirestore) return; try { await updateDoc(doc(dbFirestore, "units", id), data); showAlert("Unidade atualizada!", "success"); } catch(e) { showAlert("Erro ao atualizar unidade.", "error"); } };
@@ -1013,20 +1249,28 @@
                 <>
                     <NotificationModal isOpen={notification.isOpen} message={notification.message} type={notification.type} isConfirmation={notification.isConfirmation} onClose={closeNotification} onConfirm={notification.onConfirm} />
                     {page === 'responsible' && <ResponsibleScreen onConfirm={handleLogin} usersList={users} unitsList={units} showAlert={showAlert} />}
-                    {page === 'menu' && <MenuScreen onNavigate={setPage} responsibleName={responsible} currentUnit={currentUnit} onStartInspection={handleStartInspection} />}
-                    {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={setPage} onSelectLocation={handleRoundStart} db={db} />}
+                    {page === 'menu' && <MenuScreen onNavigate={setPage} responsibleName={responsible} currentUnit={currentUnit} onStartInspection={handleStartInspection} usersList={users} />}
+                    {page === 'adminMenu' && <AdminMenuScreen onNavigate={setPage} />}
+                    {page === 'accessControl' && <AccessControlScreen onNavigate={setPage} usersList={users} onUpdatePermissions={handleUpdateUserPermissions} />}
+                    {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={setPage} onSelectLocation={handleRoundStart} db={db} responsibleName={responsible} />}
                     {page === 'userRegister' && <UserRegisterScreen onNavigate={setPage} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} />}
                     {page === 'unitRegister' && <UnitRegisterScreen onNavigate={setPage} onSaveUnit={handleSaveUnit} unitsList={units} onUpdateUnit={handleUpdateUnit} onDeleteUnit={handleDeleteUnit} showAlert={showAlert} showConfirm={showConfirm} />}
                     {page === 'scan' && <ScannerScreen onNavigate={(target) => setPage(target === 'menu' && inspectionType === 'RONDA' ? 'roundsLocation' : target)} onScanSuccess={(d)=>{setScanRes(d); setPage(inspectionType === 'RONDA' ? 'roundsForm' : 'form')}} db={db} inspectionType={inspectionType} showAlert={showAlert} />}
                     {page === 'form' && <FormScreen initialData={scanRes} onNavigate={setPage} responsibleName={responsible} inspectionType={inspectionType} onSave={handleSave} showAlert={showAlert} />}
-                    {page === 'roundsForm' && <RoundsFormScreen initialData={scanRes} onNavigate={setPage} responsibleName={responsible} roundLocation={roundLocation} onSave={handleSave} showAlert={showAlert} />}
+                    {page === 'roundsForm' && <RoundsFormScreen initialData={scanRes} onNavigate={setPage} responsibleName={responsible} roundLocation={roundLocation} onSave={handleSave} currentUnit={currentUnit} showAlert={showAlert} />}
                     {page === 'list' && <ListScreen data={db} onNavigate={setPage} onToggleDelete={handleToggleDelete} onDeletePermanently={handleDeletePermanently} onImportData={handleImportData} currentUser={responsible} showAlert={showAlert} showConfirm={showConfirm} />}
                 </>
             );
         };
         
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        // Garante que o DOM esteja carregado antes de renderizar
+        const rootElement = document.getElementById('root');
+        if (rootElement) {
+            const root = ReactDOM.createRoot(rootElement);
+            root.render(<App />);
+        } else {
+            console.error("Elemento root não encontrado");
+        }
     </script>
 </body>
 </html>

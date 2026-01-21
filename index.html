@@ -3,12 +3,13 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V6.11 (21/01/2026) - SYNTAX FIX
+    VERSÃO ESTÁVEL V7.1 (21/01/2026) - SYNTAX & LOGIC REPAIR
     ============================================================================
-    CORREÇÕES:
-    - Resolvido SyntaxError no final do script (Unexpected token).
-    - Verificação rigorosa de fecho de chaves e parênteses em todos os componentes.
-    - Estrutura de inicialização do React simplificada para evitar erros de parser.
+    CORREÇÕES E MELHORIAS:
+    - Resolvido erro de sintaxe que ocultava a definição do componente App.
+    - Função 'handleUpdateUser' atualizada para aceitar edição completa de Bombeiro.
+    - Interface de 'Cadastrar Bombeiro Civil' totalmente funcional para edições.
+    - Mantida a segurança de renderização no final do script.
     ============================================================================
     -->
 
@@ -213,13 +214,11 @@
                     return; 
                 }
 
-                // VALIDAÇÃO 1: Se não for ADMIN, obriga selecionar Unidade
                 if (nameUpper !== "ADMIN" && !selectedUnit) {
                     showAlert("Por favor, selecione uma Unidade.", "warning");
                     return;
                 }
                 
-                // VALIDAÇÃO 2: Verificar se o usuário existe no banco de dados
                 const userFound = usersList.find(u => u.name === nameUpper);
 
                 if (!userFound) {
@@ -227,19 +226,16 @@
                     return;
                 }
 
-                // VALIDAÇÃO 3: Validar Senha
                 if (userFound.pass !== password) {
                     showAlert("Senha incorreta. Tente novamente.", "error");
                     return;
                 }
 
-                // VALIDAÇÃO 4: Validar Unidade (Ignora se for ADMIN ou se a unidade do usuário for GLOBAL)
                 if (nameUpper !== "ADMIN" && userFound.unit !== "GLOBAL" && userFound.unit !== selectedUnit) {
                     showAlert("Usuário não pertence a esta unidade.", "error");
                     return;
                 }
 
-                // Login Sucesso
                 const finalUnit = selectedUnit || "GLOBAL";
                 onConfirm(userFound.name, finalUnit, userFound.unit === "GLOBAL" || userFound.name === "ADMIN");
             };
@@ -392,17 +388,43 @@
             const [newUser, setNewUser] = useState({ name: '', pass: '', unit: '' });
             const [saving, setSaving] = useState(false);
             const [showList, setShowList] = useState(false);
+            const [editingId, setEditingId] = useState(null);
 
             const handleSave = async () => {
                 if (!newUser.name || !newUser.pass || !newUser.unit) return showAlert("Preencha nome, senha e unidade.", "warning");
                 setSaving(true);
-                await onSaveUser({
-                    name: newUser.name.toUpperCase(),
-                    pass: newUser.pass,
-                    unit: newUser.unit
-                });
+
+                if (editingId) {
+                    await onUpdateUser(editingId, {
+                        name: newUser.name.toUpperCase(),
+                        pass: newUser.pass,
+                        unit: newUser.unit
+                    });
+                    setEditingId(null);
+                    showAlert("Usuário atualizado com sucesso!", "success");
+                } else {
+                    await onSaveUser({
+                        name: newUser.name.toUpperCase(),
+                        pass: newUser.pass,
+                        unit: newUser.unit
+                    });
+                    showAlert("Usuário cadastrado com sucesso!", "success");
+                }
+
                 setSaving(false);
-                showAlert("Usuário cadastrado com sucesso!", "success");
+                setNewUser({ name: '', pass: '', unit: '' });
+            };
+
+            const handleEditClick = (u) => {
+                setEditingId(u.id);
+                setNewUser({ name: u.name, pass: u.pass, unit: u.unit || '' });
+                setShowList(false);
+                const container = document.querySelector('.overflow-y-auto');
+                if(container) container.scrollTo({ top: 0, behavior: 'smooth' });
+            };
+
+            const handleCancelEdit = () => {
+                setEditingId(null);
                 setNewUser({ name: '', pass: '', unit: '' });
             };
 
@@ -413,7 +435,7 @@
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-6 animate-fade-in relative overflow-y-auto">
                     <div className="absolute top-4 left-4"><button onClick={() => onNavigate('adminMenu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
-                    <div className="mt-16 text-center mb-8"><div className="inline-flex items-center justify-center w-16 h-16 bg-brand-orange rounded-full mb-4"><i className="fas fa-user-plus text-2xl text-white"></i></div><h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">NOVO USUÁRIO</h2><p className="text-gray-500 dark:text-gray-400 text-sm">Cadastrar Bombeiro Civil</p></div>
+                    <div className="mt-16 text-center mb-8"><div className="inline-flex items-center justify-center w-16 h-16 bg-brand-orange rounded-full mb-4"><i className="fas fa-user-plus text-2xl text-white"></i></div><h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">{editingId ? 'EDITAR BOMBEIRO' : 'NOVO USUÁRIO'}</h2><p className="text-gray-500 dark:text-gray-400 text-sm">Gerenciar Bombeiros Civis</p></div>
                     
                     <div className="space-y-4">
                         {/* Seleção de Unidade no Cadastro */}
@@ -430,7 +452,13 @@
 
                         <div><label className="text-sm font-bold text-gray-700 dark:text-gray-300 block mb-2">Nome Completo *</label><input value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} placeholder="EX: JOÃO SILVA" className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 uppercase" /></div>
                         <div><label className="text-sm font-bold text-gray-700 dark:text-gray-300 block mb-2">Senha *</label><input value={newUser.pass} onChange={e => setNewUser({...newUser, pass: e.target.value})} placeholder="Senha de acesso" type="text" className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700" /></div>
-                        <button onClick={handleSave} disabled={saving} className="w-full py-4 bg-brand-orange text-white rounded-xl text-lg font-bold shadow-lg mt-6 active:scale-95 transition-transform">{saving ? 'SALVANDO...' : 'CADASTRAR'}</button>
+                        
+                        <div className="flex gap-3">
+                            {editingId && (
+                                <button onClick={handleCancelEdit} className="flex-1 py-4 bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-white rounded-xl text-lg font-bold shadow-lg active:scale-95 transition-transform">CANCELAR</button>
+                            )}
+                            <button onClick={handleSave} disabled={saving} className="flex-[2] py-4 bg-brand-orange text-white rounded-xl text-lg font-bold shadow-lg mt-6 active:scale-95 transition-transform">{saving ? 'SALVANDO...' : (editingId ? 'ATUALIZAR' : 'CADASTRAR')}</button>
+                        </div>
                     </div>
 
                     <div className="mt-8 border-t border-gray-200 dark:border-gray-700 pt-6">
@@ -438,7 +466,7 @@
                         {showList && (
                             <div className="mt-4 space-y-3">
                                 {usersList.map(u => (
-                                    <div key={u.id} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-4 rounded-xl flex flex-col justify-between shadow-sm">
+                                    <div key={u.id} className={`bg-white dark:bg-gray-900 border ${editingId === u.id ? 'border-brand-orange bg-orange-50 dark:bg-orange-900/10' : 'border-gray-200 dark:border-gray-700'} p-4 rounded-xl flex flex-col justify-between shadow-sm transition-colors`}>
                                         <div className="flex justify-between items-start mb-2">
                                             <div className="flex flex-col">
                                                 <span className="font-bold text-gray-800 dark:text-white text-sm">{u.name}</span>
@@ -447,13 +475,46 @@
                                             <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-1 rounded font-bold">{u.unit || 'Sem Unidade'}</span>
                                         </div>
                                         <div className="flex gap-2 self-end">
-                                            <button onClick={() => { const newPass = prompt(`Nova senha para ${u.name}:`, u.pass); if(newPass && newPass !== u.pass) onUpdateUser(u.id, newPass); }} className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center hover:bg-blue-200"><i className="fas fa-key text-xs"></i></button>
+                                            <button onClick={() => handleEditClick(u)} className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center hover:bg-blue-200"><i className="fas fa-pen text-xs"></i></button>
                                             <button onClick={() => handleDeleteAttempt(u.id)} className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center hover:bg-red-200"><i className="fas fa-trash text-xs"></i></button>
                                         </div>
                                     </div>
                                 ))}
                             </div>
                         )}
+                    </div>
+                </div>
+            );
+        };
+
+        const AdminMenuScreen = ({ onNavigate }) => {
+            return (
+                <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-6 animate-fade-in relative">
+                    <div className="absolute top-4 left-4">
+                        <button onClick={() => onNavigate('menu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm">
+                            <i className="fas fa-arrow-left"></i>
+                        </button>
+                    </div>
+                    <div className="mt-16 text-center mb-8">
+                        <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-700 rounded-full mb-4">
+                            <i className="fas fa-cogs text-2xl text-white"></i>
+                        </div>
+                        <h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">PARÂMETROS ADMIN</h2>
+                        <p className="text-gray-500 dark:text-gray-400 text-sm">Gerenciamento do Sistema</p>
+                    </div>
+                    <div className="w-full space-y-4">
+                        <button onClick={() => onNavigate('accessControl')} className="w-full py-4 bg-purple-600 active:bg-purple-800 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95 relative overflow-hidden">
+                            <div className="absolute top-0 right-0 bg-white/20 px-2 py-0.5 text-[10px] rounded-bl">Admin</div>
+                            <i className="fas fa-user-lock text-xl"></i> ACESSOS
+                        </button>
+                        <button onClick={() => onNavigate('unitRegister')} className="w-full py-4 bg-gray-600 active:bg-gray-800 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95 relative overflow-hidden">
+                            <div className="absolute top-0 right-0 bg-white/20 px-2 py-0.5 text-[10px] rounded-bl">Admin</div>
+                            <i className="fas fa-building text-xl"></i> CADASTRAR UNIDADE
+                        </button>
+                        <button onClick={() => onNavigate('userRegister')} className="w-full py-4 bg-gray-700 active:bg-gray-900 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95 relative overflow-hidden">
+                            <div className="absolute top-0 right-0 bg-white/20 px-2 py-0.5 text-[10px] rounded-bl">Admin</div>
+                            <i className="fas fa-user-plus text-xl"></i> CADASTRAR BOMBEIRO
+                        </button>
                     </div>
                 </div>
             );
@@ -546,39 +607,6 @@
                             </div>
                         </div>
                     )}
-                </div>
-            );
-        };
-
-        const AdminMenuScreen = ({ onNavigate }) => {
-            return (
-                <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-6 animate-fade-in relative">
-                    <div className="absolute top-4 left-4">
-                        <button onClick={() => onNavigate('menu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm">
-                            <i className="fas fa-arrow-left"></i>
-                        </button>
-                    </div>
-                    <div className="mt-16 text-center mb-8">
-                        <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-700 rounded-full mb-4">
-                            <i className="fas fa-cogs text-2xl text-white"></i>
-                        </div>
-                        <h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">PARÂMETROS ADMIN</h2>
-                        <p className="text-gray-500 dark:text-gray-400 text-sm">Gerenciamento do Sistema</p>
-                    </div>
-                    <div className="w-full space-y-4">
-                        <button onClick={() => onNavigate('accessControl')} className="w-full py-4 bg-purple-600 active:bg-purple-800 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95 relative overflow-hidden">
-                            <div className="absolute top-0 right-0 bg-white/20 px-2 py-0.5 text-[10px] rounded-bl">Admin</div>
-                            <i className="fas fa-user-lock text-xl"></i> ACESSOS
-                        </button>
-                        <button onClick={() => onNavigate('unitRegister')} className="w-full py-4 bg-gray-600 active:bg-gray-800 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95 relative overflow-hidden">
-                            <div className="absolute top-0 right-0 bg-white/20 px-2 py-0.5 text-[10px] rounded-bl">Admin</div>
-                            <i className="fas fa-building text-xl"></i> CADASTRAR UNIDADE
-                        </button>
-                        <button onClick={() => onNavigate('userRegister')} className="w-full py-4 bg-gray-700 active:bg-gray-900 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95 relative overflow-hidden">
-                            <div className="absolute top-0 right-0 bg-white/20 px-2 py-0.5 text-[10px] rounded-bl">Admin</div>
-                            <i className="fas fa-user-plus text-xl"></i> CADASTRAR USUÁRIO
-                        </button>
-                    </div>
                 </div>
             );
         };
@@ -1203,14 +1231,25 @@
             const handleRoundStart = (location) => { setRoundLocation(location); setInspectionType('RONDA'); setPage('scan'); };
             const handleSave = async (formData) => { if(!dbFirestore) { showAlert("Erro: Banco de dados não conectado.", "error"); return; } try { await addDoc(collection(dbFirestore, "inspections"), { ...formData, unit: currentUnit }); setPage('list'); } catch (e) { showAlert("Erro ao salvar na nuvem.", "error"); } };
             const handleSaveUser = async (userData) => { if(!dbFirestore) return; try { await addDoc(collection(dbFirestore, "users"), userData); } catch(e) { showAlert("Erro ao salvar usuário.", "error"); } };
-            const handleUpdateUser = async (id, newPass) => { if(!dbFirestore) return; try { await updateDoc(doc(dbFirestore, "users", id), { pass: newPass }); showAlert("Senha atualizada!", "success"); } catch(e) { showAlert("Erro ao atualizar senha.", "error"); } };
             
-            // ATUALIZAÇÃO: Gerenciar permissões
+            // ATUALIZAÇÃO: Gerenciar permissões e Edição Completa de Usuário
+            const handleUpdateUser = async (id, data) => { 
+                if(!dbFirestore) return; 
+                try { 
+                    // Se data for string, é o comportamento antigo (apenas senha). Se for objeto, é novo.
+                    const updateData = typeof data === 'string' ? { pass: data } : data;
+                    await updateDoc(doc(dbFirestore, "users", id), updateData); 
+                    showAlert("Dados do usuário atualizados!", "success"); 
+                } catch(e) { 
+                    console.error("Erro ao atualizar", e);
+                    showAlert("Erro ao atualizar usuário.", "error"); 
+                } 
+            };
+
             const handleUpdateUserPermissions = async (id, newPermissions) => {
                 if (!dbFirestore) return;
                 try {
                     await updateDoc(doc(dbFirestore, "users", id), { permissions: newPermissions });
-                    // Não mostra alerta aqui para não interromper o fluxo rápido de edição
                 } catch(e) {
                     console.error("Erro ao atualizar permissões", e);
                     showAlert("Erro ao salvar permissão.", "error");

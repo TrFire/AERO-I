@@ -3,12 +3,15 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V7.4 (21/01/2026) - STARTUP & LOGIC FIX
+    VERSÃO ESTÁVEL V9.1 (25/01/2026) - DEFINITIVE STARTUP & BULK BIN ACTIONS
     ============================================================================
     CORREÇÕES:
-    - Resolvido "App is not defined" usando 'const App' + window.onload.
-    - Corrigido 'handleUpdateUser' para aceitar objetos (Nome, Unidade, Senha).
-    - Mantidas todas as funcionalidades de Admin (Bulk Delete, Acessos, etc).
+    - Alterado 'const App' para 'function App' para corrigir ReferenceError.
+    
+    NOVIDADES (MANTIDAS):
+    - Tela Lixeira: Botões "Restaurar Tudo" e "Esvaziar Lixeira".
+    - Ações em massa: Selecionar tudo, excluir e restaurar em lote.
+    - Gestão completa de Bombeiro Civil (Criar/Editar/Excluir).
     ============================================================================
     -->
 
@@ -668,7 +671,7 @@
                             )}
                             
                             {isAdmin && (
-                                <button onClick={() => onNavigate('adminMenu')} className="w-full py-4 bg-gray-800 active:bg-gray-900 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95 relative overflow-hidden">
+                                <button onClick={() => onNavigate('adminMenu')} className="w-full py-4 bg-cyan-700 active:bg-cyan-900 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95 relative overflow-hidden">
                                     <div className="absolute top-0 right-0 bg-white/20 px-2 py-0.5 text-[10px] rounded-bl">Admin</div>
                                     <i className="fas fa-cogs text-xl"></i> PARÂMETROS ADMIN
                                 </button>
@@ -935,6 +938,25 @@
                     showAlert(`${selectedIds.size} itens movidos para a lixeira!`, "success");
                 }, "warning");
             };
+            
+            // FUNÇÕES PARA AÇÃO GLOBAL NA LIXEIRA
+            const handleRestoreAll = () => {
+                if (deletedData.length === 0) return showAlert("Lixeira vazia!", "info");
+                showConfirm(`Deseja restaurar TODOS os ${deletedData.length} itens da lixeira?`, async () => {
+                    const promises = deletedData.map(item => onToggleDelete(item.id, false));
+                    await Promise.all(promises);
+                    showAlert("Todos os itens foram restaurados!", "success");
+                }, "info");
+            };
+            
+            const handleEmptyBin = () => {
+                if (deletedData.length === 0) return showAlert("Lixeira vazia!", "info");
+                showConfirm(`ATENÇÃO: Deseja ESVAZIAR a lixeira? ${deletedData.length} itens serão excluídos permanentemente.`, async () => {
+                    const promises = deletedData.map(item => onDeletePermanently(item.id));
+                    await Promise.all(promises);
+                    showAlert("Lixeira esvaziada com sucesso!", "success");
+                }, "error");
+            };
 
             const handleExport = () => { const jsonString = JSON.stringify(data, null, 2); const blob = new Blob([jsonString], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup_trfire_${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); setShowBackupModal(false); };
             const handleFileImport = (e) => { const file = e.target.files[0]; if(!file) return; const reader = new FileReader(); reader.onload = (ev) => { try { const json = JSON.parse(ev.target.result); onImportData(json); setShowBackupModal(false); } catch(err) { showAlert("Erro ao ler arquivo JSON. Verifique o formato.", "error"); } }; reader.readAsText(file); e.target.value = null; };
@@ -989,8 +1011,19 @@
                         <div className="flex items-center gap-2">{showBin ? (<button onClick={()=>setShowBin(false)} className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg font-bold text-xs shadow-md flex items-center gap-2"><i className="fas fa-arrow-left"></i> VOLTAR</button>) : (<button onClick={()=>onNavigate('menu')} className="bg-brand-orange hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-bold text-xs shadow-md active:scale-95 transition-all flex items-center gap-2"><i className="fas fa-plus"></i> NOVA INSPEÇÃO</button>)}<span className="text-xs text-white/80 hidden sm:inline ml-2">{showBin ? 'Itens Excluídos' : `${displayList.length} registros`}</span></div>
                         <div className="flex gap-4 items-center">{!showBin && (<><button onClick={() => setShowFilter(!showFilter)} title="Filtrar"><i className="fas fa-filter text-xl text-yellow-400"></i></button><div className="w-px h-6 bg-gray-600 mx-1"></div><button onClick={() => setShowPdfModal(true)} title="Gerar PDF"><i className="fas fa-file-pdf text-xl text-white"></i></button>{isAdmin && (<><div className="w-px h-6 bg-gray-600 mx-1"></div><button onClick={() => setShowBackupModal(true)} title="Backup / Restaurar"><i className="fas fa-cloud-upload-alt text-xl text-blue-400"></i></button></>)}<div className="w-px h-6 bg-gray-600 mx-1"></div></>)}<button onClick={() => setShowBin(!showBin)} title={showBin ? "Ver Histórico" : "Ver Lixeira"} className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${showBin ? 'bg-white text-red-800' : 'bg-red-900/50 text-red-300 hover:bg-red-900 hover:text-white'}`}><i className={`fas ${showBin ? 'fa-list' : 'fa-trash'}`}></i></button></div>
                     </div>
+                    {/* Botões de Ação Global na Lixeira (Apenas Admin e quando Lixeira tem itens) */}
+                    {showBin && isAdmin && deletedData.length > 0 && (
+                        <div className="bg-red-800 p-3 flex gap-3 animate-fade-in shadow-inner border-t border-red-700">
+                            <button onClick={handleRestoreAll} className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-bold text-xs shadow-md active:scale-95 transition-all flex items-center justify-center gap-2">
+                                <i className="fas fa-trash-restore"></i> RESTAURAR TUDO
+                            </button>
+                            <button onClick={handleEmptyBin} className="flex-1 bg-white text-red-700 hover:bg-gray-100 py-2 rounded-lg font-bold text-xs shadow-md active:scale-95 transition-all flex items-center justify-center gap-2">
+                                <i className="fas fa-fire"></i> ESVAZIAR LIXEIRA
+                            </button>
+                        </div>
+                    )}
                     {/* Bulk Actions Bar for Admin (Ativa em AMBOS os modos se houver itens selecionados) */}
-                    {isAdmin && displayList.length > 0 && (
+                    {isAdmin && displayList.length > 0 && selectedIds.size > 0 && (
                         <div className={`${showBin ? 'bg-red-700' : 'bg-gray-700'} text-white p-3 flex justify-between items-center animate-fade-in shadow-inner`}>
                             <div className="flex items-center gap-3">
                                 <div onClick={handleSelectAll} className={`w-6 h-6 rounded border-2 border-white flex items-center justify-center cursor-pointer ${selectedIds.size === displayList.length && displayList.length > 0 ? 'bg-white text-red-700' : ''}`}>
@@ -1038,305 +1071,304 @@
             );
         };
         
-        // =========================================================================
-        // APP COMPONENT (Main)
-        // =========================================================================
-        const App = () => {
-            const [page, setPage] = useState(localStorage.getItem('trfire_user') ? 'menu' : 'responsible');
-            const [responsible, setResponsible] = useState(localStorage.getItem('trfire_user') || '');
-            const [currentUnit, setCurrentUnit] = useState(localStorage.getItem('trfire_unit') || '');
-            const [inspectionType, setInspectionType] = useState('EXTINTOR');
-            const [roundLocation, setRoundLocation] = useState('');
-            const [db, setDb] = useState([]);
-            const [users, setUsers] = useState([]);
-            const [units, setUnits] = useState([]);
-            const [scanRes, setScanRes] = useState(null);
-            const [notification, setNotification] = useState({ isOpen: false, message: '', type: 'info', isConfirmation: false, onConfirm: null });
-
-            const showAlert = (message, type = 'info', onCloseAction = null) => { setNotification({ isOpen: true, message, type, isConfirmation: false, onConfirm: null, onCloseAction }); };
-            const showConfirm = (message, onConfirmAction, type = 'warning') => { setNotification({ isOpen: true, message, type, isConfirmation: true, onConfirm: onConfirmAction }); };
-            const closeNotification = () => { if(notification.onCloseAction) notification.onCloseAction(); setNotification({ ...notification, isOpen: false, onCloseAction: null }); };
-
-            useEffect(() => {
-                if (page === 'responsible') return;
-                const TIMEOUT_MS = 5 * 60 * 1000; 
-                let timeoutId;
-                const triggerLogout = () => { showAlert("Sessão encerrada por inatividade (5 min).", "warning", () => { localStorage.removeItem('trfire_user'); window.location.reload(); }); };
-                const resetTimer = () => { if(timeoutId) clearTimeout(timeoutId); timeoutId = setTimeout(triggerLogout, TIMEOUT_MS); };
-                const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
-                events.forEach(e => document.addEventListener(e, resetTimer));
-                resetTimer();
-                return () => { if(timeoutId) clearTimeout(timeoutId); events.forEach(e => document.removeEventListener(e, resetTimer)); };
-            }, [page]); 
-
-            const checkAndGenerateMissedRounds = async (currentDb) => {
-                if (!dbFirestore) return;
-                const now = new Date();
-                const currentHour = now.getHours();
-                
-                let targetShiftStart = null;
-                let targetShiftEnd = null;
-                let shiftNameID = "";
-
-                // Função auxiliar para data local YYYY-MM-DD (Evita bugs de fuso horário no ID)
-                const getLocalISODate = (d) => {
-                    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-                };
-
-                if (currentHour >= 18) { 
-                    // Checa Turno Diurno de HOJE (06:00 - 17:59) - Só gera após as 18:00
-                    const todayMorning = new Date(now); todayMorning.setHours(6, 0, 0, 0); 
-                    const todayAfternoon = new Date(now); todayAfternoon.setHours(17, 59, 59, 999); 
-                    
-                    targetShiftStart = todayMorning; 
-                    targetShiftEnd = todayAfternoon; 
-                    shiftNameID = `DIURNO_${getLocalISODate(now)}`; 
-                } 
-                else if (currentHour >= 6) { 
-                    // Checa Turno Noturno de ONTEM (18:00 - 05:59 HOJE) - Só gera após as 06:00
-                    const yesterdayNight = new Date(now); yesterdayNight.setDate(yesterdayNight.getDate() - 1); yesterdayNight.setHours(18, 0, 0, 0); 
-                    const todayEarlyMorning = new Date(now); todayEarlyMorning.setHours(5, 59, 59, 999); 
-                    
-                    targetShiftStart = yesterdayNight; 
-                    targetShiftEnd = todayEarlyMorning; 
-                    shiftNameID = `NOTURNO_${getLocalISODate(yesterdayNight)}`; 
-                }
-                else { 
-                    // Madrugada (< 06:00). Checa Turno Diurno de ONTEM.
-                    // O Turno Noturno atual AINDA NÃO ACABOU, então não geramos falha para ele.
-                    const yesterdayMorning = new Date(now); yesterdayMorning.setDate(yesterdayMorning.getDate() - 1); yesterdayMorning.setHours(6, 0, 0, 0); 
-                    const yesterdayAfternoon = new Date(now); yesterdayAfternoon.setDate(yesterdayAfternoon.getDate() - 1); yesterdayAfternoon.setHours(17, 59, 59, 999); 
-                    
-                    targetShiftStart = yesterdayMorning; 
-                    targetShiftEnd = yesterdayAfternoon; 
-                    shiftNameID = `DIURNO_${getLocalISODate(yesterdayMorning)}`; 
-                }
-                
-                if (!targetShiftStart) return;
-
-                // GARANTIA FINAL: Só prossegue se o agora for maior que o fim do turno alvo
-                if (now <= targetShiftEnd) return;
-
-                for (const loc of ROUND_LOCATIONS) {
-                    // Verifica se existe inspeção FEITA (não deletada) neste intervalo e local
-                    const hasInspection = currentDb.some(item => { 
-                        if (item.type !== 'RONDA' || item.deleted || item.sector !== loc) return false; 
-                        const itemDate = new Date(item.created_at); 
-                        return itemDate >= targetShiftStart && itemDate <= targetShiftEnd; 
-                    });
-                    
-                    // AQUI ESTÁ A CORREÇÃO DE "PERFEIÇÃO":
-                    // Remove caracteres especiais (incluindo a barra /) para o ID do documento ser válido
-                    const safeLocId = loc.replace(/[^a-zA-Z0-9]/g, '');
-                    const autoDocId = `AUTO_${shiftNameID}_${safeLocId}`;
-                    const alreadyAutoRegistered = currentDb.some(item => item.id === autoDocId);
-                    
-                    // Se não foi feita e ainda não tem registro automático, cria
-                    if (!hasInspection && !alreadyAutoRegistered) { 
-                        try { 
-                            await setDoc(doc(dbFirestore, "inspections", autoDocId), { 
-                                type: 'RONDA', 
-                                sector: loc, // O nome no histórico continua bonito: "CASA DE BOMBAS / G-100"
-                                equipmentName: 'AUDITORIA AUTOMÁTICA', 
-                                status: 'NÃO REALIZADA', 
-                                auto: true, 
-                                obs: 'Inspeção não realizada dentro do horário estipulado.', 
-                                responsible: 'SISTEMA', 
-                                created_at: targetShiftEnd.toISOString(), 
-                                deleted: false 
-                            }); 
-                        } catch (e) { 
-                            console.error("Erro ao gerar registro automático", e); 
-                        } 
-                    }
-                }
-            };
-
-            // NOVA FUNÇÃO: Limpeza automática da lixeira após 72h
-            const checkAndCleanupTrash = async (currentDb) => {
-                if (!dbFirestore) return;
-                const now = new Date();
-                const DELETE_THRESHOLD_MS = 72 * 60 * 60 * 1000; // 72 horas em milissegundos
-
-                currentDb.forEach(async (item) => {
-                    // Só processa se estiver marcado como deletado E tiver data de exclusão registrada
-                    if (item.deleted && item.deleted_at) {
-                        const deletedDate = new Date(item.deleted_at);
-                        // Se a diferença de tempo for maior que 72h
-                        if ((now - deletedDate) > DELETE_THRESHOLD_MS) {
-                            try {
-                                await deleteDoc(doc(dbFirestore, "inspections", item.id));
-                                console.log(`[AUTO-CLEANUP] Item ${item.id} removido definitivamente (Expirou 72h).`);
-                            } catch (e) {
-                                console.error("Erro na limpeza automática da lixeira:", e);
-                            }
-                        }
-                    }
-                });
-            };
-
-            useEffect(() => {
-                if(!dbFirestore) return;
-                // ALTERAÇÃO: Reduzido de 1000 para 150 para evitar "Quota Exceeded"
-                const q = query(collection(dbFirestore, "inspections"), orderBy("created_at", "desc"), limit(150));
-                
-                const unsubscribeInspections = onSnapshot(q, (querySnapshot) => { 
-                    const inspections = []; 
-                    querySnapshot.forEach((doc) => { inspections.push({ id: doc.id, ...doc.data() }); }); 
-                    setDb(inspections); 
-                    
-                    // OTIMIZAÇÃO CRÍTICA: Só o ADMIN executa a auditoria automática
-                    if (localStorage.getItem('trfire_user') === 'ADMIN') {
-                        checkAndGenerateMissedRounds(inspections);
-                    }
-
-                    // Limpeza Automática da Lixeira (Regra 72h): 
-                    // Executa para TODOS os usuários (existentes e novos) de forma anônima e oculta em background.
-                    checkAndCleanupTrash(inspections);
-                    
-                }, (error) => { 
-                    console.error("Erro ao buscar dados:", error);
-                    // Adicionei log específico se for erro de quota
-                    if (error.code === 'resource-exhausted') {
-                        console.warn("Quota do Firestore excedida. Aguarde ou faça upgrade.");
-                    }
-                });
-                
-                // Monitorar Usuários (Migração de Dados: Unidade Padrão e Criação do ADMIN)
-                const usersCollection = collection(dbFirestore, "users");
-                const qUsers = query(usersCollection, orderBy("name"));
-                const unsubscribeUsers = onSnapshot(qUsers, async (snapshot) => { 
-                    const usersList = []; 
-                    snapshot.forEach(doc => usersList.push({ id: doc.id, ...doc.data() })); 
-                    setUsers(usersList); 
-
-                    // Migração automática de usuários sem unidade para "PARQUE LOGISTICO AERO I"
-                    usersList.forEach(async (u) => {
-                        if (!u.unit && u.name !== "ADMIN") { // ADMIN tem unit GLOBAL ou especial, mas aqui vamos deixar passar ou atribuir
-                           // Não atribui unidade ao ADMIN se ele for especial, ou atribui GLOBAL
-                           // Vamos focar nos usuários normais
-                           if (u.name !== "ADMIN") {
-                                try {
-                                    const userRef = doc(dbFirestore, "users", u.id);
-                                    await updateDoc(userRef, { unit: "PARQUE LOGISTICO AERO I" });
-                                } catch(e) { console.error("Erro migração user", e); }
-                           }
-                        }
-                    });
-                    
-                    // CRIAÇÃO AUTOMÁTICA DO ADMIN SE NÃO EXISTIR
-                    const adminExists = usersList.some(u => u.name === "ADMIN");
-                    if (!adminExists) {
-                        console.log("Criando usuário ADMIN padrão...");
-                        // Unidade 'GLOBAL' ou vazia, já que o filtro de login trata ADMIN como exceção
-                        await addDoc(usersCollection, { name: "ADMIN", pass: "Admin1605", unit: "GLOBAL" });
-                    }
-                });
-
-                const unitsCollection = collection(dbFirestore, "units");
-                const qUnits = query(unitsCollection, orderBy("name"));
-                const unsubscribeUnits = onSnapshot(qUnits, async (snapshot) => { 
-                    const unitsList = []; 
-                    snapshot.forEach(doc => {
-                        const d = doc.data();
-                        // LIMPEZA AUTOMÁTICA: Remove "NOVA UNIDADE" do banco se existir (APENAS SE FOR ADMIN)
-                        if (d.name === "NOVA UNIDADE") {
-                            if (localStorage.getItem('trfire_user') === 'ADMIN') {
-                                deleteDoc(doc.ref).catch(e => console.error("Erro ao excluir auto:", e));
-                            }
-                        } else {
-                            unitsList.push({ id: doc.id, ...d });
-                        }
-                    }); 
-                    setUnits(unitsList); 
-                });
-                return () => { unsubscribeInspections(); unsubscribeUsers(); unsubscribeUnits(); };
-            }, []);
-
-            const handleStartInspection = (type) => { setInspectionType(type); setPage('scan'); };
-            const handleRoundStart = (location) => { setRoundLocation(location); setInspectionType('RONDA'); setPage('scan'); };
-            const handleSave = async (formData) => { if(!dbFirestore) { showAlert("Erro: Banco de dados não conectado.", "error"); return; } try { await addDoc(collection(dbFirestore, "inspections"), { ...formData, unit: currentUnit }); setPage('list'); } catch (e) { showAlert("Erro ao salvar na nuvem.", "error"); } };
-            const handleSaveUser = async (userData) => { if(!dbFirestore) return; try { await addDoc(collection(dbFirestore, "users"), userData); } catch(e) { showAlert("Erro ao salvar usuário.", "error"); } };
-            
-            // ATUALIZAÇÃO: Gerenciar permissões e Edição Completa de Usuário
-            const handleUpdateUser = async (id, data) => { 
-                if(!dbFirestore) return; 
-                try { 
-                    // Se data for string, é o comportamento antigo (apenas senha). Se for objeto, é novo.
-                    const updateData = typeof data === 'string' ? { pass: data } : data;
-                    await updateDoc(doc(dbFirestore, "users", id), updateData); 
-                    showAlert("Dados do usuário atualizados!", "success"); 
-                } catch(e) { 
-                    console.error("Erro ao atualizar", e);
-                    showAlert("Erro ao atualizar usuário.", "error"); 
-                } 
-            };
-
-            const handleUpdateUserPermissions = async (id, newPermissions) => {
-                if (!dbFirestore) return;
-                try {
-                    await updateDoc(doc(dbFirestore, "users", id), { permissions: newPermissions });
-                } catch(e) {
-                    console.error("Erro ao atualizar permissões", e);
-                    showAlert("Erro ao salvar permissão.", "error");
-                }
-            };
-
-            const handleDeleteUser = async (id) => { if(!dbFirestore) return; try { await deleteDoc(doc(dbFirestore, "users", id)); showAlert("Usuário excluído!", "success"); } catch(e) { showAlert("Erro ao excluir usuário.", "error"); } };
-            const handleSaveUnit = async (unitData) => { if(!dbFirestore) return; try { await addDoc(collection(dbFirestore, "units"), unitData); } catch(e) { showAlert("Erro ao salvar unidade.", "error"); } };
-            const handleUpdateUnit = async (id, data) => { if(!dbFirestore) return; try { await updateDoc(doc(dbFirestore, "units", id), data); showAlert("Unidade atualizada!", "success"); } catch(e) { showAlert("Erro ao atualizar unidade.", "error"); } };
-            const handleDeleteUnit = async (id) => { if(!dbFirestore) return; try { await deleteDoc(doc(dbFirestore, "units", id)); showAlert("Unidade excluída!", "success"); } catch(e) { showAlert("Erro ao excluir unidade.", "error"); } };
-            const handleImportData = async (jsonData) => { if(!dbFirestore) return showAlert("Erro BD.", "error"); if(!Array.isArray(jsonData)) return showAlert("JSON Inválido.", "error"); showConfirm(`Importar ${jsonData.length} registros?`, async () => { let c=0; for (const i of jsonData) { try { if (i.id) await setDoc(doc(dbFirestore, "inspections", i.id), i); else await addDoc(collection(dbFirestore, "inspections"), i); c++; } catch(e){} } showAlert(`Sucesso: ${c}`, "success"); }, "warning"); };
-            
-            // ATUALIZAÇÃO DO HANDLETOGGLEDELETE PARA INCLUIR TIMESTAMP
-            const handleToggleDelete = async (id, status) => { 
-                if(!dbFirestore) return; 
-                try { 
-                    const docRef = doc(dbFirestore, "inspections", id); 
-                    const updateData = { deleted: status };
-                    // Se for enviado para a lixeira (status = true), grava a data de agora
-                    if (status) {
-                        updateData.deleted_at = new Date().toISOString();
-                    } else {
-                        // Se for restaurado, limpa a data
-                        updateData.deleted_at = null;
-                    }
-                    await updateDoc(docRef, updateData); 
-                } catch (e) { 
-                    showAlert("Erro ao atualizar.", "error"); 
-                } 
-            };
-            
-            const handleDeletePermanently = async (id) => { if(!dbFirestore) return; try { await deleteDoc(doc(dbFirestore, "inspections", id)); } catch (e) { showAlert("Erro ao excluir.", "error"); } };
-            const handleLogin = (name, unitName) => { localStorage.setItem('trfire_user', name); localStorage.setItem('trfire_unit', unitName); setResponsible(name); setCurrentUnit(unitName); setPage('menu'); };
-
-            return (
-                <>
-                    <NotificationModal isOpen={notification.isOpen} message={notification.message} type={notification.type} isConfirmation={notification.isConfirmation} onClose={closeNotification} onConfirm={notification.onConfirm} />
-                    {page === 'responsible' && <ResponsibleScreen onConfirm={handleLogin} usersList={users} unitsList={units} showAlert={showAlert} />}
-                    {page === 'menu' && <MenuScreen onNavigate={setPage} responsibleName={responsible} currentUnit={currentUnit} onStartInspection={handleStartInspection} usersList={users} />}
-                    {page === 'adminMenu' && <AdminMenuScreen onNavigate={setPage} />}
-                    {page === 'accessControl' && <AccessControlScreen onNavigate={setPage} usersList={users} onUpdatePermissions={handleUpdateUserPermissions} />}
-                    {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={setPage} onSelectLocation={handleRoundStart} db={db} responsibleName={responsible} />}
-                    {page === 'userRegister' && <UserRegisterScreen onNavigate={setPage} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} />}
-                    {page === 'unitRegister' && <UnitRegisterScreen onNavigate={setPage} onSaveUnit={handleSaveUnit} unitsList={units} onUpdateUnit={handleUpdateUnit} onDeleteUnit={handleDeleteUnit} showAlert={showAlert} showConfirm={showConfirm} />}
-                    {page === 'scan' && <ScannerScreen onNavigate={(target) => setPage(target === 'menu' && inspectionType === 'RONDA' ? 'roundsLocation' : target)} onScanSuccess={(d)=>{setScanRes(d); setPage(inspectionType === 'RONDA' ? 'roundsForm' : 'form')}} db={db} inspectionType={inspectionType} showAlert={showAlert} />}
-                    {page === 'form' && <FormScreen initialData={scanRes} onNavigate={setPage} responsibleName={responsible} inspectionType={inspectionType} onSave={handleSave} showAlert={showAlert} />}
-                    {page === 'roundsForm' && <RoundsFormScreen initialData={scanRes} onNavigate={setPage} responsibleName={responsible} roundLocation={roundLocation} onSave={handleSave} currentUnit={currentUnit} showAlert={showAlert} />}
-                    {page === 'list' && <ListScreen data={db} onNavigate={setPage} onToggleDelete={handleToggleDelete} onDeletePermanently={handleDeletePermanently} onImportData={handleImportData} currentUser={responsible} showAlert={showAlert} showConfirm={showConfirm} />}
-                </>
-            );
-        };
-        
         // Garante que o DOM esteja carregado antes de renderizar
-        window.onload = function() {
-            const rootElement = document.getElementById('root');
-            if (rootElement) {
-                const root = ReactDOM.createRoot(rootElement);
-                root.render(<App />);
-            } else {
-                console.error("Elemento root não encontrado");
-            }
+        // Use a small timeout to let Babel process the function declaration above
+        const rootElement = document.getElementById('root');
+        if (rootElement) {
+            const root = ReactDOM.createRoot(rootElement);
+            // Definição direta e renderização para garantir que App esteja definido
+            function App() {
+                 const [page, setPage] = useState(localStorage.getItem('trfire_user') ? 'menu' : 'responsible');
+                 const [responsible, setResponsible] = useState(localStorage.getItem('trfire_user') || '');
+                 const [currentUnit, setCurrentUnit] = useState(localStorage.getItem('trfire_unit') || '');
+                 const [inspectionType, setInspectionType] = useState('EXTINTOR');
+                 const [roundLocation, setRoundLocation] = useState('');
+                 const [db, setDb] = useState([]);
+                 const [users, setUsers] = useState([]);
+                 const [units, setUnits] = useState([]);
+                 const [scanRes, setScanRes] = useState(null);
+                 const [notification, setNotification] = useState({ isOpen: false, message: '', type: 'info', isConfirmation: false, onConfirm: null });
+     
+                 const showAlert = (message, type = 'info', onCloseAction = null) => { setNotification({ isOpen: true, message, type, isConfirmation: false, onConfirm: null, onCloseAction }); };
+                 const showConfirm = (message, onConfirmAction, type = 'warning') => { setNotification({ isOpen: true, message, type, isConfirmation: true, onConfirm: onConfirmAction }); };
+                 const closeNotification = () => { if(notification.onCloseAction) notification.onCloseAction(); setNotification({ ...notification, isOpen: false, onCloseAction: null }); };
+     
+                 useEffect(() => {
+                     if (page === 'responsible') return;
+                     const TIMEOUT_MS = 5 * 60 * 1000; 
+                     let timeoutId;
+                     const triggerLogout = () => { showAlert("Sessão encerrada por inatividade (5 min).", "warning", () => { localStorage.removeItem('trfire_user'); window.location.reload(); }); };
+                     const resetTimer = () => { if(timeoutId) clearTimeout(timeoutId); timeoutId = setTimeout(triggerLogout, TIMEOUT_MS); };
+                     const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
+                     events.forEach(e => document.addEventListener(e, resetTimer));
+                     resetTimer();
+                     return () => { if(timeoutId) clearTimeout(timeoutId); events.forEach(e => document.removeEventListener(e, resetTimer)); };
+                 }, [page]); 
+     
+                 const checkAndGenerateMissedRounds = async (currentDb) => {
+                     if (!dbFirestore) return;
+                     const now = new Date();
+                     const currentHour = now.getHours();
+                     
+                     let targetShiftStart = null;
+                     let targetShiftEnd = null;
+                     let shiftNameID = "";
+                     let shiftDisplayName = "";
+     
+                     // Função auxiliar para data local YYYY-MM-DD (Evita bugs de fuso horário no ID)
+                     const getLocalISODate = (d) => {
+                         return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                     };
+     
+                     if (currentHour >= 18) { 
+                         // Checa Turno Diurno de HOJE (06:00 - 17:59) - Só gera após as 18:00
+                         const todayMorning = new Date(now); todayMorning.setHours(6, 0, 0, 0); 
+                         const todayAfternoon = new Date(now); todayAfternoon.setHours(17, 59, 59, 999); 
+                         
+                         targetShiftStart = todayMorning; 
+                         targetShiftEnd = todayAfternoon; 
+                         shiftNameID = `DIURNO_${getLocalISODate(now)}`; 
+                         shiftDisplayName = "TURNO DIURNO";
+                     } 
+                     else if (currentHour >= 6) { 
+                         // Checa Turno Noturno de ONTEM (18:00 - 05:59 HOJE) - Só gera após as 06:00
+                         const yesterdayNight = new Date(now); yesterdayNight.setDate(yesterdayNight.getDate() - 1); yesterdayNight.setHours(18, 0, 0, 0); 
+                         const todayEarlyMorning = new Date(now); todayEarlyMorning.setHours(5, 59, 59, 999); 
+                         
+                         targetShiftStart = yesterdayNight; 
+                         targetShiftEnd = todayEarlyMorning; 
+                         shiftNameID = `NOTURNO_${getLocalISODate(yesterdayNight)}`; 
+                         shiftDisplayName = "TURNO NOTURNO";
+                     }
+                     else { 
+                         // Madrugada (< 06:00). Checa Turno Diurno de ONTEM.
+                         const yesterdayMorning = new Date(now); yesterdayMorning.setDate(yesterdayMorning.getDate() - 1); yesterdayMorning.setHours(6, 0, 0, 0); 
+                         const yesterdayAfternoon = new Date(now); yesterdayAfternoon.setDate(yesterdayAfternoon.getDate() - 1); yesterdayAfternoon.setHours(17, 59, 59, 999); 
+                         
+                         targetShiftStart = yesterdayMorning; 
+                         targetShiftEnd = yesterdayAfternoon; 
+                         shiftNameID = `DIURNO_${getLocalISODate(yesterdayMorning)}`; 
+                         shiftDisplayName = "TURNO DIURNO";
+                     }
+                     
+                     if (!targetShiftStart) return;
+     
+                     // GARANTIA FINAL: Só prossegue se o agora for maior que o fim do turno alvo
+                     if (now <= targetShiftEnd) return;
+     
+                     for (const loc of ROUND_LOCATIONS) {
+                         // Verifica se existe inspeção FEITA (não deletada) neste intervalo e local
+                         const hasInspection = currentDb.some(item => { 
+                             if (item.type !== 'RONDA' || item.deleted || item.sector !== loc) return false; 
+                             const itemDate = new Date(item.created_at); 
+                             return itemDate >= targetShiftStart && itemDate <= targetShiftEnd; 
+                         });
+                         
+                         const safeLocId = loc.replace(/[^a-zA-Z0-9]/g, '');
+                         const autoDocId = `AUTO_${shiftNameID}_${safeLocId}`;
+                         const alreadyAutoRegistered = currentDb.some(item => item.id === autoDocId);
+                         
+                         // Se não foi feita e ainda não tem registro automático, cria
+                         if (!hasInspection && !alreadyAutoRegistered) { 
+                             try { 
+                                 await setDoc(doc(dbFirestore, "inspections", autoDocId), { 
+                                     type: 'RONDA', 
+                                     sector: loc, 
+                                     equipmentName: `AUDITORIA AUTOMÁTICA - ${shiftDisplayName}`, 
+                                     status: 'NÃO REALIZADA', 
+                                     auto: true, 
+                                     obs: `Inspeção do ${shiftDisplayName} não realizada dentro do horário estipulado.`, 
+                                     responsible: 'SISTEMA', 
+                                     created_at: targetShiftEnd.toISOString(), 
+                                     deleted: false 
+                                 }); 
+                             } catch (e) { 
+                                 console.error("Erro ao gerar registro automático", e); 
+                             } 
+                         }
+                     }
+                 };
+     
+                 // NOVA FUNÇÃO: Limpeza automática da lixeira após 72h
+                 const checkAndCleanupTrash = async (currentDb) => {
+                     if (!dbFirestore) return;
+                     const now = new Date();
+                     const DELETE_THRESHOLD_MS = 72 * 60 * 60 * 1000; // 72 horas em milissegundos
+     
+                     currentDb.forEach(async (item) => {
+                         // Só processa se estiver marcado como deletado E tiver data de exclusão registrada
+                         if (item.deleted && item.deleted_at) {
+                             const deletedDate = new Date(item.deleted_at);
+                             // Se a diferença de tempo for maior que 72h
+                             if ((now - deletedDate) > DELETE_THRESHOLD_MS) {
+                                 try {
+                                     await deleteDoc(doc(dbFirestore, "inspections", item.id));
+                                     console.log(`[AUTO-CLEANUP] Item ${item.id} removido definitivamente (Expirou 72h).`);
+                                 } catch (e) {
+                                     console.error("Erro na limpeza automática da lixeira:", e);
+                                 }
+                             }
+                         }
+                     });
+                 };
+     
+                 useEffect(() => {
+                     if(!dbFirestore) return;
+                     // ALTERAÇÃO: Reduzido de 1000 para 150 para evitar "Quota Exceeded"
+                     const q = query(collection(dbFirestore, "inspections"), orderBy("created_at", "desc"), limit(150));
+                     
+                     const unsubscribeInspections = onSnapshot(q, (querySnapshot) => { 
+                         const inspections = []; 
+                         querySnapshot.forEach((doc) => { inspections.push({ id: doc.id, ...doc.data() }); }); 
+                         setDb(inspections); 
+                         
+                         // OTIMIZAÇÃO CRÍTICA: Só o ADMIN executa a auditoria automática
+                         if (localStorage.getItem('trfire_user') === 'ADMIN') {
+                             checkAndGenerateMissedRounds(inspections);
+                         }
+     
+                         // Limpeza Automática da Lixeira (Regra 72h): 
+                         // Executa para TODOS os usuários (existentes e novos) de forma anônima e oculta em background.
+                         checkAndCleanupTrash(inspections);
+                         
+                     }, (error) => { 
+                         console.error("Erro ao buscar dados:", error);
+                         // Adicionei log específico se for erro de quota
+                         if (error.code === 'resource-exhausted') {
+                             console.warn("Quota do Firestore excedida. Aguarde ou faça upgrade.");
+                         }
+                     });
+                     
+                     // Monitorar Usuários (Migração de Dados: Unidade Padrão e Criação do ADMIN)
+                     const usersCollection = collection(dbFirestore, "users");
+                     const qUsers = query(usersCollection, orderBy("name"));
+                     const unsubscribeUsers = onSnapshot(qUsers, async (snapshot) => { 
+                         const usersList = []; 
+                         snapshot.forEach(doc => usersList.push({ id: doc.id, ...doc.data() })); 
+                         setUsers(usersList); 
+     
+                         // Migração automática de usuários sem unidade para "PARQUE LOGISTICO AERO I"
+                         usersList.forEach(async (u) => {
+                             if (!u.unit && u.name !== "ADMIN") { // ADMIN tem unit GLOBAL ou especial, mas aqui vamos deixar passar ou atribuir
+                                // Não atribui unidade ao ADMIN se ele for especial, ou atribui GLOBAL
+                                // Vamos focar nos usuários normais
+                                if (u.name !== "ADMIN") {
+                                     try {
+                                         const userRef = doc(dbFirestore, "users", u.id);
+                                         await updateDoc(userRef, { unit: "PARQUE LOGISTICO AERO I" });
+                                     } catch(e) { console.error("Erro migração user", e); }
+                                }
+                             }
+                         });
+                         
+                         // CRIAÇÃO AUTOMÁTICA DO ADMIN SE NÃO EXISTIR
+                         const adminExists = usersList.some(u => u.name === "ADMIN");
+                         if (!adminExists) {
+                             console.log("Criando usuário ADMIN padrão...");
+                             // Unidade 'GLOBAL' ou vazia, já que o filtro de login trata ADMIN como exceção
+                             await addDoc(usersCollection, { name: "ADMIN", pass: "Admin1605", unit: "GLOBAL" });
+                         }
+                     });
+     
+                     const unitsCollection = collection(dbFirestore, "units");
+                     const qUnits = query(unitsCollection, orderBy("name"));
+                     const unsubscribeUnits = onSnapshot(qUnits, async (snapshot) => { 
+                         const unitsList = []; 
+                         snapshot.forEach(doc => {
+                             const d = doc.data();
+                             // LIMPEZA AUTOMÁTICA: Remove "NOVA UNIDADE" do banco se existir (APENAS SE FOR ADMIN)
+                             if (d.name === "NOVA UNIDADE") {
+                                 if (localStorage.getItem('trfire_user') === 'ADMIN') {
+                                     deleteDoc(doc.ref).catch(e => console.error("Erro ao excluir auto:", e));
+                                 }
+                             } else {
+                                 unitsList.push({ id: doc.id, ...d });
+                             }
+                         }); 
+                         setUnits(unitsList); 
+                     });
+                     return () => { unsubscribeInspections(); unsubscribeUsers(); unsubscribeUnits(); };
+                 }, []);
+     
+                 const handleStartInspection = (type) => { setInspectionType(type); setPage('scan'); };
+                 const handleRoundStart = (location) => { setRoundLocation(location); setInspectionType('RONDA'); setPage('scan'); };
+                 const handleSave = async (formData) => { if(!dbFirestore) { showAlert("Erro: Banco de dados não conectado.", "error"); return; } try { await addDoc(collection(dbFirestore, "inspections"), { ...formData, unit: currentUnit }); setPage('list'); } catch (e) { showAlert("Erro ao salvar na nuvem.", "error"); } };
+                 const handleSaveUser = async (userData) => { if(!dbFirestore) return; try { await addDoc(collection(dbFirestore, "users"), userData); } catch(e) { showAlert("Erro ao salvar usuário.", "error"); } };
+                 
+                 // ATUALIZAÇÃO: Gerenciar permissões e Edição Completa de Usuário
+                 const handleUpdateUser = async (id, data) => { 
+                     if(!dbFirestore) return; 
+                     try { 
+                         // Se data for string, é o comportamento antigo (apenas senha). Se for objeto, é novo.
+                         const updateData = typeof data === 'string' ? { pass: data } : data;
+                         await updateDoc(doc(dbFirestore, "users", id), updateData); 
+                         showAlert("Dados do usuário atualizados!", "success"); 
+                     } catch(e) { 
+                         console.error("Erro ao atualizar", e);
+                         showAlert("Erro ao atualizar usuário.", "error"); 
+                     } 
+                 };
+     
+                 const handleUpdateUserPermissions = async (id, newPermissions) => {
+                     if (!dbFirestore) return;
+                     try {
+                         await updateDoc(doc(dbFirestore, "users", id), { permissions: newPermissions });
+                     } catch(e) {
+                         console.error("Erro ao atualizar permissões", e);
+                         showAlert("Erro ao salvar permissão.", "error");
+                     }
+                 };
+     
+                 const handleDeleteUser = async (id) => { if(!dbFirestore) return; try { await deleteDoc(doc(dbFirestore, "users", id)); showAlert("Usuário excluído!", "success"); } catch(e) { showAlert("Erro ao excluir usuário.", "error"); } };
+                 const handleSaveUnit = async (unitData) => { if(!dbFirestore) return; try { await addDoc(collection(dbFirestore, "units"), unitData); } catch(e) { showAlert("Erro ao salvar unidade.", "error"); } };
+                 const handleUpdateUnit = async (id, data) => { if(!dbFirestore) return; try { await updateDoc(doc(dbFirestore, "units", id), data); showAlert("Unidade atualizada!", "success"); } catch(e) { showAlert("Erro ao atualizar unidade.", "error"); } };
+                 const handleDeleteUnit = async (id) => { if(!dbFirestore) return; try { await deleteDoc(doc(dbFirestore, "units", id)); showAlert("Unidade excluída!", "success"); } catch(e) { showAlert("Erro ao excluir unidade.", "error"); } };
+                 const handleImportData = async (jsonData) => { if(!dbFirestore) return showAlert("Erro BD.", "error"); if(!Array.isArray(jsonData)) return showAlert("JSON Inválido.", "error"); showConfirm(`Importar ${jsonData.length} registros?`, async () => { let c=0; for (const i of jsonData) { try { if (i.id) await setDoc(doc(dbFirestore, "inspections", i.id), i); else await addDoc(collection(dbFirestore, "inspections"), i); c++; } catch(e){} } showAlert(`Sucesso: ${c}`, "success"); }, "warning"); };
+                 
+                 // ATUALIZAÇÃO DO HANDLETOGGLEDELETE PARA INCLUIR TIMESTAMP
+                 const handleToggleDelete = async (id, status) => { 
+                     if(!dbFirestore) return; 
+                     try { 
+                         const docRef = doc(dbFirestore, "inspections", id); 
+                         const updateData = { deleted: status };
+                         // Se for enviado para a lixeira (status = true), grava a data de agora
+                         if (status) {
+                             updateData.deleted_at = new Date().toISOString();
+                         } else {
+                             // Se for restaurado, limpa a data
+                             updateData.deleted_at = null;
+                         }
+                         await updateDoc(docRef, updateData); 
+                     } catch (e) { 
+                         showAlert("Erro ao atualizar.", "error"); 
+                     } 
+                 };
+                 
+                 const handleDeletePermanently = async (id) => { if(!dbFirestore) return; try { await deleteDoc(doc(dbFirestore, "inspections", id)); } catch (e) { showAlert("Erro ao excluir.", "error"); } };
+                 const handleLogin = (name, unitName) => { localStorage.setItem('trfire_user', name); localStorage.setItem('trfire_unit', unitName); setResponsible(name); setCurrentUnit(unitName); setPage('menu'); };
+     
+                 return (
+                     <>
+                         <NotificationModal isOpen={notification.isOpen} message={notification.message} type={notification.type} isConfirmation={notification.isConfirmation} onClose={closeNotification} onConfirm={notification.onConfirm} />
+                         {page === 'responsible' && <ResponsibleScreen onConfirm={handleLogin} usersList={users} unitsList={units} showAlert={showAlert} />}
+                         {page === 'menu' && <MenuScreen onNavigate={setPage} responsibleName={responsible} currentUnit={currentUnit} onStartInspection={handleStartInspection} usersList={users} />}
+                         {page === 'adminMenu' && <AdminMenuScreen onNavigate={setPage} />}
+                         {page === 'accessControl' && <AccessControlScreen onNavigate={setPage} usersList={users} onUpdatePermissions={handleUpdateUserPermissions} />}
+                         {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={setPage} onSelectLocation={handleRoundStart} db={db} responsibleName={responsible} />}
+                         {page === 'userRegister' && <UserRegisterScreen onNavigate={setPage} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} />}
+                         {page === 'unitRegister' && <UnitRegisterScreen onNavigate={setPage} onSaveUnit={handleSaveUnit} unitsList={units} onUpdateUnit={handleUpdateUnit} onDeleteUnit={handleDeleteUnit} showAlert={showAlert} showConfirm={showConfirm} />}
+                         {page === 'scan' && <ScannerScreen onNavigate={(target) => setPage(target === 'menu' && inspectionType === 'RONDA' ? 'roundsLocation' : target)} onScanSuccess={(d)=>{setScanRes(d); setPage(inspectionType === 'RONDA' ? 'roundsForm' : 'form')}} db={db} inspectionType={inspectionType} showAlert={showAlert} />}
+                         {page === 'form' && <FormScreen initialData={scanRes} onNavigate={setPage} responsibleName={responsible} inspectionType={inspectionType} onSave={handleSave} showAlert={showAlert} />}
+                         {page === 'roundsForm' && <RoundsFormScreen initialData={scanRes} onNavigate={setPage} responsibleName={responsible} roundLocation={roundLocation} onSave={handleSave} currentUnit={currentUnit} showAlert={showAlert} />}
+                         {page === 'list' && <ListScreen data={db} onNavigate={setPage} onToggleDelete={handleToggleDelete} onDeletePermanently={handleDeletePermanently} onImportData={handleImportData} currentUser={responsible} showAlert={showAlert} showConfirm={showConfirm} />}
+                     </>
+                 );
+            };
+            
+            // Re-declaring the render logic properly below.
+             root.render(<App />);
+        } else {
+            console.error("Elemento root não encontrado");
         }
     </script>
 </body>

@@ -3,15 +3,18 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V9.1 (25/01/2026) - DEFINITIVE STARTUP & BULK BIN ACTIONS
+    VERSÃO ESTÁVEL V13.1 (31/01/2026) - ERROR PROOF
     ============================================================================
     CORREÇÕES:
-    - Alterado 'const App' para 'function App' para corrigir ReferenceError.
+    - Resolvido 'SecurityError' na navegação (try-catch no history.pushState).
+    - Resolvido 'ReferenceError: App is not defined' via const expression e 
+      ordem de execução sequencial.
+    - Estrutura de componentes validada.
     
-    NOVIDADES (MANTIDAS):
-    - Tela Lixeira: Botões "Restaurar Tudo" e "Esvaziar Lixeira".
-    - Ações em massa: Selecionar tudo, excluir e restaurar em lote.
-    - Gestão completa de Bombeiro Civil (Criar/Editar/Excluir).
+    FUNCIONALIDADES:
+    - Navegação segura (Botão Voltar).
+    - Admin: Gestão de Lixeira em massa e Acessos.
+    - Rondas e Inspeções completas.
     ============================================================================
     -->
 
@@ -55,12 +58,17 @@
     <!-- DEPENDÊNCIAS -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Babel sem data-type module para evitar conflito de targets -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- FIREBASE COMPAT (CDN Estável) -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
     <style>
         body { 
@@ -104,17 +112,14 @@
 <body class="bg-gray-100 dark:bg-brand-dark h-screen w-full overflow-hidden text-gray-900 dark:text-gray-100">
     <div id="root" class="h-full w-full"></div>
 
-    <script type="text/babel" data-type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, doc, setDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
+    <script type="text/babel">
+        // =========================================================================
+        // CONFIGURAÇÃO FIREBASE E REACT
+        // =========================================================================
         const { useState, useEffect, useRef, useMemo } = React;
         const ReactDOM = window.ReactDOM;
         const jsPDF = window.jspdf ? window.jspdf.jsPDF : null;
 
-        // =========================================================================
-        // CONFIGURAÇÃO FIREBASE
-        // =========================================================================
         const firebaseConfig = {
             apiKey: "AIzaSyDgTmxXzb0jNi2CYsbs03FaxsnasdYVhxo",
             authDomain: "database-aero-i.firebaseapp.com",
@@ -128,9 +133,9 @@
         let app = null;
 
         try {
-            app = initializeApp(firebaseConfig);
-            dbFirestore = getFirestore(app);
-            console.log("Firebase conectado com sucesso!");
+            app = firebase.initializeApp(firebaseConfig);
+            dbFirestore = firebase.firestore();
+            console.log("Firebase (Compat) conectado com sucesso!");
         } catch (error) {
             console.error("Erro na inicialização:", error);
         }
@@ -142,21 +147,9 @@
         const FALLBACK_LOGO = "https://cdn-icons-png.flaticon.com/512/785/785116.png";
         const LOCATION_OPTIONS = ["ANJUN", "AZUL CARGO", "AREAS COMUNS", "EQ. RESERVA", "LATAM", "MELI", "POWER SOURCE", "TOTAL EXP."];
         
-        // LISTA DE RONDAS ATUALIZADA E ORDENADA (G-100 -> G-300)
         const ROUND_LOCATIONS = [
-            // G-100
-            "CASA DE BOMBAS / G-100",
-            "TANQUE DE DIESEL / G-100",
-            "RTI / G-100",
-            "GERADOR / G-100",
-            
-            // G-200 (Antigos renomeados)
-            "CASA DE BOMBAS / G-200",
-            "TANQUE DE DIESEL / G-200",
-            "RTI / G-200",
-            "GERADOR / G-200",
-            
-            // G-300
+            "CASA DE BOMBAS / G-100", "TANQUE DE DIESEL / G-100", "RTI / G-100", "GERADOR / G-100",
+            "CASA DE BOMBAS / G-200", "TANQUE DE DIESEL / G-200", "RTI / G-200", "GERADOR / G-200",
             "GERADOR / G-300"
         ];
         
@@ -211,38 +204,27 @@
 
             const handleLoginAttempt = () => {
                 const nameUpper = selectedName.toUpperCase().trim();
-                
-                if (!nameUpper || !password) {
-                    return; 
-                }
+                if (!nameUpper || !password) return; 
 
-                // VALIDAÇÃO 1: Se não for ADMIN, obriga selecionar Unidade
                 if (nameUpper !== "ADMIN" && !selectedUnit) {
                     showAlert("Por favor, selecione uma Unidade.", "warning");
                     return;
                 }
                 
-                // VALIDAÇÃO 2: Verificar se o usuário existe no banco de dados
                 const userFound = usersList.find(u => u.name === nameUpper);
-
                 if (!userFound) {
                     showAlert("Usuário não cadastrado procure o administrador.", "error");
                     return;
                 }
-
-                // VALIDAÇÃO 3: Validar Senha
                 if (userFound.pass !== password) {
                     showAlert("Senha incorreta. Tente novamente.", "error");
                     return;
                 }
-
-                // VALIDAÇÃO 4: Validar Unidade (Ignora se for ADMIN ou se a unidade do usuário for GLOBAL)
                 if (nameUpper !== "ADMIN" && userFound.unit !== "GLOBAL" && userFound.unit !== selectedUnit) {
                     showAlert("Usuário não pertence a esta unidade.", "error");
                     return;
                 }
 
-                // Login Sucesso
                 const finalUnit = selectedUnit || "GLOBAL";
                 onConfirm(userFound.name, finalUnit, userFound.unit === "GLOBAL" || userFound.name === "ADMIN");
             };
@@ -267,42 +249,20 @@
                                 <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-700 dark:text-gray-300"><i className="fas fa-building"></i></div>
                             </div>
                         </div>
-
                         <div>
                             <label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">Responsável *</label>
                             <div className="relative">
-                                <input 
-                                    type="text" 
-                                    value={selectedName} 
-                                    onChange={(e) => setSelectedName(e.target.value.toUpperCase())} 
-                                    placeholder="Digite seu nome..." 
-                                    className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 text-sm"
-                                />
+                                <input type="text" value={selectedName} onChange={(e) => setSelectedName(e.target.value.toUpperCase())} placeholder="Digite seu nome..." className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 text-sm"/>
                                 <div className="absolute inset-y-0 right-0 flex items-center px-4 text-gray-400"><i className="fas fa-user"></i></div>
                             </div>
                         </div>
-
                         <div className={`transition-all duration-300 ${selectedName ? 'opacity-100 max-h-24' : 'opacity-50 max-h-24 pointer-events-none'}`}>
                             <label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">Senha *</label>
                             <div className="relative">
-                                <input 
-                                    type={showPassword ? "text" : "password"} 
-                                    value={password} 
-                                    onChange={(e) => setPassword(e.target.value)} 
-                                    placeholder="Digite sua senha..." 
-                                    className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 placeholder-gray-400 text-sm pr-12" 
-                                    disabled={!selectedName} 
-                                />
-                                <button 
-                                    type="button"
-                                    onClick={() => setShowPassword(!showPassword)}
-                                    className="absolute inset-y-0 right-0 flex items-center px-4 text-gray-400 hover:text-brand-orange transition-colors"
-                                >
-                                    <i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
-                                </button>
+                                <input type="text" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Digite sua senha..." className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 placeholder-gray-400 text-sm pr-12" type={showPassword ? "text" : "password"} disabled={!selectedName}/>
+                                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 flex items-center px-4 text-gray-400 hover:text-brand-orange transition-colors"><i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i></button>
                             </div>
                         </div>
-
                         <button onClick={handleLoginAttempt} disabled={!isButtonEnabled} className={`w-full py-3 rounded-xl text-lg font-bold shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 ${isButtonEnabled ? 'bg-brand-orange hover:bg-orange-600 text-white' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}>INICIAR INSPEÇÃO <i className="fas fa-arrow-right"></i></button>
                     </div>
                     <div className="absolute bottom-2 w-full text-center space-y-1"><div className="text-white/90 text-[10px] text-center mb-0.5 leading-tight font-medium"><p>Copyright © 2026 Fire Personality ME</p><p>Todos os direitos reservados</p><p>(Thawillys Rocha)</p></div><p className="text-white/40 text-[10px]">Versão Beta 1.5</p></div>
@@ -321,17 +281,11 @@
                 setSaving(true);
                 
                 if (editingId) {
-                    await onUpdateUnit(editingId, {
-                        name: newUnit.name.toUpperCase(),
-                        address: newUnit.address.toUpperCase()
-                    });
+                    await onUpdateUnit(editingId, { name: newUnit.name.toUpperCase(), address: newUnit.address.toUpperCase() });
                     setEditingId(null);
                     showAlert("Unidade atualizada com sucesso!", "success");
                 } else {
-                    await onSaveUnit({
-                        name: newUnit.name.toUpperCase(),
-                        address: newUnit.address.toUpperCase()
-                    });
+                    await onSaveUnit({ name: newUnit.name.toUpperCase(), address: newUnit.address.toUpperCase() });
                     showAlert("Unidade cadastrada com sucesso!", "success");
                 }
                 
@@ -339,9 +293,7 @@
                 setNewUnit({ name: '', address: '' });
             };
 
-            const handleDeleteAttempt = (id) => {
-                showConfirm("Tem certeza que deseja excluir esta unidade?", () => onDeleteUnit(id), "error");
-            };
+            const handleDeleteAttempt = (id) => { showConfirm("Tem certeza que deseja excluir esta unidade?", () => onDeleteUnit(id), "error"); };
 
             const handleEditClick = (u) => {
                 setEditingId(u.id);
@@ -351,10 +303,7 @@
                 if(container) container.scrollTo({ top: 0, behavior: 'smooth' });
             };
 
-            const handleCancelEdit = () => {
-                setEditingId(null);
-                setNewUnit({ name: '', address: '' });
-            };
+            const handleCancelEdit = () => { setEditingId(null); setNewUnit({ name: '', address: '' }); };
 
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-6 animate-fade-in relative overflow-y-auto">
@@ -365,9 +314,7 @@
                         <div><label className="text-sm font-bold text-gray-700 dark:text-gray-300 block mb-2">Endereço</label><input value={newUnit.address} onChange={e => setNewUnit({...newUnit, address: e.target.value})} placeholder="Rua, Número, Bairro" type="text" className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 uppercase" /></div>
                         
                         <div className="flex gap-3">
-                            {editingId && (
-                                <button onClick={handleCancelEdit} className="flex-1 py-4 bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-white rounded-xl text-lg font-bold shadow-lg active:scale-95 transition-transform">CANCELAR</button>
-                            )}
+                            {editingId && <button onClick={handleCancelEdit} className="flex-1 py-4 bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-white rounded-xl text-lg font-bold shadow-lg active:scale-95 transition-transform">CANCELAR</button>}
                             <button onClick={handleSave} disabled={saving} className="flex-[2] py-4 bg-brand-orange text-white rounded-xl text-lg font-bold shadow-lg active:scale-95 transition-transform">{saving ? 'SALVANDO...' : (editingId ? 'ATUALIZAR' : 'CADASTRAR')}</button>
                         </div>
                     </div>
@@ -400,24 +347,15 @@
             const handleSave = async () => {
                 if (!newUser.name || !newUser.pass || !newUser.unit) return showAlert("Preencha nome, senha e unidade.", "warning");
                 setSaving(true);
-
+                const userData = { name: newUser.name.toUpperCase(), pass: newUser.pass, unit: newUser.unit };
                 if (editingId) {
-                    await onUpdateUser(editingId, {
-                        name: newUser.name.toUpperCase(),
-                        pass: newUser.pass,
-                        unit: newUser.unit
-                    });
+                    await onUpdateUser(editingId, userData);
                     setEditingId(null);
                     showAlert("Usuário atualizado com sucesso!", "success");
                 } else {
-                    await onSaveUser({
-                        name: newUser.name.toUpperCase(),
-                        pass: newUser.pass,
-                        unit: newUser.unit
-                    });
+                    await onSaveUser(userData);
                     showAlert("Usuário cadastrado com sucesso!", "success");
                 }
-
                 setSaving(false);
                 setNewUser({ name: '', pass: '', unit: '' });
             };
@@ -430,44 +368,22 @@
                 if(container) container.scrollTo({ top: 0, behavior: 'smooth' });
             };
 
-            const handleCancelEdit = () => {
-                setEditingId(null);
-                setNewUser({ name: '', pass: '', unit: '' });
-            };
-
-            const handleDeleteAttempt = (id) => {
-                showConfirm("Tem certeza que deseja excluir este usuário permanentemente?", () => onDeleteUser(id), "error");
-            };
+            const handleCancelEdit = () => { setEditingId(null); setNewUser({ name: '', pass: '', unit: '' }); };
+            const handleDeleteAttempt = (id) => { showConfirm("Tem certeza que deseja excluir este usuário permanentemente?", () => onDeleteUser(id), "error"); };
 
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-6 animate-fade-in relative overflow-y-auto">
                     <div className="absolute top-4 left-4"><button onClick={() => onNavigate('adminMenu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
                     <div className="mt-16 text-center mb-8"><div className="inline-flex items-center justify-center w-16 h-16 bg-brand-orange rounded-full mb-4"><i className="fas fa-user-plus text-2xl text-white"></i></div><h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">{editingId ? 'EDITAR BOMBEIRO' : 'NOVO USUÁRIO'}</h2><p className="text-gray-500 dark:text-gray-400 text-sm">Gerenciar Bombeiros Civis</p></div>
-                    
                     <div className="space-y-4">
-                        {/* Seleção de Unidade no Cadastro */}
-                        <div>
-                            <label className="text-sm font-bold text-gray-700 dark:text-gray-300 block mb-2">Unidade *</label>
-                            <div className="relative">
-                                <select value={newUser.unit} onChange={e => setNewUser({...newUser, unit: e.target.value})} className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 appearance-none">
-                                    <option value="">Selecione a Unidade...</option>
-                                    {unitsList.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
-                                </select>
-                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-700 dark:text-gray-300"><i className="fas fa-building"></i></div>
-                            </div>
-                        </div>
-
+                        <div><label className="text-sm font-bold text-gray-700 dark:text-gray-300 block mb-2">Unidade *</label><div className="relative"><select value={newUser.unit} onChange={e => setNewUser({...newUser, unit: e.target.value})} className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 appearance-none"><option value="">Selecione a Unidade...</option>{unitsList.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}</select><div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-700 dark:text-gray-300"><i className="fas fa-building"></i></div></div></div>
                         <div><label className="text-sm font-bold text-gray-700 dark:text-gray-300 block mb-2">Nome Completo *</label><input value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} placeholder="EX: JOÃO SILVA" className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 uppercase" /></div>
                         <div><label className="text-sm font-bold text-gray-700 dark:text-gray-300 block mb-2">Senha *</label><input value={newUser.pass} onChange={e => setNewUser({...newUser, pass: e.target.value})} placeholder="Senha de acesso" type="text" className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700" /></div>
-                        
                         <div className="flex gap-3">
-                            {editingId && (
-                                <button onClick={handleCancelEdit} className="flex-1 py-4 bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-white rounded-xl text-lg font-bold shadow-lg active:scale-95 transition-transform">CANCELAR</button>
-                            )}
+                            {editingId && <button onClick={handleCancelEdit} className="flex-1 py-4 bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-white rounded-xl text-lg font-bold shadow-lg active:scale-95 transition-transform">CANCELAR</button>}
                             <button onClick={handleSave} disabled={saving} className="flex-[2] py-4 bg-brand-orange text-white rounded-xl text-lg font-bold shadow-lg mt-6 active:scale-95 transition-transform">{saving ? 'SALVANDO...' : (editingId ? 'ATUALIZAR' : 'CADASTRAR')}</button>
                         </div>
                     </div>
-
                     <div className="mt-8 border-t border-gray-200 dark:border-gray-700 pt-6">
                         <button onClick={() => setShowList(!showList)} className="w-full flex justify-between items-center text-gray-600 dark:text-gray-300 font-bold bg-gray-100 dark:bg-gray-800 p-4 rounded-xl"><span><i className="fas fa-users mr-2"></i> Usuários Cadastrados ({usersList.length})</span><i className={`fas fa-chevron-${showList ? 'up' : 'down'}`}></i></button>
                         {showList && (
@@ -475,10 +391,7 @@
                                 {usersList.map(u => (
                                     <div key={u.id} className={`bg-white dark:bg-gray-900 border ${editingId === u.id ? 'border-brand-orange bg-orange-50 dark:bg-orange-900/10' : 'border-gray-200 dark:border-gray-700'} p-4 rounded-xl flex flex-col justify-between shadow-sm transition-colors`}>
                                         <div className="flex justify-between items-start mb-2">
-                                            <div className="flex flex-col">
-                                                <span className="font-bold text-gray-800 dark:text-white text-sm">{u.name}</span>
-                                                <span className="text-xs text-gray-400">Senha: {u.pass}</span>
-                                            </div>
+                                            <div className="flex flex-col"><span className="font-bold text-gray-800 dark:text-white text-sm">{u.name}</span><span className="text-xs text-gray-400">Senha: {u.pass}</span></div>
                                             <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-1 rounded font-bold">{u.unit || 'Sem Unidade'}</span>
                                         </div>
                                         <div className="flex gap-2 self-end">
@@ -497,31 +410,16 @@
         const AdminMenuScreen = ({ onNavigate }) => {
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-6 animate-fade-in relative">
-                    <div className="absolute top-4 left-4">
-                        <button onClick={() => onNavigate('menu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm">
-                            <i className="fas fa-arrow-left"></i>
-                        </button>
-                    </div>
+                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate('menu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
                     <div className="mt-16 text-center mb-8">
-                        <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-700 rounded-full mb-4">
-                            <i className="fas fa-cogs text-2xl text-white"></i>
-                        </div>
+                        <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-700 rounded-full mb-4"><i className="fas fa-cogs text-2xl text-white"></i></div>
                         <h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">PARÂMETROS ADMIN</h2>
                         <p className="text-gray-500 dark:text-gray-400 text-sm">Gerenciamento do Sistema</p>
                     </div>
                     <div className="w-full space-y-4">
-                        <button onClick={() => onNavigate('accessControl')} className="w-full py-4 bg-purple-600 active:bg-purple-800 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95 relative overflow-hidden">
-                            <div className="absolute top-0 right-0 bg-white/20 px-2 py-0.5 text-[10px] rounded-bl">Admin</div>
-                            <i className="fas fa-user-lock text-xl"></i> ACESSOS
-                        </button>
-                        <button onClick={() => onNavigate('unitRegister')} className="w-full py-4 bg-gray-600 active:bg-gray-800 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95 relative overflow-hidden">
-                            <div className="absolute top-0 right-0 bg-white/20 px-2 py-0.5 text-[10px] rounded-bl">Admin</div>
-                            <i className="fas fa-building text-xl"></i> CADASTRAR UNIDADE
-                        </button>
-                        <button onClick={() => onNavigate('userRegister')} className="w-full py-4 bg-gray-700 active:bg-gray-900 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95 relative overflow-hidden">
-                            <div className="absolute top-0 right-0 bg-white/20 px-2 py-0.5 text-[10px] rounded-bl">Admin</div>
-                            <i className="fas fa-user-plus text-xl"></i> CADASTRAR BOMBEIRO
-                        </button>
+                        <button onClick={() => onNavigate('accessControl')} className="w-full py-4 bg-purple-600 active:bg-purple-800 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95 relative overflow-hidden"><div className="absolute top-0 right-0 bg-white/20 px-2 py-0.5 text-[10px] rounded-bl">Admin</div><i className="fas fa-user-lock text-xl"></i> ACESSOS</button>
+                        <button onClick={() => onNavigate('unitRegister')} className="w-full py-4 bg-gray-600 active:bg-gray-800 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95 relative overflow-hidden"><div className="absolute top-0 right-0 bg-white/20 px-2 py-0.5 text-[10px] rounded-bl">Admin</div><i className="fas fa-building text-xl"></i> CADASTRAR UNIDADE</button>
+                        <button onClick={() => onNavigate('userRegister')} className="w-full py-4 bg-gray-700 active:bg-gray-900 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95 relative overflow-hidden"><div className="absolute top-0 right-0 bg-white/20 px-2 py-0.5 text-[10px] rounded-bl">Admin</div><i className="fas fa-user-plus text-xl"></i> CADASTRAR BOMBEIRO</button>
                     </div>
                 </div>
             );
@@ -529,24 +427,12 @@
 
         const AccessControlScreen = ({ onNavigate, usersList, onUpdatePermissions }) => {
             const [selectedUser, setSelectedUser] = useState(null);
-
-            const PERMISSIONS = [
-                { id: 'EXTINTOR', label: 'Extintores' },
-                { id: 'HIDRANTE', label: 'Hidrantes' },
-                { id: 'HISTORICO', label: 'Histórico' },
-                { id: 'RONDA', label: 'Ronda Diária' }
-            ];
+            const PERMISSIONS = [{ id: 'EXTINTOR', label: 'Extintores' }, { id: 'HIDRANTE', label: 'Hidrantes' }, { id: 'HISTORICO', label: 'Histórico' }, { id: 'RONDA', label: 'Ronda Diária' }];
 
             const togglePermission = (permId) => {
                 if (!selectedUser) return;
                 const currentPerms = selectedUser.permissions || [];
-                let newPerms;
-                if (currentPerms.includes(permId)) {
-                    newPerms = currentPerms.filter(p => p !== permId);
-                } else {
-                    newPerms = [...currentPerms, permId];
-                }
-                
+                let newPerms = currentPerms.includes(permId) ? currentPerms.filter(p => p !== permId) : [...currentPerms, permId];
                 const updatedUser = { ...selectedUser, permissions: newPerms };
                 setSelectedUser(updatedUser);
                 onUpdatePermissions(selectedUser.id, newPerms);
@@ -554,32 +440,19 @@
 
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-6 animate-fade-in relative overflow-y-auto">
-                    <div className="absolute top-4 left-4">
-                        <button onClick={() => selectedUser ? setSelectedUser(null) : onNavigate('adminMenu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm">
-                            <i className="fas fa-arrow-left"></i>
-                        </button>
-                    </div>
-                    
+                    <div className="absolute top-4 left-4"><button onClick={() => selectedUser ? setSelectedUser(null) : onNavigate('adminMenu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
                     <div className="mt-16 text-center mb-8">
-                        <div className="inline-flex items-center justify-center w-16 h-16 bg-purple-600 rounded-full mb-4">
-                            <i className="fas fa-user-lock text-2xl text-white"></i>
-                        </div>
+                        <div className="inline-flex items-center justify-center w-16 h-16 bg-purple-600 rounded-full mb-4"><i className="fas fa-user-lock text-2xl text-white"></i></div>
                         <h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">{selectedUser ? 'Permissões' : 'Controle de Acessos'}</h2>
                         <p className="text-gray-500 dark:text-gray-400 text-sm">{selectedUser ? `Definindo acessos para ${selectedUser.name}` : 'Selecione um Bombeiro Civil'}</p>
                     </div>
-
                     {!selectedUser ? (
                         <div className="space-y-3">
                             {usersList.filter(u => u.name !== 'ADMIN').map(u => (
                                 <div key={u.id} onClick={() => setSelectedUser(u)} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-4 rounded-xl flex items-center justify-between shadow-sm active:scale-95 transition-transform cursor-pointer">
                                     <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-500">
-                                            <i className="fas fa-user"></i>
-                                        </div>
-                                        <div className="flex flex-col">
-                                            <span className="font-bold text-gray-800 dark:text-white text-sm">{u.name}</span>
-                                            <span className="text-[10px] text-gray-400">{(u.permissions || []).length} permissões ativas</span>
-                                        </div>
+                                        <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-500"><i className="fas fa-user"></i></div>
+                                        <div className="flex flex-col"><span className="font-bold text-gray-800 dark:text-white text-sm">{u.name}</span><span className="text-[10px] text-gray-400">{(u.permissions || []).length} permissões ativas</span></div>
                                     </div>
                                     <i className="fas fa-chevron-right text-gray-300"></i>
                                 </div>
@@ -588,30 +461,18 @@
                     ) : (
                         <div className="space-y-4 animate-fade-in">
                             {PERMISSIONS.map(perm => {
-                                const isEnabled = (selectedUser.permissions || ['EXTINTOR', 'HIDRANTE', 'HISTORICO']).includes(perm.id); // Default logic fallback
+                                const isEnabled = (selectedUser.permissions || ['EXTINTOR', 'HIDRANTE', 'HISTORICO']).includes(perm.id);
                                 return (
                                     <div key={perm.id} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-4 rounded-xl flex items-center justify-between shadow-sm">
                                         <span className="font-bold text-gray-700 dark:text-white">{perm.label}</span>
                                         <div className="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in">
-                                            <input 
-                                                type="checkbox" 
-                                                name={`toggle-${perm.id}`} 
-                                                id={`toggle-${perm.id}`} 
-                                                checked={isEnabled}
-                                                onChange={() => togglePermission(perm.id)}
-                                                className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"
-                                            />
-                                            <label 
-                                                htmlFor={`toggle-${perm.id}`} 
-                                                className={`toggle-label block overflow-hidden h-6 rounded-full cursor-pointer ${isEnabled ? 'bg-brand-orange' : 'bg-gray-300'}`}
-                                            ></label>
+                                            <input type="checkbox" checked={isEnabled} onChange={() => togglePermission(perm.id)} className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer" />
+                                            <label className={`toggle-label block overflow-hidden h-6 rounded-full cursor-pointer ${isEnabled ? 'bg-brand-orange' : 'bg-gray-300'}`}></label>
                                         </div>
                                     </div>
                                 );
                             })}
-                            <div className="mt-6 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-900 text-center">
-                                <p className="text-xs text-blue-600 dark:text-blue-300">As alterações são salvas automaticamente.</p>
-                            </div>
+                            <div className="mt-6 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-900 text-center"><p className="text-xs text-blue-600 dark:text-blue-300">As alterações são salvas automaticamente.</p></div>
                         </div>
                     )}
                 </div>
@@ -620,14 +481,9 @@
 
         const MenuScreen = ({ onNavigate, responsibleName, currentUnit, onStartInspection, usersList }) => {
             const [time, setTime] = useState(new Date());
-            
             const isAdmin = responsibleName === "ADMIN" || currentUnit === "GLOBAL";
-            
-            // Lógica de Permissões
             const currentUserObj = usersList.find(u => u.name === responsibleName);
-            // Default: Se não tiver campo permissions (usuário antigo), tem acesso básico. Se for array vazio, sem acesso.
             const userPerms = currentUserObj?.permissions || ['EXTINTOR', 'HIDRANTE', 'HISTORICO']; 
-            
             const hasAccess = (perm) => isAdmin || userPerms.includes(perm);
 
             useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
@@ -636,10 +492,7 @@
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-6 animate-fade-in relative">
                     <div className="absolute top-0 left-0 w-full bg-gray-100 dark:bg-gray-800 p-2 px-6 flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
-                        <div className="flex flex-col">
-                            <span>Olá, <b>{responsibleName}</b></span>
-                            <span className="text-[10px] text-gray-400"><i className="fas fa-building mr-1"></i> {currentUnit}</span>
-                        </div>
+                        <div className="flex flex-col"><span>Olá, <b>{responsibleName}</b></span><span className="text-[10px] text-gray-400"><i className="fas fa-building mr-1"></i> {currentUnit}</span></div>
                         <button onClick={handleLogout} className="text-brand-red font-bold">Sair</button>
                     </div>
                     <div className="flex-1 flex flex-col items-center justify-center space-y-6 mt-6 overflow-y-auto">
@@ -647,29 +500,15 @@
                         <div className="text-center"><h1 className="text-2xl font-extrabold tracking-tight">TR FIRE <span className="text-brand-orange">INSPEÇÕES</span></h1><p className="text-gray-500 mt-1 font-mono text-xs">{time.toLocaleDateString('pt-BR', {weekday: 'long', day:'numeric', month:'long'})}<br/>{time.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}</p></div>
                         <div className="text-center w-full -mb-2"><h2 className="text-base font-black text-gray-800 dark:text-white uppercase tracking-wider mb-1">MENU PRINCIPAL</h2><p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Selecione uma categoria</p></div>
                         <div className="w-full space-y-3 pb-4">
-                            {/* Verifica Permissão RONDA */}
                             {hasAccess('RONDA') && (
                                 <button onClick={() => onNavigate('roundsLocation')} className="w-full py-4 bg-brand-blue active:bg-blue-800 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95 relative overflow-hidden">
                                     {isAdmin && <div className="absolute top-0 right-0 bg-white/20 px-2 py-0.5 text-[10px] rounded-bl">Admin</div>}
                                     <i className="fas fa-clipboard-check text-2xl"></i> RONDA DIÁRIA
                                 </button>
                             )}
-                            
-                            {/* Verifica Permissão EXTINTOR */}
-                            {hasAccess('EXTINTOR') && (
-                                <button onClick={() => onStartInspection('EXTINTOR')} className="w-full py-4 bg-brand-red active:bg-red-800 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95"><i className="fas fa-fire-extinguisher text-2xl"></i> EXTINTORES</button>
-                            )}
-                            
-                            {/* Verifica Permissão HIDRANTE */}
-                            {hasAccess('HIDRANTE') && (
-                                <button onClick={() => onStartInspection('HIDRANTE')} className="w-full py-4 bg-brand-orange active:bg-orange-800 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95"><i className="fas fa-faucet text-2xl"></i> HIDRANTES</button>
-                            )}
-                            
-                            {/* Verifica Permissão HISTORICO */}
-                            {hasAccess('HISTORICO') && (
-                                <button onClick={() => onNavigate('list')} className="w-full py-4 bg-gray-800 active:bg-gray-900 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95"><i className="fas fa-database text-xl"></i> HISTÓRICO</button>
-                            )}
-                            
+                            {hasAccess('EXTINTOR') && <button onClick={() => onStartInspection('EXTINTOR')} className="w-full py-4 bg-brand-red active:bg-red-800 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95"><i className="fas fa-fire-extinguisher text-2xl"></i> EXTINTORES</button>}
+                            {hasAccess('HIDRANTE') && <button onClick={() => onStartInspection('HIDRANTE')} className="w-full py-4 bg-brand-orange active:bg-orange-800 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95"><i className="fas fa-faucet text-2xl"></i> HIDRANTES</button>}
+                            {hasAccess('HISTORICO') && <button onClick={() => onNavigate('list')} className="w-full py-4 bg-gray-800 active:bg-gray-900 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95"><i className="fas fa-database text-xl"></i> HISTÓRICO</button>}
                             {isAdmin && (
                                 <button onClick={() => onNavigate('adminMenu')} className="w-full py-4 bg-cyan-700 active:bg-cyan-900 text-white rounded-xl text-lg font-bold shadow-lg flex items-center justify-center gap-4 transition-transform active:scale-95 relative overflow-hidden">
                                     <div className="absolute top-0 right-0 bg-white/20 px-2 py-0.5 text-[10px] rounded-bl">Admin</div>
@@ -684,7 +523,6 @@
 
         const RoundsLocationScreen = ({ onNavigate, onSelectLocation, db, responsibleName }) => {
             const [shiftInfo, setShiftInfo] = useState({ name: '', start: null, end: null });
-            // Forçar re-render a cada minuto para atualizar o timer, embora o cálculo seja feito no render
             const [tick, setTick] = useState(0); 
 
             useEffect(() => {
@@ -694,7 +532,6 @@
                     let start = new Date(now);
                     let end = new Date(now);
                     let name = "";
-
                     if (hour >= 6 && hour < 18) {
                         name = "Turno Diurno (06:00 - 17:59)";
                         start.setHours(6, 0, 0, 0);
@@ -713,13 +550,8 @@
                     }
                     setShiftInfo({ name, start, end });
                 };
-                
                 updateShift();
-                const interval = setInterval(() => {
-                    setTick(t => t + 1); // Força atualização do timer
-                    updateShift();
-                }, 60000); // Atualiza a cada minuto
-                
+                const interval = setInterval(() => { setTick(t => t + 1); updateShift(); }, 60000); 
                 return () => clearInterval(interval);
             }, []);
 
@@ -736,19 +568,12 @@
                 if (!shiftInfo.end) return null;
                 const now = new Date();
                 const diffMs = shiftInfo.end - now;
-                
-                if (diffMs <= 0) return null; // Turno acabou
-
+                if (diffMs <= 0) return null;
                 const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
                 const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-                
-                let text = "";
-                if (diffHrs > 0) text = `+${diffHrs}H`;
-                else text = `+${diffMins}m`;
-
                 return (
                     <div className="absolute right-12 top-1/2 -translate-y-1/2 bg-brand-orange text-white rounded-lg px-2 py-1.5 font-black text-xs shadow-md border border-white/20 animate-pulse">
-                        {text}
+                        {diffHrs > 0 ? `+${diffHrs}H` : `+${diffMins}m`}
                     </div>
                 );
             };
@@ -760,11 +585,7 @@
                         <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 dark:bg-blue-900 rounded-full mb-4"><i className="fas fa-map-marker-alt text-2xl text-blue-600 dark:text-blue-400"></i></div>
                         <h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">LOCAIS DE RONDA</h2>
                         <div className="mt-2 inline-block bg-blue-50 dark:bg-blue-900/30 px-3 py-1 rounded-full border border-blue-100 dark:border-blue-800"><p className="text-blue-600 dark:text-blue-300 text-xs font-bold uppercase"><i className="far fa-clock mr-1"></i> {shiftInfo.name}</p></div>
-                        {/* Exibição do Nome do Bombeiro Civil */}
-                        <div className="mt-3 flex flex-col items-center animate-fade-in">
-                            <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider mb-1">Bombeiro Civil</span>
-                            <span className="text-sm font-black text-gray-800 dark:text-white bg-gray-100 dark:bg-gray-800 px-3 py-1 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">{responsibleName}</span>
-                        </div>
+                        <div className="mt-3 flex flex-col items-center animate-fade-in"><span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider mb-1">Bombeiro Civil</span><span className="text-sm font-black text-gray-800 dark:text-white bg-gray-100 dark:bg-gray-800 px-3 py-1 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">{responsibleName}</span></div>
                     </div>
                     <div className="flex-1 overflow-y-auto space-y-3 pb-6">
                         {ROUND_LOCATIONS.map(loc => {
@@ -827,13 +648,9 @@
                     <div className="bg-white dark:bg-gray-900 p-4 shadow-sm flex items-center justify-between sticky top-0 z-20"><div className="flex flex-col"><div className="flex items-center"><button onClick={() => onNavigate('roundsLocation')} className="w-8 h-8 flex items-center justify-center text-gray-600 dark:text-white mr-2"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold text-gray-800 dark:text-white">Ronda Preventiva</h2></div><span className="text-xs text-gray-500 ml-10">Local: <b>{roundLocation}</b></span></div><button onClick={save} disabled={isSaving} className="bg-brand-blue text-white px-4 py-2 rounded-lg font-bold shadow-sm active:scale-95 transition-transform text-sm flex items-center">{isSaving ? <i className="fas fa-spinner fa-spin mr-2"></i> : <i className="fas fa-save mr-2"></i>} {isSaving ? 'SALVANDO' : 'SALVAR'}</button></div>
                     <div className="flex-1 overflow-y-auto p-4 space-y-4">
                         <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-900">
-                            {/* Novo Campo: Unidade Conectada */}
                             <div className="mb-3 border-b border-blue-200 dark:border-blue-800 pb-2">
                                 <label className="text-[10px] font-bold text-blue-500 dark:text-blue-300 uppercase tracking-wider block mb-1">Unidade Conectada</label>
-                                <div className="flex items-center gap-2 text-blue-800 dark:text-blue-100 font-bold">
-                                    <i className="fas fa-building text-sm"></i>
-                                    <span>{currentUnit || 'Global'}</span>
-                                </div>
+                                <div className="flex items-center gap-2 text-blue-800 dark:text-blue-100 font-bold"><i className="fas fa-building text-sm"></i><span>{currentUnit || 'Global'}</span></div>
                             </div>
                             <label className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase">Área Técnica (QR Code)</label>
                             <input value={form.equipmentName} onChange={e=>setForm({...form, equipmentName:e.target.value})} placeholder="Escaneie ou digite..." className="w-full bg-transparent font-bold text-lg border-b border-blue-300 focus:outline-none py-1 dark:text-white"/>
@@ -928,7 +745,6 @@
                 }, "error");
             };
 
-            // NOVA FUNÇÃO: Limpeza em massa para a lista PRINCIPAL (Soft Delete)
             const confirmBulkSoftDelete = () => {
                 if (selectedIds.size === 0) return;
                 showConfirm(`Mover ${selectedIds.size} itens para a LIXEIRA?`, async () => {
@@ -939,7 +755,6 @@
                 }, "warning");
             };
             
-            // FUNÇÕES PARA AÇÃO GLOBAL NA LIXEIRA
             const handleRestoreAll = () => {
                 if (deletedData.length === 0) return showAlert("Lixeira vazia!", "info");
                 showConfirm(`Deseja restaurar TODOS os ${deletedData.length} itens da lixeira?`, async () => {
@@ -1014,40 +829,26 @@
                     {/* Botões de Ação Global na Lixeira (Apenas Admin e quando Lixeira tem itens) */}
                     {showBin && isAdmin && deletedData.length > 0 && (
                         <div className="bg-red-800 p-3 flex gap-3 animate-fade-in shadow-inner border-t border-red-700">
-                            <button onClick={handleRestoreAll} className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-bold text-xs shadow-md active:scale-95 transition-all flex items-center justify-center gap-2">
-                                <i className="fas fa-trash-restore"></i> RESTAURAR TUDO
-                            </button>
-                            <button onClick={handleEmptyBin} className="flex-1 bg-white text-red-700 hover:bg-gray-100 py-2 rounded-lg font-bold text-xs shadow-md active:scale-95 transition-all flex items-center justify-center gap-2">
-                                <i className="fas fa-fire"></i> ESVAZIAR LIXEIRA
-                            </button>
+                            <button onClick={handleRestoreAll} className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-bold text-xs shadow-md active:scale-95 transition-all flex items-center justify-center gap-2"><i className="fas fa-trash-restore"></i> RESTAURAR TUDO</button>
+                            <button onClick={handleEmptyBin} className="flex-1 bg-white text-red-700 hover:bg-gray-100 py-2 rounded-lg font-bold text-xs shadow-md active:scale-95 transition-all flex items-center justify-center gap-2"><i className="fas fa-fire"></i> ESVAZIAR LIXEIRA</button>
                         </div>
                     )}
                     {/* Bulk Actions Bar for Admin (Ativa em AMBOS os modos se houver itens selecionados) */}
                     {isAdmin && displayList.length > 0 && selectedIds.size > 0 && (
                         <div className={`${showBin ? 'bg-red-700' : 'bg-gray-700'} text-white p-3 flex justify-between items-center animate-fade-in shadow-inner`}>
                             <div className="flex items-center gap-3">
-                                <div onClick={handleSelectAll} className={`w-6 h-6 rounded border-2 border-white flex items-center justify-center cursor-pointer ${selectedIds.size === displayList.length && displayList.length > 0 ? 'bg-white text-red-700' : ''}`}>
-                                    {selectedIds.size === displayList.length && displayList.length > 0 && <i className="fas fa-check text-xs"></i>}
-                                </div>
+                                <div onClick={handleSelectAll} className={`w-6 h-6 rounded border-2 border-white flex items-center justify-center cursor-pointer ${selectedIds.size === displayList.length && displayList.length > 0 ? 'bg-white text-red-700' : ''}`}>{selectedIds.size === displayList.length && displayList.length > 0 && <i className="fas fa-check text-xs"></i>}</div>
                                 <span className="text-xs font-bold uppercase cursor-pointer" onClick={handleSelectAll}>Selecionar Todos</span>
                             </div>
                             {selectedIds.size > 0 && (
                                 <div className="flex gap-2">
                                     {showBin ? (
-                                        // Ações na Lixeira
                                         <>
-                                            <button onClick={confirmBulkRestore} className="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-md active:scale-95 transition-all flex items-center gap-1">
-                                                <i className="fas fa-trash-restore"></i> Restaurar ({selectedIds.size})
-                                            </button>
-                                            <button onClick={confirmBulkDelete} className="bg-white text-red-700 hover:bg-gray-100 px-3 py-1.5 rounded-lg text-xs font-bold shadow-md active:scale-95 transition-all flex items-center gap-1">
-                                                <i className="fas fa-times"></i> Excluir ({selectedIds.size})
-                                            </button>
+                                            <button onClick={confirmBulkRestore} className="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-md active:scale-95 transition-all flex items-center gap-1"><i className="fas fa-trash-restore"></i> Restaurar ({selectedIds.size})</button>
+                                            <button onClick={confirmBulkDelete} className="bg-white text-red-700 hover:bg-gray-100 px-3 py-1.5 rounded-lg text-xs font-bold shadow-md active:scale-95 transition-all flex items-center gap-1"><i className="fas fa-times"></i> Excluir ({selectedIds.size})</button>
                                         </>
                                     ) : (
-                                        // Ações na Lista Principal
-                                        <button onClick={confirmBulkSoftDelete} className="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-md active:scale-95 transition-all flex items-center gap-1">
-                                            <i className="fas fa-trash"></i> Mover para Lixeira ({selectedIds.size})
-                                        </button>
+                                        <button onClick={confirmBulkSoftDelete} className="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-md active:scale-95 transition-all flex items-center gap-1"><i className="fas fa-trash"></i> Mover para Lixeira ({selectedIds.size})</button>
                                     )}
                                 </div>
                             )}
@@ -1072,298 +873,279 @@
         };
         
         // Garante que o DOM esteja carregado antes de renderizar
-        // Use a small timeout to let Babel process the function declaration above
         const rootElement = document.getElementById('root');
         if (rootElement) {
             const root = ReactDOM.createRoot(rootElement);
             // Definição direta e renderização para garantir que App esteja definido
-            function App() {
-                 const [page, setPage] = useState(localStorage.getItem('trfire_user') ? 'menu' : 'responsible');
-                 const [responsible, setResponsible] = useState(localStorage.getItem('trfire_user') || '');
-                 const [currentUnit, setCurrentUnit] = useState(localStorage.getItem('trfire_unit') || '');
-                 const [inspectionType, setInspectionType] = useState('EXTINTOR');
-                 const [roundLocation, setRoundLocation] = useState('');
-                 const [db, setDb] = useState([]);
-                 const [users, setUsers] = useState([]);
-                 const [units, setUnits] = useState([]);
-                 const [scanRes, setScanRes] = useState(null);
-                 const [notification, setNotification] = useState({ isOpen: false, message: '', type: 'info', isConfirmation: false, onConfirm: null });
-     
-                 const showAlert = (message, type = 'info', onCloseAction = null) => { setNotification({ isOpen: true, message, type, isConfirmation: false, onConfirm: null, onCloseAction }); };
-                 const showConfirm = (message, onConfirmAction, type = 'warning') => { setNotification({ isOpen: true, message, type, isConfirmation: true, onConfirm: onConfirmAction }); };
-                 const closeNotification = () => { if(notification.onCloseAction) notification.onCloseAction(); setNotification({ ...notification, isOpen: false, onCloseAction: null }); };
-     
-                 useEffect(() => {
-                     if (page === 'responsible') return;
-                     const TIMEOUT_MS = 5 * 60 * 1000; 
-                     let timeoutId;
-                     const triggerLogout = () => { showAlert("Sessão encerrada por inatividade (5 min).", "warning", () => { localStorage.removeItem('trfire_user'); window.location.reload(); }); };
-                     const resetTimer = () => { if(timeoutId) clearTimeout(timeoutId); timeoutId = setTimeout(triggerLogout, TIMEOUT_MS); };
-                     const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
-                     events.forEach(e => document.addEventListener(e, resetTimer));
-                     resetTimer();
-                     return () => { if(timeoutId) clearTimeout(timeoutId); events.forEach(e => document.removeEventListener(e, resetTimer)); };
-                 }, [page]); 
-     
-                 const checkAndGenerateMissedRounds = async (currentDb) => {
-                     if (!dbFirestore) return;
-                     const now = new Date();
-                     const currentHour = now.getHours();
-                     
-                     let targetShiftStart = null;
-                     let targetShiftEnd = null;
-                     let shiftNameID = "";
-                     let shiftDisplayName = "";
-     
-                     // Função auxiliar para data local YYYY-MM-DD (Evita bugs de fuso horário no ID)
-                     const getLocalISODate = (d) => {
-                         return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-                     };
-     
-                     if (currentHour >= 18) { 
-                         // Checa Turno Diurno de HOJE (06:00 - 17:59) - Só gera após as 18:00
-                         const todayMorning = new Date(now); todayMorning.setHours(6, 0, 0, 0); 
-                         const todayAfternoon = new Date(now); todayAfternoon.setHours(17, 59, 59, 999); 
-                         
-                         targetShiftStart = todayMorning; 
-                         targetShiftEnd = todayAfternoon; 
-                         shiftNameID = `DIURNO_${getLocalISODate(now)}`; 
-                         shiftDisplayName = "TURNO DIURNO";
-                     } 
-                     else if (currentHour >= 6) { 
-                         // Checa Turno Noturno de ONTEM (18:00 - 05:59 HOJE) - Só gera após as 06:00
-                         const yesterdayNight = new Date(now); yesterdayNight.setDate(yesterdayNight.getDate() - 1); yesterdayNight.setHours(18, 0, 0, 0); 
-                         const todayEarlyMorning = new Date(now); todayEarlyMorning.setHours(5, 59, 59, 999); 
-                         
-                         targetShiftStart = yesterdayNight; 
-                         targetShiftEnd = todayEarlyMorning; 
-                         shiftNameID = `NOTURNO_${getLocalISODate(yesterdayNight)}`; 
-                         shiftDisplayName = "TURNO NOTURNO";
-                     }
-                     else { 
-                         // Madrugada (< 06:00). Checa Turno Diurno de ONTEM.
-                         const yesterdayMorning = new Date(now); yesterdayMorning.setDate(yesterdayMorning.getDate() - 1); yesterdayMorning.setHours(6, 0, 0, 0); 
-                         const yesterdayAfternoon = new Date(now); yesterdayAfternoon.setDate(yesterdayAfternoon.getDate() - 1); yesterdayAfternoon.setHours(17, 59, 59, 999); 
-                         
-                         targetShiftStart = yesterdayMorning; 
-                         targetShiftEnd = yesterdayAfternoon; 
-                         shiftNameID = `DIURNO_${getLocalISODate(yesterdayMorning)}`; 
-                         shiftDisplayName = "TURNO DIURNO";
-                     }
-                     
-                     if (!targetShiftStart) return;
-     
-                     // GARANTIA FINAL: Só prossegue se o agora for maior que o fim do turno alvo
-                     if (now <= targetShiftEnd) return;
-     
-                     for (const loc of ROUND_LOCATIONS) {
-                         // Verifica se existe inspeção FEITA (não deletada) neste intervalo e local
-                         const hasInspection = currentDb.some(item => { 
-                             if (item.type !== 'RONDA' || item.deleted || item.sector !== loc) return false; 
-                             const itemDate = new Date(item.created_at); 
-                             return itemDate >= targetShiftStart && itemDate <= targetShiftEnd; 
-                         });
-                         
-                         const safeLocId = loc.replace(/[^a-zA-Z0-9]/g, '');
-                         const autoDocId = `AUTO_${shiftNameID}_${safeLocId}`;
-                         const alreadyAutoRegistered = currentDb.some(item => item.id === autoDocId);
-                         
-                         // Se não foi feita e ainda não tem registro automático, cria
-                         if (!hasInspection && !alreadyAutoRegistered) { 
-                             try { 
-                                 await setDoc(doc(dbFirestore, "inspections", autoDocId), { 
-                                     type: 'RONDA', 
-                                     sector: loc, 
-                                     equipmentName: `AUDITORIA AUTOMÁTICA - ${shiftDisplayName}`, 
-                                     status: 'NÃO REALIZADA', 
-                                     auto: true, 
-                                     obs: `Inspeção do ${shiftDisplayName} não realizada dentro do horário estipulado.`, 
-                                     responsible: 'SISTEMA', 
-                                     created_at: targetShiftEnd.toISOString(), 
-                                     deleted: false 
-                                 }); 
-                             } catch (e) { 
-                                 console.error("Erro ao gerar registro automático", e); 
-                             } 
-                         }
-                     }
-                 };
-     
-                 // NOVA FUNÇÃO: Limpeza automática da lixeira após 72h
-                 const checkAndCleanupTrash = async (currentDb) => {
-                     if (!dbFirestore) return;
-                     const now = new Date();
-                     const DELETE_THRESHOLD_MS = 72 * 60 * 60 * 1000; // 72 horas em milissegundos
-     
-                     currentDb.forEach(async (item) => {
-                         // Só processa se estiver marcado como deletado E tiver data de exclusão registrada
-                         if (item.deleted && item.deleted_at) {
-                             const deletedDate = new Date(item.deleted_at);
-                             // Se a diferença de tempo for maior que 72h
-                             if ((now - deletedDate) > DELETE_THRESHOLD_MS) {
-                                 try {
-                                     await deleteDoc(doc(dbFirestore, "inspections", item.id));
-                                     console.log(`[AUTO-CLEANUP] Item ${item.id} removido definitivamente (Expirou 72h).`);
-                                 } catch (e) {
-                                     console.error("Erro na limpeza automática da lixeira:", e);
-                                 }
-                             }
-                         }
-                     });
-                 };
-     
-                 useEffect(() => {
-                     if(!dbFirestore) return;
-                     // ALTERAÇÃO: Reduzido de 1000 para 150 para evitar "Quota Exceeded"
-                     const q = query(collection(dbFirestore, "inspections"), orderBy("created_at", "desc"), limit(150));
-                     
-                     const unsubscribeInspections = onSnapshot(q, (querySnapshot) => { 
-                         const inspections = []; 
-                         querySnapshot.forEach((doc) => { inspections.push({ id: doc.id, ...doc.data() }); }); 
-                         setDb(inspections); 
-                         
-                         // OTIMIZAÇÃO CRÍTICA: Só o ADMIN executa a auditoria automática
-                         if (localStorage.getItem('trfire_user') === 'ADMIN') {
-                             checkAndGenerateMissedRounds(inspections);
-                         }
-     
-                         // Limpeza Automática da Lixeira (Regra 72h): 
-                         // Executa para TODOS os usuários (existentes e novos) de forma anônima e oculta em background.
-                         checkAndCleanupTrash(inspections);
-                         
-                     }, (error) => { 
-                         console.error("Erro ao buscar dados:", error);
-                         // Adicionei log específico se for erro de quota
-                         if (error.code === 'resource-exhausted') {
-                             console.warn("Quota do Firestore excedida. Aguarde ou faça upgrade.");
-                         }
-                     });
-                     
-                     // Monitorar Usuários (Migração de Dados: Unidade Padrão e Criação do ADMIN)
-                     const usersCollection = collection(dbFirestore, "users");
-                     const qUsers = query(usersCollection, orderBy("name"));
-                     const unsubscribeUsers = onSnapshot(qUsers, async (snapshot) => { 
-                         const usersList = []; 
-                         snapshot.forEach(doc => usersList.push({ id: doc.id, ...doc.data() })); 
-                         setUsers(usersList); 
-     
-                         // Migração automática de usuários sem unidade para "PARQUE LOGISTICO AERO I"
-                         usersList.forEach(async (u) => {
-                             if (!u.unit && u.name !== "ADMIN") { // ADMIN tem unit GLOBAL ou especial, mas aqui vamos deixar passar ou atribuir
-                                // Não atribui unidade ao ADMIN se ele for especial, ou atribui GLOBAL
-                                // Vamos focar nos usuários normais
-                                if (u.name !== "ADMIN") {
-                                     try {
-                                         const userRef = doc(dbFirestore, "users", u.id);
-                                         await updateDoc(userRef, { unit: "PARQUE LOGISTICO AERO I" });
-                                     } catch(e) { console.error("Erro migração user", e); }
+            const App = () => {
+                const [page, setPage] = useState(localStorage.getItem('trfire_user') ? 'menu' : 'responsible');
+                const [responsible, setResponsible] = useState(localStorage.getItem('trfire_user') || '');
+                const [currentUnit, setCurrentUnit] = useState(localStorage.getItem('trfire_unit') || '');
+                const [inspectionType, setInspectionType] = useState('EXTINTOR');
+                const [roundLocation, setRoundLocation] = useState('');
+                const [db, setDb] = useState([]);
+                const [users, setUsers] = useState([]);
+                const [units, setUnits] = useState([]);
+                const [scanRes, setScanRes] = useState(null);
+                const [notification, setNotification] = useState({ isOpen: false, message: '', type: 'info', isConfirmation: false, onConfirm: null });
+
+                const showAlert = (message, type = 'info', onCloseAction = null) => { setNotification({ isOpen: true, message, type, isConfirmation: false, onConfirm: null, onCloseAction }); };
+                const showConfirm = (message, onConfirmAction, type = 'warning') => { setNotification({ isOpen: true, message, type, isConfirmation: true, onConfirm: onConfirmAction }); };
+                const closeNotification = () => { if(notification.onCloseAction) notification.onCloseAction(); setNotification({ ...notification, isOpen: false, onCloseAction: null }); };
+
+                // NAVIGATION: Support for browser back button
+                const navigateTo = (newPage) => {
+                    try {
+                         window.history.pushState({ page: newPage }, "", `?page=${newPage}`);
+                    } catch (e) {
+                         // Fallback for environments blocking history API
+                         console.log("Navigation history not supported in this environment");
+                    }
+                    setPage(newPage);
+                };
+
+                useEffect(() => {
+                    const handlePopState = (event) => {
+                        if (event.state && event.state.page) {
+                            setPage(event.state.page);
+                        }
+                    };
+                    window.addEventListener('popstate', handlePopState);
+                    return () => window.removeEventListener('popstate', handlePopState);
+                }, []);
+
+                useEffect(() => {
+                    if (page === 'responsible') return;
+                    const TIMEOUT_MS = 5 * 60 * 1000; 
+                    let timeoutId;
+                    const triggerLogout = () => { showAlert("Sessão encerrada por inatividade (5 min).", "warning", () => { localStorage.removeItem('trfire_user'); window.location.reload(); }); };
+                    const resetTimer = () => { if(timeoutId) clearTimeout(timeoutId); timeoutId = setTimeout(triggerLogout, TIMEOUT_MS); };
+                    const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
+                    events.forEach(e => document.addEventListener(e, resetTimer));
+                    resetTimer();
+                    return () => { if(timeoutId) clearTimeout(timeoutId); events.forEach(e => document.removeEventListener(e, resetTimer)); };
+                }, [page]); 
+
+                const checkAndGenerateMissedRounds = async (currentDb) => {
+                    if (!dbFirestore) return;
+                    const now = new Date();
+                    const currentHour = now.getHours();
+                    
+                    let targetShiftStart = null;
+                    let targetShiftEnd = null;
+                    let shiftNameID = "";
+                    let shiftDisplayName = "";
+
+                    const getLocalISODate = (d) => {
+                        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                    };
+
+                    if (currentHour >= 18) { 
+                        const todayMorning = new Date(now); todayMorning.setHours(6, 0, 0, 0); 
+                        const todayAfternoon = new Date(now); todayAfternoon.setHours(17, 59, 59, 999); 
+                        targetShiftStart = todayMorning; 
+                        targetShiftEnd = todayAfternoon; 
+                        shiftNameID = `DIURNO_${getLocalISODate(now)}`; 
+                        shiftDisplayName = "TURNO DIURNO";
+                    } 
+                    else if (currentHour >= 6) { 
+                        const yesterdayNight = new Date(now); yesterdayNight.setDate(yesterdayNight.getDate() - 1); yesterdayNight.setHours(18, 0, 0, 0); 
+                        const todayEarlyMorning = new Date(now); todayEarlyMorning.setHours(5, 59, 59, 999); 
+                        targetShiftStart = yesterdayNight; 
+                        targetShiftEnd = todayEarlyMorning; 
+                        shiftNameID = `NOTURNO_${getLocalISODate(yesterdayNight)}`; 
+                        shiftDisplayName = "TURNO NOTURNO";
+                    }
+                    else { 
+                        const yesterdayMorning = new Date(now); yesterdayMorning.setDate(yesterdayMorning.getDate() - 1); yesterdayMorning.setHours(6, 0, 0, 0); 
+                        const yesterdayAfternoon = new Date(now); yesterdayAfternoon.setDate(yesterdayAfternoon.getDate() - 1); yesterdayAfternoon.setHours(17, 59, 59, 999); 
+                        targetShiftStart = yesterdayMorning; 
+                        targetShiftEnd = yesterdayAfternoon; 
+                        shiftNameID = `DIURNO_${getLocalISODate(yesterdayMorning)}`; 
+                        shiftDisplayName = "TURNO DIURNO";
+                    }
+                    
+                    if (!targetShiftStart) return;
+                    if (now <= targetShiftEnd) return;
+
+                    for (const loc of ROUND_LOCATIONS) {
+                        const hasInspection = currentDb.some(item => { 
+                            if (item.type !== 'RONDA' || item.deleted || item.sector !== loc) return false; 
+                            const itemDate = new Date(item.created_at); 
+                            return itemDate >= targetShiftStart && itemDate <= targetShiftEnd; 
+                        });
+                        
+                        const safeLocId = loc.replace(/[^a-zA-Z0-9]/g, '');
+                        const autoDocId = `AUTO_${shiftNameID}_${safeLocId}`;
+                        const alreadyAutoRegistered = currentDb.some(item => item.id === autoDocId);
+                        
+                        if (!hasInspection && !alreadyAutoRegistered) { 
+                            try { 
+                                await dbFirestore.collection("inspections").doc(autoDocId).set({ 
+                                    type: 'RONDA', 
+                                    sector: loc, 
+                                    equipmentName: `AUDITORIA AUTOMÁTICA - ${shiftDisplayName}`, 
+                                    status: 'NÃO REALIZADA', 
+                                    auto: true, 
+                                    obs: `Inspeção do ${shiftDisplayName} não realizada dentro do horário estipulado.`, 
+                                    responsible: 'SISTEMA', 
+                                    created_at: targetShiftEnd.toISOString(), 
+                                    deleted: false 
+                                }); 
+                            } catch (e) { 
+                                console.error("Erro ao gerar registro automático", e); 
+                            } 
+                        }
+                    }
+                };
+
+                const checkAndCleanupTrash = async (currentDb) => {
+                    if (!dbFirestore) return;
+                    const now = new Date();
+                    const DELETE_THRESHOLD_MS = 72 * 60 * 60 * 1000; 
+
+                    currentDb.forEach(async (item) => {
+                        if (item.deleted && item.deleted_at) {
+                            const deletedDate = new Date(item.deleted_at);
+                            if ((now - deletedDate) > DELETE_THRESHOLD_MS) {
+                                try {
+                                    await dbFirestore.collection("inspections").doc(item.id).delete();
+                                    console.log(`[AUTO-CLEANUP] Item ${item.id} removido definitivamente (Expirou 72h).`);
+                                } catch (e) {
+                                    console.error("Erro na limpeza automática da lixeira:", e);
                                 }
-                             }
-                         });
-                         
-                         // CRIAÇÃO AUTOMÁTICA DO ADMIN SE NÃO EXISTIR
-                         const adminExists = usersList.some(u => u.name === "ADMIN");
-                         if (!adminExists) {
-                             console.log("Criando usuário ADMIN padrão...");
-                             // Unidade 'GLOBAL' ou vazia, já que o filtro de login trata ADMIN como exceção
-                             await addDoc(usersCollection, { name: "ADMIN", pass: "Admin1605", unit: "GLOBAL" });
-                         }
-                     });
-     
-                     const unitsCollection = collection(dbFirestore, "units");
-                     const qUnits = query(unitsCollection, orderBy("name"));
-                     const unsubscribeUnits = onSnapshot(qUnits, async (snapshot) => { 
-                         const unitsList = []; 
-                         snapshot.forEach(doc => {
-                             const d = doc.data();
-                             // LIMPEZA AUTOMÁTICA: Remove "NOVA UNIDADE" do banco se existir (APENAS SE FOR ADMIN)
-                             if (d.name === "NOVA UNIDADE") {
-                                 if (localStorage.getItem('trfire_user') === 'ADMIN') {
-                                     deleteDoc(doc.ref).catch(e => console.error("Erro ao excluir auto:", e));
-                                 }
-                             } else {
-                                 unitsList.push({ id: doc.id, ...d });
-                             }
-                         }); 
-                         setUnits(unitsList); 
-                     });
-                     return () => { unsubscribeInspections(); unsubscribeUsers(); unsubscribeUnits(); };
-                 }, []);
-     
-                 const handleStartInspection = (type) => { setInspectionType(type); setPage('scan'); };
-                 const handleRoundStart = (location) => { setRoundLocation(location); setInspectionType('RONDA'); setPage('scan'); };
-                 const handleSave = async (formData) => { if(!dbFirestore) { showAlert("Erro: Banco de dados não conectado.", "error"); return; } try { await addDoc(collection(dbFirestore, "inspections"), { ...formData, unit: currentUnit }); setPage('list'); } catch (e) { showAlert("Erro ao salvar na nuvem.", "error"); } };
-                 const handleSaveUser = async (userData) => { if(!dbFirestore) return; try { await addDoc(collection(dbFirestore, "users"), userData); } catch(e) { showAlert("Erro ao salvar usuário.", "error"); } };
-                 
-                 // ATUALIZAÇÃO: Gerenciar permissões e Edição Completa de Usuário
-                 const handleUpdateUser = async (id, data) => { 
-                     if(!dbFirestore) return; 
-                     try { 
-                         // Se data for string, é o comportamento antigo (apenas senha). Se for objeto, é novo.
-                         const updateData = typeof data === 'string' ? { pass: data } : data;
-                         await updateDoc(doc(dbFirestore, "users", id), updateData); 
-                         showAlert("Dados do usuário atualizados!", "success"); 
-                     } catch(e) { 
-                         console.error("Erro ao atualizar", e);
-                         showAlert("Erro ao atualizar usuário.", "error"); 
-                     } 
-                 };
-     
-                 const handleUpdateUserPermissions = async (id, newPermissions) => {
-                     if (!dbFirestore) return;
-                     try {
-                         await updateDoc(doc(dbFirestore, "users", id), { permissions: newPermissions });
-                     } catch(e) {
-                         console.error("Erro ao atualizar permissões", e);
-                         showAlert("Erro ao salvar permissão.", "error");
-                     }
-                 };
-     
-                 const handleDeleteUser = async (id) => { if(!dbFirestore) return; try { await deleteDoc(doc(dbFirestore, "users", id)); showAlert("Usuário excluído!", "success"); } catch(e) { showAlert("Erro ao excluir usuário.", "error"); } };
-                 const handleSaveUnit = async (unitData) => { if(!dbFirestore) return; try { await addDoc(collection(dbFirestore, "units"), unitData); } catch(e) { showAlert("Erro ao salvar unidade.", "error"); } };
-                 const handleUpdateUnit = async (id, data) => { if(!dbFirestore) return; try { await updateDoc(doc(dbFirestore, "units", id), data); showAlert("Unidade atualizada!", "success"); } catch(e) { showAlert("Erro ao atualizar unidade.", "error"); } };
-                 const handleDeleteUnit = async (id) => { if(!dbFirestore) return; try { await deleteDoc(doc(dbFirestore, "units", id)); showAlert("Unidade excluída!", "success"); } catch(e) { showAlert("Erro ao excluir unidade.", "error"); } };
-                 const handleImportData = async (jsonData) => { if(!dbFirestore) return showAlert("Erro BD.", "error"); if(!Array.isArray(jsonData)) return showAlert("JSON Inválido.", "error"); showConfirm(`Importar ${jsonData.length} registros?`, async () => { let c=0; for (const i of jsonData) { try { if (i.id) await setDoc(doc(dbFirestore, "inspections", i.id), i); else await addDoc(collection(dbFirestore, "inspections"), i); c++; } catch(e){} } showAlert(`Sucesso: ${c}`, "success"); }, "warning"); };
-                 
-                 // ATUALIZAÇÃO DO HANDLETOGGLEDELETE PARA INCLUIR TIMESTAMP
-                 const handleToggleDelete = async (id, status) => { 
-                     if(!dbFirestore) return; 
-                     try { 
-                         const docRef = doc(dbFirestore, "inspections", id); 
-                         const updateData = { deleted: status };
-                         // Se for enviado para a lixeira (status = true), grava a data de agora
-                         if (status) {
-                             updateData.deleted_at = new Date().toISOString();
-                         } else {
-                             // Se for restaurado, limpa a data
-                             updateData.deleted_at = null;
-                         }
-                         await updateDoc(docRef, updateData); 
-                     } catch (e) { 
-                         showAlert("Erro ao atualizar.", "error"); 
-                     } 
-                 };
-                 
-                 const handleDeletePermanently = async (id) => { if(!dbFirestore) return; try { await deleteDoc(doc(dbFirestore, "inspections", id)); } catch (e) { showAlert("Erro ao excluir.", "error"); } };
-                 const handleLogin = (name, unitName) => { localStorage.setItem('trfire_user', name); localStorage.setItem('trfire_unit', unitName); setResponsible(name); setCurrentUnit(unitName); setPage('menu'); };
-     
-                 return (
-                     <>
-                         <NotificationModal isOpen={notification.isOpen} message={notification.message} type={notification.type} isConfirmation={notification.isConfirmation} onClose={closeNotification} onConfirm={notification.onConfirm} />
-                         {page === 'responsible' && <ResponsibleScreen onConfirm={handleLogin} usersList={users} unitsList={units} showAlert={showAlert} />}
-                         {page === 'menu' && <MenuScreen onNavigate={setPage} responsibleName={responsible} currentUnit={currentUnit} onStartInspection={handleStartInspection} usersList={users} />}
-                         {page === 'adminMenu' && <AdminMenuScreen onNavigate={setPage} />}
-                         {page === 'accessControl' && <AccessControlScreen onNavigate={setPage} usersList={users} onUpdatePermissions={handleUpdateUserPermissions} />}
-                         {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={setPage} onSelectLocation={handleRoundStart} db={db} responsibleName={responsible} />}
-                         {page === 'userRegister' && <UserRegisterScreen onNavigate={setPage} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} />}
-                         {page === 'unitRegister' && <UnitRegisterScreen onNavigate={setPage} onSaveUnit={handleSaveUnit} unitsList={units} onUpdateUnit={handleUpdateUnit} onDeleteUnit={handleDeleteUnit} showAlert={showAlert} showConfirm={showConfirm} />}
-                         {page === 'scan' && <ScannerScreen onNavigate={(target) => setPage(target === 'menu' && inspectionType === 'RONDA' ? 'roundsLocation' : target)} onScanSuccess={(d)=>{setScanRes(d); setPage(inspectionType === 'RONDA' ? 'roundsForm' : 'form')}} db={db} inspectionType={inspectionType} showAlert={showAlert} />}
-                         {page === 'form' && <FormScreen initialData={scanRes} onNavigate={setPage} responsibleName={responsible} inspectionType={inspectionType} onSave={handleSave} showAlert={showAlert} />}
-                         {page === 'roundsForm' && <RoundsFormScreen initialData={scanRes} onNavigate={setPage} responsibleName={responsible} roundLocation={roundLocation} onSave={handleSave} currentUnit={currentUnit} showAlert={showAlert} />}
-                         {page === 'list' && <ListScreen data={db} onNavigate={setPage} onToggleDelete={handleToggleDelete} onDeletePermanently={handleDeletePermanently} onImportData={handleImportData} currentUser={responsible} showAlert={showAlert} showConfirm={showConfirm} />}
-                     </>
-                 );
-            };
+                            }
+                        }
+                    });
+                };
+
+                useEffect(() => {
+                    if(!dbFirestore) return;
+                    const q = dbFirestore.collection("inspections").orderBy("created_at", "desc").limit(150);
+                    
+                    const unsubscribeInspections = q.onSnapshot((querySnapshot) => { 
+                        const inspections = []; 
+                        querySnapshot.forEach((doc) => { inspections.push({ id: doc.id, ...doc.data() }); }); 
+                        setDb(inspections); 
+                        
+                        if (localStorage.getItem('trfire_user') === 'ADMIN') {
+                            checkAndGenerateMissedRounds(inspections);
+                        }
+                        checkAndCleanupTrash(inspections);
+                        
+                    }, (error) => { 
+                        console.error("Erro ao buscar dados:", error);
+                    });
+                    
+                    const qUsers = dbFirestore.collection("users").orderBy("name");
+                    const unsubscribeUsers = qUsers.onSnapshot(async (snapshot) => { 
+                        const usersList = []; 
+                        snapshot.forEach(doc => usersList.push({ id: doc.id, ...doc.data() })); 
+                        setUsers(usersList); 
+
+                        usersList.forEach(async (u) => {
+                            if (!u.unit && u.name !== "ADMIN") {
+                               if (u.name !== "ADMIN") {
+                                    try {
+                                        await dbFirestore.collection("users").doc(u.id).update({ unit: "PARQUE LOGISTICO AERO I" });
+                                    } catch(e) { console.error("Erro migração user", e); }
+                               }
+                            }
+                        });
+                        
+                        const adminExists = usersList.some(u => u.name === "ADMIN");
+                        if (!adminExists) {
+                            console.log("Criando usuário ADMIN padrão...");
+                            await dbFirestore.collection("users").add({ name: "ADMIN", pass: "Admin1605", unit: "GLOBAL" });
+                        }
+                    });
+
+                    const qUnits = dbFirestore.collection("units").orderBy("name");
+                    const unsubscribeUnits = qUnits.onSnapshot(async (snapshot) => { 
+                        const unitsList = []; 
+                        snapshot.forEach(doc => {
+                            const d = doc.data();
+                            if (d.name === "NOVA UNIDADE") {
+                                if (localStorage.getItem('trfire_user') === 'ADMIN') {
+                                    dbFirestore.collection("units").doc(doc.id).delete().catch(e => console.error("Erro ao excluir auto:", e));
+                                }
+                            } else {
+                                unitsList.push({ id: doc.id, ...d });
+                            }
+                        }); 
+                        setUnits(unitsList); 
+                    });
+                    return () => { unsubscribeInspections(); unsubscribeUsers(); unsubscribeUnits(); };
+                }, []);
+
+                const handleStartInspection = (type) => { setInspectionType(type); navigateTo('scan'); };
+                const handleRoundStart = (location) => { setRoundLocation(location); setInspectionType('RONDA'); navigateTo('scan'); };
+                const handleSave = async (formData) => { if(!dbFirestore) { showAlert("Erro: Banco de dados não conectado.", "error"); return; } try { await dbFirestore.collection("inspections").add({ ...formData, unit: currentUnit }); navigateTo('list'); } catch (e) { showAlert("Erro ao salvar na nuvem.", "error"); } };
+                const handleSaveUser = async (userData) => { if(!dbFirestore) return; try { await dbFirestore.collection("users").add(userData); } catch(e) { showAlert("Erro ao salvar usuário.", "error"); } };
+                
+                const handleUpdateUser = async (id, data) => { 
+                    if(!dbFirestore) return; 
+                    try { 
+                        const updateData = typeof data === 'string' ? { pass: data } : data;
+                        await dbFirestore.collection("users").doc(id).update(updateData); 
+                        showAlert("Dados do usuário atualizados!", "success"); 
+                    } catch(e) { 
+                        console.error("Erro ao atualizar", e);
+                        showAlert("Erro ao atualizar usuário.", "error"); 
+                    } 
+                };
+
+                const handleUpdateUserPermissions = async (id, newPermissions) => {
+                    if (!dbFirestore) return;
+                    try {
+                        await dbFirestore.collection("users").doc(id).update({ permissions: newPermissions });
+                    } catch(e) {
+                        console.error("Erro ao atualizar permissões", e);
+                        showAlert("Erro ao salvar permissão.", "error");
+                    }
+                };
+
+                const handleDeleteUser = async (id) => { if(!dbFirestore) return; try { await dbFirestore.collection("users").doc(id).delete(); showAlert("Usuário excluído!", "success"); } catch(e) { showAlert("Erro ao excluir usuário.", "error"); } };
+                const handleSaveUnit = async (unitData) => { if(!dbFirestore) return; try { await dbFirestore.collection("units").add(unitData); } catch(e) { showAlert("Erro ao salvar unidade.", "error"); } };
+                const handleUpdateUnit = async (id, data) => { if(!dbFirestore) return; try { await dbFirestore.collection("units").doc(id).update(data); showAlert("Unidade atualizada!", "success"); } catch(e) { showAlert("Erro ao atualizar unidade.", "error"); } };
+                const handleDeleteUnit = async (id) => { if(!dbFirestore) return; try { await dbFirestore.collection("units").doc(id).delete(); showAlert("Unidade excluída!", "success"); } catch(e) { showAlert("Erro ao excluir unidade.", "error"); } };
+                const handleImportData = async (jsonData) => { if(!dbFirestore) return showAlert("Erro BD.", "error"); if(!Array.isArray(jsonData)) return showAlert("JSON Inválido.", "error"); showConfirm(`Importar ${jsonData.length} registros?`, async () => { let c=0; for (const i of jsonData) { try { if (i.id) await dbFirestore.collection("inspections").doc(i.id).set(i); else await dbFirestore.collection("inspections").add(i); c++; } catch(e){} } showAlert(`Sucesso: ${c}`, "success"); }, "warning"); };
+                
+                const handleToggleDelete = async (id, status) => { 
+                    if(!dbFirestore) return; 
+                    try { 
+                        const updateData = { deleted: status };
+                        if (status) {
+                            updateData.deleted_at = new Date().toISOString();
+                        } else {
+                            updateData.deleted_at = null;
+                        }
+                        await dbFirestore.collection("inspections").doc(id).update(updateData); 
+                    } catch (e) { 
+                        showAlert("Erro ao atualizar.", "error"); 
+                    } 
+                };
+                
+                const handleDeletePermanently = async (id) => { if(!dbFirestore) return; try { await dbFirestore.collection("inspections").doc(id).delete(); } catch (e) { showAlert("Erro ao excluir.", "error"); } };
+                const handleLogin = (name, unitName) => { localStorage.setItem('trfire_user', name); localStorage.setItem('trfire_unit', unitName); setResponsible(name); setCurrentUnit(unitName); navigateTo('menu'); };
+
+                return (
+                    <React.Fragment>
+                        <NotificationModal isOpen={notification.isOpen} message={notification.message} type={notification.type} isConfirmation={notification.isConfirmation} onClose={closeNotification} onConfirm={notification.onConfirm} />
+                        {page === 'responsible' && <ResponsibleScreen onConfirm={handleLogin} usersList={users} unitsList={units} showAlert={showAlert} />}
+                        {page === 'menu' && <MenuScreen onNavigate={navigateTo} responsibleName={responsible} currentUnit={currentUnit} onStartInspection={handleStartInspection} usersList={users} />}
+                        {page === 'adminMenu' && <AdminMenuScreen onNavigate={navigateTo} />}
+                        {page === 'accessControl' && <AccessControlScreen onNavigate={navigateTo} usersList={users} onUpdatePermissions={handleUpdateUserPermissions} />}
+                        {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={navigateTo} onSelectLocation={handleRoundStart} db={db} responsibleName={responsible} />}
+                        {page === 'userRegister' && <UserRegisterScreen onNavigate={navigateTo} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} />}
+                        {page === 'unitRegister' && <UnitRegisterScreen onNavigate={navigateTo} onSaveUnit={handleSaveUnit} unitsList={units} onUpdateUnit={handleUpdateUnit} onDeleteUnit={handleDeleteUnit} showAlert={showAlert} showConfirm={showConfirm} />}
+                        {page === 'scan' && <ScannerScreen onNavigate={(target) => navigateTo(target === 'menu' && inspectionType === 'RONDA' ? 'roundsLocation' : target)} onScanSuccess={(d)=>{setScanRes(d); navigateTo(inspectionType === 'RONDA' ? 'roundsForm' : 'form')}} db={db} inspectionType={inspectionType} showAlert={showAlert} />}
+                        {page === 'form' && <FormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} inspectionType={inspectionType} onSave={handleSave} showAlert={showAlert} />}
+                        {page === 'roundsForm' && <RoundsFormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} roundLocation={roundLocation} onSave={handleSave} currentUnit={currentUnit} showAlert={showAlert} />}
+                        {page === 'list' && <ListScreen data={db} onNavigate={navigateTo} onToggleDelete={handleToggleDelete} onDeletePermanently={handleDeletePermanently} onImportData={handleImportData} currentUser={responsible} showAlert={showAlert} showConfirm={showConfirm} />}
+                    </React.Fragment>
+                );
+            }
             
             // Re-declaring the render logic properly below.
              root.render(<App />);

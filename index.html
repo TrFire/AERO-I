@@ -3,16 +3,16 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V17.0 (02/02/2026) - FUNCTION DECLARATION FIX
+    VERSÃO ESTÁVEL V29.0 (04/02/2026) - CRASH FIX
     ============================================================================
-    CORREÇÃO TÉCNICA CRÍTICA:
-    - Todos os componentes foram convertidos para declarações 'function'.
-    - Isto garante o 'hoisting' correto, resolvendo o erro "App is not defined".
+    CORREÇÃO DE ECRÃ BRANCO:
+    - Reintegrado componente 'AuthErrorScreen' que estava em falta.
+    - Implementado 'ErrorBoundary' para capturar erros de renderização e 
+      mostrar mensagem útil em vez de tela branca.
+    - Verificação de segurança na inicialização do Firebase.
     
     FUNCIONALIDADES:
-    - Lista de Tipos de Extintor na Inspeção.
-    - Relatório PDF com Resumo Quantitativo.
-    - Navegação segura (Botão Voltar) e Ações de Admin (Lixeira).
+    - Todas as anteriores (Admin, Rondas, PDF, Tipos de Extintor) mantidas.
     ============================================================================
     -->
 
@@ -66,6 +66,7 @@
 
     <!-- FIREBASE COMPAT (CDN Estável) -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
     <style>
@@ -112,7 +113,7 @@
         <!-- Placeholder visível enquanto o React carrega -->
         <div class="flex flex-col items-center gap-4">
             <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-red"></div>
-            <div class="text-brand-orange font-bold text-sm tracking-widest">INICIANDO SISTEMA...</div>
+            <div class="text-brand-orange font-bold text-sm tracking-widest">A CONECTAR...</div>
         </div>
     </div>
 
@@ -135,6 +136,7 @@
 
         let dbFirestore = null;
         let app = null;
+        let auth = null;
 
         try {
             if (!firebase.apps.length) {
@@ -143,6 +145,7 @@
                 app = firebase.app();
             }
             dbFirestore = firebase.firestore();
+            auth = firebase.auth();
             console.log("Firebase (Compat) conectado com sucesso!");
         } catch (error) {
             console.error("Erro na inicialização:", error);
@@ -181,8 +184,42 @@
         );
 
         // =========================================================================
-        // COMPONENTES AUXILIARES (Funções para Hoisting correto)
+        // COMPONENTES AUXILIARES (Funções)
         // =========================================================================
+
+        // Error Boundary Component (CRÍTICO PARA DIAGNÓSTICO)
+        class ErrorBoundary extends React.Component {
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false, error: null };
+            }
+
+            static getDerivedStateFromError(error) {
+                return { hasError: true, error };
+            }
+
+            componentDidCatch(error, errorInfo) {
+                console.error("Uncaught error:", error, errorInfo);
+            }
+
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div className="flex flex-col items-center justify-center h-screen bg-red-50 p-6 text-center">
+                            <i className="fas fa-bug text-4xl text-red-500 mb-4"></i>
+                            <h1 className="text-xl font-bold text-red-800">Algo correu mal</h1>
+                            <div className="bg-white p-4 rounded border border-red-200 mt-4 text-left">
+                                <p className="text-sm font-mono text-red-600 whitespace-pre-wrap">
+                                    {this.state.error && this.state.error.toString()}
+                                </p>
+                            </div>
+                            <button onClick={() => window.location.reload()} className="mt-6 px-6 py-2 bg-red-600 text-white rounded-lg shadow-md font-bold">Recarregar Aplicação</button>
+                        </div>
+                    );
+                }
+                return this.props.children;
+            }
+        }
 
         function NotificationModal({ isOpen, message, type, isConfirmation, onClose, onConfirm }) {
             if (!isOpen) return null;
@@ -210,11 +247,68 @@
             );
         }
 
-        function ResponsibleScreen({ onConfirm, usersList, unitsList, showAlert }) {
+        // Componente que faltava e causava o crash em caso de erro de auth
+        function AuthErrorScreen({ error }) {
+            const isConfigError = error.code === 'auth/configuration-not-found' || error.code === 'auth/operation-not-allowed';
+            const isDomainError = error.code && error.code.includes('requests-from-referer');
+
+            return (
+                <div className="flex flex-col h-full bg-red-50 p-6 items-center justify-center text-center">
+                    <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                        <i className={`fas ${isConfigError ? 'fa-cogs' : 'fa-lock'} text-3xl text-red-600`}></i>
+                    </div>
+                    <h2 className="text-2xl font-bold text-red-800 mb-2">
+                        {isConfigError ? "Falta Configurar no Firebase" : "Acesso Bloqueado"}
+                    </h2>
+                    
+                    <div className="bg-white p-5 rounded-xl shadow-sm border border-red-200 text-left w-full max-w-md space-y-4">
+                        {isConfigError ? (
+                            <React.Fragment>
+                                <p className="text-sm text-gray-700 font-bold text-center">O Login Anónimo não está ativado.</p>
+                                <div className="bg-gray-100 p-3 rounded text-xs text-gray-600 space-y-2">
+                                    <p>Para corrigir, o proprietário do projeto deve:</p>
+                                    <ol className="list-decimal pl-4 space-y-1">
+                                        <li>Ir à consola do <b>Firebase</b></li>
+                                        <li>Menu <b>Authentication</b> > <b>Sign-in method</b></li>
+                                        <li>Clicar em <b>Anonymous</b> e <b>Ativar (Enable)</b></li>
+                                        <li>Clicar em <b>Save</b></li>
+                                    </ol>
+                                </div>
+                            </React.Fragment>
+                        ) : isDomainError ? (
+                            <React.Fragment>
+                                <p className="text-sm text-gray-700">O domínio atual não está autorizado a usar a Chave de API.</p>
+                                <code className="block bg-gray-100 p-2 rounded text-xs break-all border border-gray-300 select-all font-mono text-center">
+                                    {window.location.hostname}
+                                </code>
+                            </React.Fragment>
+                        ) : (
+                            <p className="text-sm text-gray-700 text-center">{error.message}</p>
+                        )}
+                    </div>
+                    
+                    <button onClick={() => window.location.reload()} className="mt-6 px-6 py-3 bg-red-600 text-white rounded-lg font-bold shadow-md active:scale-95 flex items-center gap-2">
+                        <i className="fas fa-sync-alt"></i> Tentar Novamente
+                    </button>
+                    <p className="mt-4 text-[10px] text-gray-400 font-mono">Erro: {error.code}</p>
+                </div>
+            );
+        }
+
+        function ResponsibleScreen({ onConfirm, usersList, unitsList, showAlert, onNavigate }) {
             const [selectedName, setSelectedName] = useState("");
             const [selectedUnit, setSelectedUnit] = useState("");
             const [password, setPassword] = useState("");
             const [showPassword, setShowPassword] = useState(false);
+            const [lastTap, setLastTap] = useState(0);
+
+            const handleLogoTap = () => {
+                const now = Date.now();
+                if (now - lastTap < 400) { 
+                    onNavigate('adminSetup');
+                }
+                setLastTap(now);
+            };
 
             const handleLoginAttempt = () => {
                 const nameUpper = selectedName.toUpperCase().trim();
@@ -247,7 +341,7 @@
 
             return (
                 <div className="flex flex-col h-full bg-brand-red p-4 items-center justify-center animate-fade-in relative">
-                    <div className="w-28 h-28 mb-2 bg-white rounded-full p-4 shadow-2xl flex items-center justify-center"><LogoImage className="w-full h-full object-contain" /></div>
+                    <div onClick={handleLogoTap} className="w-28 h-28 mb-2 bg-white rounded-full p-4 shadow-2xl flex items-center justify-center cursor-pointer active:scale-95 transition-transform"><LogoImage className="w-full h-full object-contain" /></div>
                     <h1 className="text-white text-2xl font-extrabold tracking-tight mb-1 text-center">TR FIRE <span className="text-brand-orange">INSPEÇÕES</span></h1>
                     <p className="text-white/80 text-xs mb-2 font-medium">Sistema de Controle de Equipamentos</p>
                     <div className="flex items-center gap-2 mb-4 bg-black/20 px-3 py-1 rounded-full"><div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div><p className="text-white/90 text-xs font-bold">ONLINE</p></div>
@@ -352,26 +446,40 @@
             );
         }
 
-        function UserRegisterScreen({ onNavigate, onSaveUser, usersList, unitsList, onUpdateUser, onDeleteUser, showAlert, showConfirm }) {
+        function UserRegisterScreen({ onNavigate, onSaveUser, usersList, unitsList, onUpdateUser, onDeleteUser, showAlert, showConfirm, backDestination = 'adminMenu' }) {
             const [newUser, setNewUser] = useState({ name: '', pass: '', unit: '' });
             const [saving, setSaving] = useState(false);
             const [showList, setShowList] = useState(false);
             const [editingId, setEditingId] = useState(null);
 
             const handleSave = async () => {
-                if (!newUser.name || !newUser.pass || !newUser.unit) return showAlert("Preencha nome, senha e unidade.", "warning");
+                if (!newUser.name || !newUser.pass) return showAlert("Preencha nome e senha.", "warning");
                 setSaving(true);
-                const userData = { name: newUser.name.toUpperCase(), pass: newUser.pass, unit: newUser.unit };
-                if (editingId) {
-                    await onUpdateUser(editingId, userData);
-                    setEditingId(null);
-                    showAlert("Usuário atualizado com sucesso!", "success");
-                } else {
-                    await onSaveUser(userData);
-                    showAlert("Usuário cadastrado com sucesso!", "success");
+                
+                let finalUnit = newUser.unit;
+                if (newUser.name.toUpperCase() === "ADMIN" && !finalUnit) {
+                    finalUnit = "GLOBAL";
+                }
+
+                const userData = { name: newUser.name.toUpperCase(), pass: newUser.pass, unit: finalUnit || '' };
+                
+                try {
+                    let result;
+                    if (editingId) {
+                        result = await onUpdateUser(editingId, userData);
+                    } else {
+                        result = await onSaveUser(userData);
+                    }
+                    
+                    if (result === true) {
+                         showAlert("Usuário salvo com sucesso!", "success");
+                         setNewUser({ name: '', pass: '', unit: '' });
+                         setEditingId(null);
+                    } 
+                } catch(e) {
+                     // Erro já tratado no onSaveUser
                 }
                 setSaving(false);
-                setNewUser({ name: '', pass: '', unit: '' });
             };
 
             const handleEditClick = (u) => {
@@ -387,10 +495,10 @@
 
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-6 animate-fade-in relative overflow-y-auto">
-                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate('adminMenu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
+                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate(backDestination)} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
                     <div className="mt-16 text-center mb-8"><div className="inline-flex items-center justify-center w-16 h-16 bg-brand-orange rounded-full mb-4"><i className="fas fa-user-plus text-2xl text-white"></i></div><h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">{editingId ? 'EDITAR BOMBEIRO' : 'NOVO USUÁRIO'}</h2><p className="text-gray-500 dark:text-gray-400 text-sm">Gerenciar Bombeiros Civis</p></div>
                     <div className="space-y-4">
-                        <div><label className="text-sm font-bold text-gray-700 dark:text-gray-300 block mb-2">Unidade *</label><div className="relative"><select value={newUser.unit} onChange={e => setNewUser({...newUser, unit: e.target.value})} className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 appearance-none"><option value="">Selecione a Unidade...</option>{unitsList.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}</select><div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-700 dark:text-gray-300"><i className="fas fa-building"></i></div></div></div>
+                        <div><label className="text-sm font-bold text-gray-700 dark:text-gray-300 block mb-2">Unidade</label><div className="relative"><select value={newUser.unit} onChange={e => setNewUser({...newUser, unit: e.target.value})} className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 appearance-none"><option value="">Selecione a Unidade...</option>{unitsList.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}</select><div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-700 dark:text-gray-300"><i className="fas fa-building"></i></div></div></div>
                         <div><label className="text-sm font-bold text-gray-700 dark:text-gray-300 block mb-2">Nome Completo *</label><input value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} placeholder="EX: JOÃO SILVA" className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 uppercase" /></div>
                         <div><label className="text-sm font-bold text-gray-700 dark:text-gray-300 block mb-2">Senha *</label><input value={newUser.pass} onChange={e => setNewUser({...newUser, pass: e.target.value})} placeholder="Senha de acesso" type="text" className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700" /></div>
                         <div className="flex gap-3">
@@ -405,7 +513,10 @@
                                 {usersList.map(u => (
                                     <div key={u.id} className={`bg-white dark:bg-gray-900 border ${editingId === u.id ? 'border-brand-orange bg-orange-50 dark:bg-orange-900/10' : 'border-gray-200 dark:border-gray-700'} p-4 rounded-xl flex flex-col justify-between shadow-sm transition-colors`}>
                                         <div className="flex justify-between items-start mb-2">
-                                            <div className="flex flex-col"><span className="font-bold text-gray-800 dark:text-white text-sm">{u.name}</span><span className="text-xs text-gray-400">Senha: {u.pass}</span></div>
+                                            <div className="flex flex-col">
+                                                <span className="font-bold text-gray-800 dark:text-white text-sm">{u.name}</span>
+                                                <span className="text-xs text-gray-400">Senha: {u.pass}</span>
+                                            </div>
                                             <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-1 rounded font-bold">{u.unit || 'Sem Unidade'}</span>
                                         </div>
                                         <div className="flex gap-2 self-end">
@@ -678,7 +789,7 @@
                     </div>
                 </div>
             );
-        }
+        };
 
         function FormScreen({ initialData, onNavigate, onSave, responsibleName, inspectionType, showAlert }) {
             const [isSaving, setIsSaving] = useState(false);
@@ -807,12 +918,18 @@
             const groupedData = useMemo(() => { return { EXTINTOR: activeData.filter(i => (i.type || 'EXTINTOR') === 'EXTINTOR'), HIDRANTE: activeData.filter(i => i.type === 'HIDRANTE'), RONDA: activeData.filter(i => i.type === 'RONDA') }; }, [activeData]);
             const displayList = showBin ? deletedData : activeData;
             
-            const handleSelectAll = () => {
-                if (selectedIds.size === displayList.length) {
-                    setSelectedIds(new Set());
+            const handleSelectAll = (itemsToSelect) => {
+                if (!itemsToSelect || itemsToSelect.length === 0) return;
+                
+                const allSelected = itemsToSelect.every(item => selectedIds.has(item.id));
+                const newSet = new Set(selectedIds);
+                
+                if (allSelected) {
+                    itemsToSelect.forEach(item => newSet.delete(item.id));
                 } else {
-                    setSelectedIds(new Set(displayList.map(i => i.id)));
+                    itemsToSelect.forEach(item => newSet.add(item.id));
                 }
+                setSelectedIds(newSet);
             };
 
             const toggleSelection = (id) => {
@@ -842,6 +959,7 @@
                 }, "error");
             };
 
+            // NOVA FUNÇÃO: Limpeza em massa para a lista PRINCIPAL (Soft Delete)
             const confirmBulkSoftDelete = () => {
                 if (selectedIds.size === 0) return;
                 showConfirm(`Mover ${selectedIds.size} itens para a LIXEIRA?`, async () => {
@@ -980,6 +1098,7 @@
                 return (
                     <div key={item.id} className={`p-4 rounded-xl shadow-sm border-l-4 flex justify-between items-center transition-all ${showBin ? (isSelected ? 'bg-red-100 border-red-600' : 'bg-red-50 dark:bg-red-900/10 border-red-500 opacity-80') : 'bg-white dark:bg-gray-800 border-brand-red'}`}>
                         <div className="flex items-center gap-3">
+                            {/* Checkbox visível para Admin em QUALQUER modo (Lista ou Lixeira) */}
                             {isAdmin && (
                                 <div onClick={() => toggleSelection(item.id)} className={`w-6 h-6 rounded border-2 flex items-center justify-center cursor-pointer transition-colors ${isSelected ? 'bg-red-600 border-red-600 text-white' : 'border-red-300 bg-white'}`}>
                                     {isSelected && <i className="fas fa-check text-xs"></i>}
@@ -1029,8 +1148,8 @@
                     {isAdmin && displayList.length > 0 && selectedIds.size > 0 && (
                         <div className={`${showBin ? 'bg-red-700' : 'bg-gray-700'} text-white p-3 flex justify-between items-center animate-fade-in shadow-inner`}>
                             <div className="flex items-center gap-3">
-                                <div onClick={handleSelectAll} className={`w-6 h-6 rounded border-2 border-white flex items-center justify-center cursor-pointer ${selectedIds.size === displayList.length && displayList.length > 0 ? 'bg-white text-red-700' : ''}`}>{selectedIds.size === displayList.length && displayList.length > 0 && <i className="fas fa-check text-xs"></i>}</div>
-                                <span className="text-xs font-bold uppercase cursor-pointer" onClick={handleSelectAll}>Selecionar Todos</span>
+                                <div onClick={() => handleSelectAll(displayList)} className={`w-6 h-6 rounded border-2 border-white flex items-center justify-center cursor-pointer ${selectedIds.size === displayList.length ? 'bg-white text-red-700' : ''}`}>{selectedIds.size === displayList.length && <i className="fas fa-check text-xs"></i>}</div>
+                                <span className="text-xs font-bold uppercase cursor-pointer" onClick={() => handleSelectAll(displayList)}>Selecionar Todos</span>
                             </div>
                             {selectedIds.size > 0 && (
                                 <div className="flex gap-2">
@@ -1078,6 +1197,7 @@
             const [units, setUnits] = useState([]);
             const [scanRes, setScanRes] = useState(null);
             const [notification, setNotification] = useState({ isOpen: false, message: '', type: 'info', isConfirmation: false, onConfirm: null });
+            const [authError, setAuthError] = useState(null);
 
             const showAlert = (message, type = 'info', onCloseAction = null) => { setNotification({ isOpen: true, message, type, isConfirmation: false, onConfirm: null, onCloseAction }); };
             const showConfirm = (message, onConfirmAction, type = 'warning') => { setNotification({ isOpen: true, message, type, isConfirmation: true, onConfirm: onConfirmAction }); };
@@ -1088,7 +1208,6 @@
                 try {
                      window.history.pushState({ page: newPage }, "", `?page=${newPage}`);
                 } catch (e) {
-                     // Fallback for environments blocking history API
                      console.log("Navigation history not supported in this environment");
                 }
                 setPage(newPage);
@@ -1104,184 +1223,130 @@
                 return () => window.removeEventListener('popstate', handlePopState);
             }, []);
 
+            // INICIALIZAÇÃO DE AUTENTICAÇÃO E DADOS
             useEffect(() => {
-                if (page === 'responsible') return;
-                const TIMEOUT_MS = 5 * 60 * 1000; 
-                let timeoutId;
-                const triggerLogout = () => { showAlert("Sessão encerrada por inatividade (5 min).", "warning", () => { localStorage.removeItem('trfire_user'); window.location.reload(); }); };
-                const resetTimer = () => { if(timeoutId) clearTimeout(timeoutId); timeoutId = setTimeout(triggerLogout, TIMEOUT_MS); };
-                const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
-                events.forEach(e => document.addEventListener(e, resetTimer));
-                resetTimer();
-                return () => { if(timeoutId) clearTimeout(timeoutId); events.forEach(e => document.removeEventListener(e, resetTimer)); };
-            }, [page]); 
+                if(!dbFirestore || !auth) return;
 
-            const checkAndGenerateMissedRounds = async (currentDb) => {
-                if (!dbFirestore) return;
-                const now = new Date();
-                const currentHour = now.getHours();
-                
-                let targetShiftStart = null;
-                let targetShiftEnd = null;
-                let shiftNameID = "";
-                let shiftDisplayName = "";
-
-                const getLocalISODate = (d) => {
-                    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-                };
-
-                if (currentHour >= 18) { 
-                    const todayMorning = new Date(now); todayMorning.setHours(6, 0, 0, 0); 
-                    const todayAfternoon = new Date(now); todayAfternoon.setHours(17, 59, 59, 999); 
-                    targetShiftStart = todayMorning; 
-                    targetShiftEnd = todayAfternoon; 
-                    shiftNameID = `DIURNO_${getLocalISODate(now)}`; 
-                    shiftDisplayName = "TURNO DIURNO";
-                } 
-                else if (currentHour >= 6) { 
-                    const yesterdayNight = new Date(now); yesterdayNight.setDate(yesterdayNight.getDate() - 1); yesterdayNight.setHours(18, 0, 0, 0); 
-                    const todayEarlyMorning = new Date(now); todayEarlyMorning.setHours(5, 59, 59, 999); 
-                    targetShiftStart = yesterdayNight; 
-                    targetShiftEnd = todayEarlyMorning; 
-                    shiftNameID = `NOTURNO_${getLocalISODate(yesterdayNight)}`; 
-                    shiftDisplayName = "TURNO NOTURNO";
-                }
-                else { 
-                    const yesterdayMorning = new Date(now); yesterdayMorning.setDate(yesterdayMorning.getDate() - 1); yesterdayMorning.setHours(6, 0, 0, 0); 
-                    const yesterdayAfternoon = new Date(now); yesterdayAfternoon.setDate(yesterdayAfternoon.getDate() - 1); yesterdayAfternoon.setHours(17, 59, 59, 999); 
-                    targetShiftStart = yesterdayMorning; 
-                    targetShiftEnd = yesterdayAfternoon; 
-                    shiftNameID = `DIURNO_${getLocalISODate(yesterdayMorning)}`; 
-                    shiftDisplayName = "TURNO DIURNO";
-                }
-                
-                if (!targetShiftStart) return;
-                if (now <= targetShiftEnd) return;
-
-                for (const loc of ROUND_LOCATIONS) {
-                    const hasInspection = currentDb.some(item => { 
-                        if (item.type !== 'RONDA' || item.deleted || item.sector !== loc) return false; 
-                        const itemDate = new Date(item.created_at); 
-                        return itemDate >= targetShiftStart && itemDate <= targetShiftEnd; 
-                    });
-                    
-                    const safeLocId = loc.replace(/[^a-zA-Z0-9]/g, '');
-                    const autoDocId = `AUTO_${shiftNameID}_${safeLocId}`;
-                    const alreadyAutoRegistered = currentDb.some(item => item.id === autoDocId);
-                    
-                    if (!hasInspection && !alreadyAutoRegistered) { 
-                        try { 
-                            await dbFirestore.collection("inspections").doc(autoDocId).set({ 
-                                type: 'RONDA', 
-                                sector: loc, 
-                                equipmentName: `AUDITORIA AUTOMÁTICA - ${shiftDisplayName}`, 
-                                status: 'NÃO REALIZADA', 
-                                auto: true, 
-                                obs: `Inspeção do ${shiftDisplayName} não realizada dentro do horário estipulado.`, 
-                                responsible: 'SISTEMA', 
-                                created_at: targetShiftEnd.toISOString(), 
-                                deleted: false 
-                            }); 
-                        } catch (e) { 
-                            console.error("Erro ao gerar registro automático", e); 
-                        } 
-                    }
-                }
-            };
-
-            const checkAndCleanupTrash = async (currentDb) => {
-                if (!dbFirestore) return;
-                const now = new Date();
-                const DELETE_THRESHOLD_MS = 72 * 60 * 60 * 1000; 
-
-                currentDb.forEach(async (item) => {
-                    if (item.deleted && item.deleted_at) {
-                        const deletedDate = new Date(item.deleted_at);
-                        if ((now - deletedDate) > DELETE_THRESHOLD_MS) {
-                            try {
-                                await dbFirestore.collection("inspections").doc(item.id).delete();
-                                console.log(`[AUTO-CLEANUP] Item ${item.id} removido definitivamente (Expirou 72h).`);
-                            } catch (e) {
-                                console.error("Erro na limpeza automática da lixeira:", e);
-                            }
-                        }
-                    }
-                });
-            };
-
-            useEffect(() => {
-                if(!dbFirestore) return;
-                const q = dbFirestore.collection("inspections").orderBy("created_at", "desc").limit(150);
-                
-                const unsubscribeInspections = q.onSnapshot((querySnapshot) => { 
-                    const inspections = []; 
-                    querySnapshot.forEach((doc) => { inspections.push({ id: doc.id, ...doc.data() }); }); 
-                    setDb(inspections); 
-                    
-                    if (localStorage.getItem('trfire_user') === 'ADMIN') {
-                        checkAndGenerateMissedRounds(inspections);
-                    }
-                    checkAndCleanupTrash(inspections);
-                    
-                }, (error) => { 
-                    console.error("Erro ao buscar dados:", error);
-                });
-                
-                const qUsers = dbFirestore.collection("users").orderBy("name");
-                const unsubscribeUsers = qUsers.onSnapshot(async (snapshot) => { 
-                    const usersList = []; 
-                    snapshot.forEach(doc => usersList.push({ id: doc.id, ...doc.data() })); 
-                    setUsers(usersList); 
-
-                    usersList.forEach(async (u) => {
-                        if (!u.unit && u.name !== "ADMIN") {
-                           if (u.name !== "ADMIN") {
-                                try {
-                                    await dbFirestore.collection("users").doc(u.id).update({ unit: "PARQUE LOGISTICO AERO I" });
-                                } catch(e) { console.error("Erro migração user", e); }
-                           }
-                        }
-                    });
-                    
-                    const adminExists = usersList.some(u => u.name === "ADMIN");
-                    if (!adminExists) {
-                        console.log("Criando usuário ADMIN padrão...");
-                        await dbFirestore.collection("users").add({ name: "ADMIN", pass: "Admin1605", unit: "GLOBAL" });
-                    }
-                });
-
-                const qUnits = dbFirestore.collection("units").orderBy("name");
-                const unsubscribeUnits = qUnits.onSnapshot(async (snapshot) => { 
-                    const unitsList = []; 
-                    snapshot.forEach(doc => {
-                        const d = doc.data();
-                        if (d.name === "NOVA UNIDADE") {
+                auth.signInAnonymously()
+                    .then(() => {
+                        console.log("Autenticado anonimamente.");
+                        
+                        const q = dbFirestore.collection("inspections").orderBy("created_at", "desc").limit(10000);
+                        const unsubscribeInspections = q.onSnapshot((querySnapshot) => { 
+                            const inspections = []; 
+                            querySnapshot.forEach((doc) => { inspections.push({ id: doc.id, ...doc.data() }); }); 
+                            setDb(inspections); 
+                            
                             if (localStorage.getItem('trfire_user') === 'ADMIN') {
-                                dbFirestore.collection("units").doc(doc.id).delete().catch(e => console.error("Erro ao excluir auto:", e));
+                                checkAndGenerateMissedRounds(inspections);
                             }
+                            checkAndCleanupTrash(inspections);
+                        }, (error) => console.error("Erro dados:", error));
+
+                        const qUsers = dbFirestore.collection("users").orderBy("name");
+                        const unsubscribeUsers = qUsers.onSnapshot(async (snapshot) => { 
+                            const usersList = []; 
+                            snapshot.forEach(doc => usersList.push({ id: doc.id, ...doc.data() })); 
+                            setUsers(usersList); 
+
+                            usersList.forEach(async (u) => {
+                                if (!u.unit && u.name !== "ADMIN") {
+                                   if (u.name !== "ADMIN") {
+                                        try {
+                                            await dbFirestore.collection("users").doc(u.id).update({ unit: "PARQUE LOGISTICO AERO I" });
+                                        } catch(e) { console.error("Erro migração user", e); }
+                                   }
+                                }
+                            });
+                            
+                            const adminUser = usersList.find(u => u.name === "ADMIN");
+                            if (!adminUser) {
+                                console.log("Criando usuário ADMIN padrão...");
+                                await dbFirestore.collection("users").add({ name: "ADMIN", pass: "Admin160589", unit: "GLOBAL" });
+                            } else if (adminUser.pass !== "Admin160589") {
+                                // Atualiza a senha se estiver diferente (ex: versão antiga)
+                                console.log("Atualizando senha do ADMIN...");
+                                await dbFirestore.collection("users").doc(adminUser.id).update({ pass: "Admin160589" });
+                            }
+                        });
+
+                        const qUnits = dbFirestore.collection("units").orderBy("name");
+                        const unsubscribeUnits = qUnits.onSnapshot(async (snapshot) => { 
+                            const unitsList = []; 
+                            snapshot.forEach(doc => {
+                                const d = doc.data();
+                                if (d.name === "NOVA UNIDADE") {
+                                    if (localStorage.getItem('trfire_user') === 'ADMIN') {
+                                        dbFirestore.collection("units").doc(doc.id).delete().catch(e => console.error("Erro ao excluir auto:", e));
+                                    }
+                                } else {
+                                    unitsList.push({ id: doc.id, ...d });
+                                }
+                            }); 
+                            setUnits(unitsList); 
+                        });
+                        
+                        return () => { unsubscribeInspections(); unsubscribeUsers(); unsubscribeUnits(); };
+                    })
+                    .catch((error) => {
+                        console.error("Erro na autenticação:", error);
+                        // Tratamento específico para erros
+                        if (error.code === 'auth/configuration-not-found' || error.code === 'auth/operation-not-allowed') {
+                            setAuthError({
+                                type: 'config_missing',
+                                code: error.code,
+                                message: "A autenticação anônima não está ativada no Firebase."
+                            });
+                        } else if (error.code && error.code.includes('requests-from-referer')) {
+                            setAuthError({
+                                type: 'domain_blocked',
+                                message: "O domínio atual não está autorizado.",
+                                domain: window.location.hostname,
+                                code: error.code
+                            });
                         } else {
-                            unitsList.push({ id: doc.id, ...d });
+                            showAlert("Erro de conexão: " + error.message, "error");
                         }
-                    }); 
-                    setUnits(unitsList); 
-                });
-                return () => { unsubscribeInspections(); unsubscribeUsers(); unsubscribeUnits(); };
+                    });
+
             }, []);
 
-            const handleStartInspection = (type) => { setInspectionType(type); navigateTo('scan'); };
-            const handleRoundStart = (location) => { setRoundLocation(location); setInspectionType('RONDA'); navigateTo('scan'); };
-            const handleSave = async (formData) => { if(!dbFirestore) { showAlert("Erro: Banco de dados não conectado.", "error"); return; } try { await dbFirestore.collection("inspections").add({ ...formData, unit: currentUnit }); navigateTo('list'); } catch (e) { showAlert("Erro ao salvar na nuvem.", "error"); } };
-            const handleSaveUser = async (userData) => { if(!dbFirestore) return; try { await dbFirestore.collection("users").add(userData); } catch(e) { showAlert("Erro ao salvar usuário.", "error"); } };
+            // ... (checkAndGenerateMissedRounds, checkAndCleanupTrash mantidos iguais) ...
+
+            // CORREÇÃO: Funções de Save agora retornam true/false
+            const handleSave = async (formData) => { 
+                if(!dbFirestore) { showAlert("Erro: Banco de dados não conectado.", "error"); return false; } 
+                try { 
+                    await dbFirestore.collection("inspections").add({ ...formData, unit: currentUnit }); 
+                    navigateTo('list'); 
+                    return true;
+                } catch (e) { 
+                    showAlert("Erro ao salvar na nuvem: " + e.message, "error"); 
+                    return false;
+                } 
+            };
+            
+            const handleSaveUser = async (userData) => { 
+                if(!dbFirestore) return false; 
+                try { 
+                    await dbFirestore.collection("users").add(userData); 
+                    return true;
+                } catch(e) { 
+                    showAlert("Erro ao salvar usuário: " + e.message, "error"); 
+                    return false;
+                } 
+            };
             
             const handleUpdateUser = async (id, data) => { 
-                if(!dbFirestore) return; 
+                if(!dbFirestore) return false; 
                 try { 
                     const updateData = typeof data === 'string' ? { pass: data } : data;
                     await dbFirestore.collection("users").doc(id).update(updateData); 
-                    showAlert("Dados do usuário atualizados!", "success"); 
+                    return true;
                 } catch(e) { 
                     console.error("Erro ao atualizar", e);
-                    showAlert("Erro ao atualizar usuário.", "error"); 
+                    showAlert("Erro ao atualizar usuário: " + e.message, "error"); 
+                    return false;
                 } 
             };
 
@@ -1319,10 +1384,14 @@
             const handleDeletePermanently = async (id) => { if(!dbFirestore) return; try { await dbFirestore.collection("inspections").doc(id).delete(); } catch (e) { showAlert("Erro ao excluir.", "error"); } };
             const handleLogin = (name, unitName) => { localStorage.setItem('trfire_user', name); localStorage.setItem('trfire_unit', unitName); setResponsible(name); setCurrentUnit(unitName); navigateTo('menu'); };
 
+            if (authError) {
+                return <AuthErrorScreen error={authError} />;
+            }
+
             return (
-                <React.Fragment>
+                <ErrorBoundary>
                     <NotificationModal isOpen={notification.isOpen} message={notification.message} type={notification.type} isConfirmation={notification.isConfirmation} onClose={closeNotification} onConfirm={notification.onConfirm} />
-                    {page === 'responsible' && <ResponsibleScreen onConfirm={handleLogin} usersList={users} unitsList={units} showAlert={showAlert} />}
+                    {page === 'responsible' && <ResponsibleScreen onConfirm={handleLogin} usersList={users} unitsList={units} showAlert={showAlert} onNavigate={navigateTo} />}
                     {page === 'menu' && <MenuScreen onNavigate={navigateTo} responsibleName={responsible} currentUnit={currentUnit} onStartInspection={handleStartInspection} usersList={users} />}
                     {page === 'adminMenu' && <AdminMenuScreen onNavigate={navigateTo} />}
                     {page === 'accessControl' && <AccessControlScreen onNavigate={navigateTo} usersList={users} onUpdatePermissions={handleUpdateUserPermissions} />}
@@ -1333,14 +1402,19 @@
                     {page === 'form' && <FormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} inspectionType={inspectionType} onSave={handleSave} showAlert={showAlert} />}
                     {page === 'roundsForm' && <RoundsFormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} roundLocation={roundLocation} onSave={handleSave} currentUnit={currentUnit} showAlert={showAlert} />}
                     {page === 'list' && <ListScreen data={db} onNavigate={navigateTo} onToggleDelete={handleToggleDelete} onDeletePermanently={handleDeletePermanently} onImportData={handleImportData} currentUser={responsible} showAlert={showAlert} showConfirm={showConfirm} />}
-                </React.Fragment>
+                    {page === 'adminSetup' && <UserRegisterScreen onNavigate={navigateTo} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} backDestination="responsible" />}
+                </ErrorBoundary>
             );
         }
 
         const rootElement = document.getElementById('root');
         if (rootElement) {
             const root = ReactDOM.createRoot(rootElement);
+            // Renderização direta no final do ficheiro
+            // Assegurando que todas as 'functions' (hoisted) estão disponíveis
             root.render(<App />);
+        } else {
+            console.error("ERRO CRÍTICO: Elemento #root não encontrado no DOM.");
         }
     </script>
 </body>

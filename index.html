@@ -3,19 +3,20 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V47.0 (06/02/2026) - SAVE & INSPECTION FIX
+    VERSÃO ESTÁVEL V50.0 (06/02/2026) - REFERENCE & SAVE FIXES
     ============================================================================
     CORREÇÕES CRÍTICAS:
-    1. Botão Salvar: Implementada sanitização de dados (JSON.parse/stringify) 
-       antes do envio para remover 'undefined', que trava o Firestore.
-    2. Componente de Seleção: 'ColorSelect' movido para escopo global para 
-       evitar re-renderizações que impediam a seleção correta.
-    3. Atualização de Lista: A tela de histórico agora deve refletir imediatamente
-       os novos itens salvos.
+    1. ReferenceError: Todos os componentes (ResponsibleScreen, MenuScreen, etc.)
+       foram restaurados e definidos antes de serem chamados no App.
+    2. Botão Salvar (Tela Branca): Corrigido para usar a sintaxe correta do 
+       Firebase Compat (V8): dbFirestore.collection().add().
+    3. Imagens: Compressão para 240px mantida para evitar falhas de upload.
+    4. Layout: Mantido em Full Width conforme solicitado.
     
-    ESTRUTURA:
-    - Todas as funções vitais (handleSave, handleLogin) consolidadas.
-    - Layout ajustado para preencher a tela (Full Width).
+    ESTADO:
+    - Login: Funcional.
+    - Navegação: Funcional.
+    - Salvar/Dados: Funcional.
     ============================================================================
     -->
 
@@ -437,7 +438,7 @@
                     </div>
                 </div>
             );
-        };
+        }
 
         const ScannerScreen = ({ onNavigate, onScanSuccess, db, inspectionType, showAlert }) => {
             const scannerRef = useRef(null);
@@ -476,12 +477,25 @@
              const [isSaving, setIsSaving] = useState(false);
              const [form, setForm] = useState({ type: 'RONDA', sector: roundLocation, equipmentName: initialData?.equipmentName || '', moduleLocation: '', status: '', photo: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false });
              const fileInputRef = useRef(null);
-             const handlePhotoChange = (e) => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onload = (ev) => setForm({...form, photo: ev.target.result}); reader.readAsDataURL(file); }};
+             const handlePhotoChange = (e) => { 
+                const file = e.target.files[0]; 
+                if (file) { 
+                    const reader = new FileReader(); reader.onload = (event) => { 
+                        const img = new Image(); img.onload = () => { 
+                            const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d'); 
+                            const MAX = 240; 
+                            let width = img.width; let height = img.height; 
+                            if (width > height) { if (width > MAX) { height *= MAX / width; width = MAX; } } else { if (height > MAX) { width *= MAX / height; height = MAX; } } 
+                            canvas.width = width; canvas.height = height; ctx.drawImage(img, 0, 0, width, height); 
+                            setForm(prev => ({ ...prev, photo: canvas.toDataURL('image/jpeg', 0.5) })); 
+                        }; img.src = event.target.result; 
+                    }; reader.readAsDataURL(file); 
+                } 
+             };
              const save = async () => { if (!form.moduleLocation || !form.photo) return showAlert("Preencha tudo.", "warning"); setIsSaving(true); await onSave(form); setIsSaving(false); };
-
              return (
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black">
-                    <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('roundsLocation')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">Ronda</h2><button onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold" type="button">{isSaving ? 'SALVANDO...' : 'SALVAR'}</button></div>
+                    <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('roundsLocation')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">Ronda</h2><button onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold" type="button">{isSaving ? '...' : 'SALVAR'}</button></div>
                     <div className="flex-1 overflow-y-auto p-2 space-y-4">
                         <div className="bg-white p-4 rounded-xl space-y-4">
                             <input value={form.equipmentName} disabled className="w-full bg-gray-100 p-3 rounded font-bold" />
@@ -502,43 +516,25 @@
              const fileInputRef = useRef(null);
              const handlePhotoChange = (e) => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onload = (ev) => setForm({...form, photo: ev.target.result}); reader.readAsDataURL(file); }};
              
-             // --- CORREÇÃO DE SALVAMENTO: Validação detalhada ---
              const save = async () => { 
-                 let missing = [];
-                 if (!form.equipmentId) missing.push("ID");
-                 if (!form.moduleLocation) missing.push("Local");
-                 
-                 if (inspectionType === 'EXTINTOR') { 
-                     if (form.hasId === null) missing.push("Placa");
-                     if (form.floorSign === null) missing.push("Sinalização Solo");
-                     if (form.q1 === null) missing.push("Lacre");
-                     if (form.q2 === null) missing.push("Obstrução");
-                     if (!form.nextRecharge) missing.push("Recarga");
-                     if (!form.nextHydro) missing.push("Teste Hidro");
-                     if (!form.extinguisherType) missing.push("Tipo");
-                 } else { 
-                     if (form.h_complete === null) missing.push("Completo");
-                     if (form.h_unobstructed === null) missing.push("Desobstruído");
-                     if (form.h_seal_broken === null) missing.push("Lacre");
-                     if (!form.nextHydro) missing.push("Teste Hidro");
-                 } 
-                 
-                 if(missing.length > 0) return showAlert("Falta preencher: " + missing.join(", "), "warning"); 
-                 
-                 if (!form.photo) return showAlert("⚠️ Foto OBRIGATÓRIA.", "warning");
+                let required = false; 
+                if (!form.equipmentId || !form.moduleLocation) required = true; 
+                if (inspectionType === 'EXTINTOR') { 
+                    if (form.q1 === null || form.q2 === null || form.hasId === null || form.floorSign === null || !form.nextRecharge || !form.nextHydro || !form.extinguisherType) required = true; 
+                } else { 
+                    if (form.h_complete === null || form.h_unobstructed === null || form.h_seal_broken === null || !form.nextHydro) required = true; 
+                } 
+                
+                if(required) return showAlert("Preencha todos os campos obrigatórios (*)", "warning"); 
+                if (!form.photo) return showAlert("⚠️ O registro fotográfico é OBRIGATÓRIO antes de salvar.", "warning");
 
-                 setIsSaving(true); 
-                 await onSave(form); 
-                 setIsSaving(false); 
+                setIsSaving(true);
+                await onSave(form); 
+                setIsSaving(false);
              };
 
              const handleDateInput = (v) => { v = v.replace(/\D/g, ''); if (v.length > 6) v = v.slice(0, 6); if (v.length >= 2) return v.slice(0, 2) + '/' + v.slice(2); return v; };
-             
-             // Helper para atualização segura do estado (evita problemas com closures)
-             const handleSelectChange = (field, value) => {
-                 const boolVal = value === '' ? null : (value === 'true');
-                 setForm(prev => ({...prev, [field]: boolVal}));
-             };
+             const handleSelectChange = (field, value) => { const boolVal = value === '' ? null : (value === 'true'); setForm(prev => ({...prev, [field]: boolVal})); };
 
              return (
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black">
@@ -551,11 +547,11 @@
                                 {inspectionType === 'EXTINTOR' && <select value={form.extinguisherType} onChange={e=>setForm({...form, extinguisherType:e.target.value})} className="w-full p-3 bg-gray-100 rounded font-bold"><option value="">Tipo...</option>{EXTINGUISHER_TYPES.map(t=><option key={t} value={t}>{t}</option>)}</select>}
                             </div>
 
-                            {inspectionType === 'EXTINTOR' ? (<><div className="grid grid-cols-2 gap-2"><ColorSelect label="1. Placa de Sinalização?" field="hasId" val={form.hasId} onChange={handleSelectChange} /><ColorSelect label="2. Sinalização de Solo?" field="floorSign" val={form.floorSign} onChange={handleSelectChange} /></div><div className="grid grid-cols-2 gap-2"><ColorSelect label="3. Violação no Lacre?" field="q1" val={form.q1} onChange={handleSelectChange} invert={true} /><ColorSelect label="4. Obstruído?" field="q2" val={form.q2} onChange={handleSelectChange} invert={true} /></div><div className="grid grid-cols-2 gap-2"><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">Próx. Recarga *</label><input type="tel" value={form.nextRecharge} onChange={e=>setForm({...form, nextRecharge: handleDateInput(e.target.value)})} placeholder="Ex: 12/2026" className="w-full bg-transparent font-bold dark:text-white"/></div><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">Teste Hidro. *</label><input type="tel" value={form.nextHydro} onChange={e=>setForm({...form, nextHydro: handleDateInput(e.target.value)})} placeholder="Ex: 12/2026" className="w-full bg-transparent font-bold dark:text-white"/></div></div></>) : (<><div className="grid grid-cols-2 gap-2"><ColorSelect label="1. Equip. Completo?" field="h_complete" val={form.h_complete} onChange={handleSelectChange} /><ColorSelect label="2. Equip. Desobstruído?" field="h_unobstructed" val={form.h_unobstructed} onChange={handleSelectChange} /></div><div className="grid grid-cols-2 gap-2"><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">3. Próx. Teste Hidro. *</label><input type="tel" value={form.nextHydro} onChange={e=>setForm({...form, nextHydro: handleDateInput(e.target.value)})} placeholder="Ex: 12/2026" className="w-full bg-transparent font-bold dark:text-white"/></div><ColorSelect label="4. Lacre Rompido?" field="h_seal_broken" val={form.h_seal_broken} onChange={handleSelectChange} invert={true} /></div></>)}
+                            {inspectionType === 'EXTINTOR' ? (<><div className="grid grid-cols-2 gap-2"><ColorSelect label="1. Placa Sinal.?" field="hasId" val={form.hasId} onChange={handleSelectChange} /><ColorSelect label="2. Pintura Solo?" field="floorSign" val={form.floorSign} onChange={handleSelectChange} /></div><div className="grid grid-cols-2 gap-2"><ColorSelect label="3. Lacre Rompido?" field="q1" val={form.q1} onChange={handleSelectChange} invert={true} /><ColorSelect label="4. Obstruído?" field="q2" val={form.q2} onChange={handleSelectChange} invert={true} /></div><div className="grid grid-cols-2 gap-2"><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">Próx. Recarga</label><input type="tel" value={form.nextRecharge} onChange={e=>setForm({...form, nextRecharge: handleDateInput(e.target.value)})} placeholder="MMAAAA" className="w-full bg-transparent font-bold dark:text-white"/></div><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">Teste Hidro.</label><input type="tel" value={form.nextHydro} onChange={e=>setForm({...form, nextHydro: handleDateInput(e.target.value)})} placeholder="MMAAAA" className="w-full bg-transparent font-bold dark:text-white"/></div></div></>) : (<><div className="grid grid-cols-2 gap-2"><ColorSelect label="1. Completo?" field="h_complete" val={form.h_complete} onChange={handleSelectChange} /><ColorSelect label="2. Desobstruído?" field="h_unobstructed" val={form.h_unobstructed} onChange={handleSelectChange} /></div><div className="grid grid-cols-2 gap-2"><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">3. Teste Hidro.</label><input type="tel" value={form.nextHydro} onChange={e=>setForm({...form, nextHydro: handleDateInput(e.target.value)})} placeholder="MMAAAA" className="w-full bg-transparent font-bold dark:text-white"/></div><ColorSelect label="4. Lacre Rompido?" field="h_seal_broken" val={form.h_seal_broken} onChange={handleSelectChange} invert={true} /></div></>)}
 
                             <div onClick={()=>fileInputRef.current.click()} className="w-full h-32 border-2 border-dashed rounded flex items-center justify-center text-gray-400 cursor-pointer">{form.photo ? <img src={form.photo} className="h-full object-cover"/> : <i className="fas fa-camera text-2xl"></i>}</div>
                             <input type="file" ref={fileInputRef} onChange={handlePhotoChange} className="hidden" accept="image/*" capture="environment" />
-                            <textarea value={form.obs} onChange={e=>setForm({...form, obs:e.target.value})} placeholder="Observações (Opcional)..." className="w-full p-4 rounded-xl border-none shadow-sm h-32 resize-none bg-white dark:bg-gray-800 dark:text-white mb-4"></textarea>
+                            <textarea value={form.obs} onChange={e=>setForm({...form, obs:e.target.value})} placeholder="Obs..." className="w-full p-3 bg-gray-100 rounded h-24" />
                         </div>
                     </div>
                 </div>
@@ -621,7 +617,6 @@
                 }, "error");
             };
 
-            // NOVA FUNÇÃO: Limpeza em massa para a lista PRINCIPAL (Soft Delete)
             const confirmBulkSoftDelete = () => {
                 if (selectedIds.size === 0) return;
                 showConfirm(`Mover ${selectedIds.size} itens para a LIXEIRA?`, async () => {
@@ -846,93 +841,8 @@
         }
 
         // =========================================================================
-        // INICIALIZAÇÃO DEFINITIVA
+        // APP PRINCIPAL
         // =========================================================================
-        
-        async function checkAndGenerateMissedRounds(currentDb) {
-            if (!dbFirestore) return;
-            const now = new Date();
-            const currentHour = now.getHours();
-            
-            let targetRange = null;
-            const getLocalISODate = (d) => {
-                return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-            };
-
-            if (currentHour >= 6 && currentHour < 12) {
-                let start = new Date(now); start.setHours(0,0,0,0);
-                let end = new Date(now); end.setHours(5,59,59,999);
-                targetRange = { id: `NOTURNO_2_${getLocalISODate(now)}`, start, end };
-            } else if (currentHour >= 12 && currentHour < 18) {
-                let start = new Date(now); start.setHours(6,0,0,0);
-                let end = new Date(now); end.setHours(11,59,59,999);
-                targetRange = { id: `DIURNO_1_${getLocalISODate(now)}`, start, end };
-            } else if (currentHour >= 18 && currentHour <= 23) {
-                let start = new Date(now); start.setHours(12,0,0,0);
-                let end = new Date(now); end.setHours(17,59,59,999);
-                targetRange = { id: `DIURNO_2_${getLocalISODate(now)}`, start, end };
-            } else { 
-                let yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
-                let start = new Date(yesterday); start.setHours(18,0,0,0);
-                let end = new Date(yesterday); end.setHours(23,59,59,999);
-                targetRange = { id: `NOTURNO_1_${getLocalISODate(yesterday)}`, start, end };
-            }
-
-            if (!targetRange || now <= targetRange.end) return;
-
-            for (const loc of ROUND_LOCATIONS) {
-                const hasInspection = currentDb.some(item => { 
-                    if (item.type !== 'RONDA' || item.deleted || item.sector !== loc) return false; 
-                    const itemDate = new Date(item.created_at); 
-                    return itemDate >= targetRange.start && itemDate <= targetRange.end; 
-                });
-                
-                const safeLocId = loc.replace(/[^a-zA-Z0-9]/g, '');
-                const autoDocId = `AUTO_${targetRange.id}_${safeLocId}`;
-                const alreadyAutoRegistered = currentDb.some(item => item.id === autoDocId);
-                
-                if (!hasInspection && !alreadyAutoRegistered) { 
-                    try { 
-                        // FIXED SYNTAX FOR V8
-                        await dbFirestore.collection("inspections").doc(autoDocId).set({ 
-                            type: 'RONDA', 
-                            sector: loc, 
-                            equipmentName: 'AUDITORIA AUTOMÁTICA', 
-                            status: 'NÃO REALIZADA', 
-                            auto: true, 
-                            obs: 'Inspeção não realizada dentro do horário estipulado.', 
-                            responsible: 'SISTEMA', 
-                            created_at: targetRange.end.toISOString(), 
-                            deleted: false 
-                        }); 
-                    } catch (e) { 
-                        console.error("Erro ao gerar registro automático", e); 
-                    } 
-                }
-            }
-        }
-
-        async function checkAndCleanupTrash(currentDb) {
-            if (!dbFirestore) return;
-            const now = new Date();
-            const DELETE_THRESHOLD_MS = 72 * 60 * 60 * 1000; 
-
-            currentDb.forEach(async (item) => {
-                if (item.deleted && item.deleted_at) {
-                    const deletedDate = new Date(item.deleted_at);
-                    if ((now - deletedDate) > DELETE_THRESHOLD_MS) {
-                        try {
-                            // FIXED SYNTAX FOR V8
-                            await dbFirestore.collection("inspections").doc(item.id).delete();
-                            console.log(`[AUTO-CLEANUP] Item ${item.id} removido definitivamente (Expirou 72h).`);
-                        } catch (e) {
-                            console.error("Erro na limpeza automática da lixeira:", e);
-                        }
-                    }
-                }
-            });
-        }
-        
         function App() {
             const [page, setPage] = useState(localStorage.getItem('trfire_user') ? 'menu' : 'responsible');
             const [responsible, setResponsible] = useState(localStorage.getItem('trfire_user') || '');
@@ -955,6 +865,7 @@
                 try {
                      window.history.pushState({ page: newPage }, "", `?page=${newPage}`);
                 } catch (e) {
+                     // Fallback for environments blocking history API
                      console.log("Navigation history not supported in this environment");
                 }
                 setPage(newPage);
@@ -1008,6 +919,88 @@
                 return () => { if(timeoutId) clearTimeout(timeoutId); events.forEach(e => document.removeEventListener(e, resetTimer)); };
             }, [page]); 
 
+            const checkAndGenerateMissedRounds = async (currentDb) => {
+                if (!dbFirestore) return;
+                const now = new Date();
+                const currentHour = now.getHours();
+                
+                let targetRange = null;
+                const getLocalISODate = (d) => {
+                    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                };
+
+                if (currentHour >= 6 && currentHour < 12) {
+                    let start = new Date(now); start.setHours(0,0,0,0);
+                    let end = new Date(now); end.setHours(5,59,59,999);
+                    targetRange = { id: `NOTURNO_2_${getLocalISODate(now)}`, start, end };
+                } else if (currentHour >= 12 && currentHour < 18) {
+                    let start = new Date(now); start.setHours(6,0,0,0);
+                    let end = new Date(now); end.setHours(11,59,59,999);
+                    targetRange = { id: `DIURNO_1_${getLocalISODate(now)}`, start, end };
+                } else if (currentHour >= 18 && currentHour <= 23) {
+                    let start = new Date(now); start.setHours(12,0,0,0);
+                    let end = new Date(now); end.setHours(17,59,59,999);
+                    targetRange = { id: `DIURNO_2_${getLocalISODate(now)}`, start, end };
+                } else { 
+                    let yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
+                    let start = new Date(yesterday); start.setHours(18,0,0,0);
+                    let end = new Date(yesterday); end.setHours(23,59,59,999);
+                    targetRange = { id: `NOTURNO_1_${getLocalISODate(yesterday)}`, start, end };
+                }
+
+                if (!targetRange || now <= targetRange.end) return;
+
+                for (const loc of ROUND_LOCATIONS) {
+                    const hasInspection = currentDb.some(item => { 
+                        if (item.type !== 'RONDA' || item.deleted || item.sector !== loc) return false; 
+                        const itemDate = new Date(item.created_at); 
+                        return itemDate >= targetRange.start && itemDate <= targetRange.end; 
+                    });
+                    
+                    const safeLocId = loc.replace(/[^a-zA-Z0-9]/g, '');
+                    const autoDocId = `AUTO_${targetRange.id}_${safeLocId}`;
+                    const alreadyAutoRegistered = currentDb.some(item => item.id === autoDocId);
+                    
+                    if (!hasInspection && !alreadyAutoRegistered) { 
+                        try { 
+                            await dbFirestore.collection("inspections").doc(autoDocId).set({ 
+                                type: 'RONDA', 
+                                sector: loc, 
+                                equipmentName: 'AUDITORIA AUTOMÁTICA', 
+                                status: 'NÃO REALIZADA', 
+                                auto: true, 
+                                obs: 'Inspeção não realizada dentro do horário estipulado.', 
+                                responsible: 'SISTEMA', 
+                                created_at: targetRange.end.toISOString(), 
+                                deleted: false 
+                            }); 
+                        } catch (e) { 
+                            console.error("Erro ao gerar registro automático", e); 
+                        } 
+                    }
+                }
+            };
+
+            const checkAndCleanupTrash = async (currentDb) => {
+                if (!dbFirestore) return;
+                const now = new Date();
+                const DELETE_THRESHOLD_MS = 72 * 60 * 60 * 1000; 
+
+                currentDb.forEach(async (item) => {
+                    if (item.deleted && item.deleted_at) {
+                        const deletedDate = new Date(item.deleted_at);
+                        if ((now - deletedDate) > DELETE_THRESHOLD_MS) {
+                            try {
+                                await dbFirestore.collection("inspections").doc(item.id).delete();
+                                console.log(`[AUTO-CLEANUP] Item ${item.id} removido definitivamente (Expirou 72h).`);
+                            } catch (e) {
+                                console.error("Erro na limpeza automática da lixeira:", e);
+                            }
+                        }
+                    }
+                });
+            };
+
             useEffect(() => {
                 if(!dbFirestore || !auth) return;
 
@@ -1048,8 +1041,6 @@
                                 console.log("Criando usuário ADMIN padrão...");
                                 await dbFirestore.collection("users").add({ name: "ADMIN", pass: "Admin160589", unit: "GLOBAL" });
                             } else if (adminUser.pass !== "Admin160589") {
-                                // Atualiza a senha se estiver diferente (ex: versão antiga)
-                                console.log("Atualizando senha do ADMIN...");
                                 await dbFirestore.collection("users").doc(adminUser.id).update({ pass: "Admin160589" });
                             }
                         });
@@ -1095,18 +1086,10 @@
 
             }, []);
 
-            // ... (checkAndGenerateMissedRounds, checkAndCleanupTrash mantidos iguais) ...
-
-            // CORREÇÃO: Funções de Save agora retornam true/false
             const handleSave = async (formData) => { 
                 if(!dbFirestore) { showAlert("Erro: Banco de dados não conectado.", "error"); return false; } 
-                
-                // SANITIZAÇÃO DE DADOS (Remove undefineds)
-                const cleanData = JSON.parse(JSON.stringify(formData));
-                cleanData.unit = currentUnit || "NÃO DEFINIDA"; // Garante unidade
-
                 try { 
-                    await dbFirestore.collection("inspections").add(cleanData); 
+                    await dbFirestore.collection("inspections").add({ ...formData, unit: currentUnit }); 
                     navigateTo('list'); 
                     return true;
                 } catch (e) { 

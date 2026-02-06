@@ -3,19 +3,17 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V42.0 (06/02/2026) - POST-LOGIN CRASH FIX
+    VERSÃO ESTÁVEL V43.1 (06/02/2026) - REFERENCE FIX
     ============================================================================
-    CORREÇÃO CRÍTICA:
-    - Corrigido erro de "ReferenceError: setDoc/deleteDoc is not defined".
-    - As funções de limpeza automática (Lixeira) e auditoria (Rondas) estavam 
-      a usar sintaxe incompatível, causando tela branca logo após o carregamento
-      dos dados.
-    - Convertido tudo para 'dbFirestore.collection().doc().metodo()'.
+    CORREÇÃO:
+    - Definidas as funções 'handleStartInspection' e 'handleRoundStart' dentro 
+      do componente App. Elas estavam sendo chamadas no JSX mas não existiam 
+      no escopo, causando tela branca.
     
     ESTADO:
     - Login: Funcional.
+    - Navegação: Funcional.
     - Dados: Carregam sem travar.
-    - Funcionalidades: Todas mantidas.
     ============================================================================
     -->
 
@@ -398,7 +396,7 @@
                     scanner.stop().then(() => {
                         scanner.clear();
                         let data = { equipmentId: decodedText, equipmentName: decodedText };
-                        try { const parsed = JSON.parse(decodedText); if(parsed.id) data = parsed; } catch(e) {}
+                        try { const parsed = JSON.parse(decodedText); if(parsed.id || parsed.equipmentId) { data.equipmentId = parsed.id || parsed.equipmentId; data.equipmentName = parsed.name || parsed.equipmentName || decodedText; } } catch(e) {}
                         if (inspectionType !== 'RONDA') {
                             const currentMonth = new Date().toISOString().slice(0, 7); 
                             const isDuplicate = db.some(item => !item.deleted && (item.equipmentId || '').toString() === data.equipmentId.toString() && item.created_at.startsWith(currentMonth));
@@ -413,13 +411,13 @@
             return (
                 <div className="flex flex-col h-full bg-black relative">
                     <div className="absolute top-4 left-4 z-20"><button onClick={() => onNavigate('menu')} className="text-white bg-black/40 w-10 h-10 rounded-full flex items-center justify-center"><i className="fas fa-arrow-left"></i></button></div>
-                    <div className="flex-1 flex flex-col items-center justify-center bg-gray-900"><div id="reader" className="w-full max-w-md bg-black"></div></div>
+                    <div className="flex-1 flex flex-col items-center justify-center bg-gray-900"><div id="reader" className="w-full max-w-md bg-black"></div><p className="text-white/60 text-sm mt-4">Aponte para o QR Code</p></div>
                     <div className="p-4 bg-white dark:bg-brand-dark rounded-t-3xl z-10 safe-area-bottom">
-                        <button onClick={() => { const manualId = prompt("Digite o ID:"); if(manualId) onScanSuccess({equipmentId: manualId, equipmentName: manualId}); }} className="w-full py-4 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white font-bold rounded-xl">Digitar Manualmente</button>
+                        <button onClick={() => { const manualId = prompt("Digite o ID do equipamento:"); if(!manualId) return; let data = { equipmentId: manualId, equipmentName: manualId }; if (inspectionType !== 'RONDA') { const currentMonth = new Date().toISOString().slice(0, 7); const isDuplicate = db.some(item => !item.deleted && (item.equipmentId || '').toString() === manualId && item.created_at.startsWith(currentMonth)); if (isDuplicate) { showAlert("⚠️ EQUIPAMENTO JÁ VISTORIADO!\nRegistro duplicado no mês atual.", "warning"); return; } } onScanSuccess(data); }} className="w-full py-4 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white font-bold rounded-xl flex items-center justify-center gap-2"><i className="fas fa-keyboard"></i> Digitar Manualmente</button>
                     </div>
                 </div>
             );
-        }
+        };
 
         function RoundsFormScreen({ initialData, onNavigate, onSave, responsibleName, roundLocation, currentUnit, showAlert }) {
              const [isSaving, setIsSaving] = useState(false);
@@ -430,7 +428,7 @@
 
              return (
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black">
-                    <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('roundsLocation')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">Ronda</h2><button onClick={save} className="bg-blue-500 text-white px-4 py-2 rounded font-bold">SALVAR</button></div>
+                    <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('roundsLocation')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">Ronda</h2><button onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold">SALVAR</button></div>
                     <div className="flex-1 overflow-y-auto p-2 space-y-4">
                         <div className="bg-white p-4 rounded-xl space-y-4">
                             <input value={form.equipmentName} disabled className="w-full bg-gray-100 p-3 rounded font-bold" />
@@ -446,6 +444,7 @@
         }
 
         function FormScreen({ initialData, onNavigate, onSave, responsibleName, inspectionType, showAlert }) {
+             const [isSaving, setIsSaving] = useState(false);
              const [form, setForm] = useState({ type: inspectionType, equipmentId: initialData?.equipmentId, equipmentName: initialData?.equipmentName, moduleLocation: '', hasId: null, floorSign: null, q1: null, q2: null, nextRecharge: '', h_complete: null, h_unobstructed: null, h_seal_broken: null, nextHydro: '', photo: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false, extinguisherType: '' });
              const fileInputRef = useRef(null);
              const handlePhotoChange = (e) => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onload = (ev) => setForm({...form, photo: ev.target.result}); reader.readAsDataURL(file); }};
@@ -462,7 +461,9 @@
                  
                  if (!form.photo) return showAlert("⚠️ O registro fotográfico é OBRIGATÓRIO antes de salvar.", "warning");
 
+                 setIsSaving(true); 
                  await onSave(form); 
+                 setIsSaving(false); 
              };
 
              const handleDateInput = (v) => { v = v.replace(/\D/g, ''); if (v.length > 6) v = v.slice(0, 6); if (v.length >= 2) return v.slice(0, 2) + '/' + v.slice(2); return v; };
@@ -744,7 +745,7 @@
                     {isAdmin && displayList.length > 0 && selectedIds.size > 0 && (
                         <div className={`${showBin ? 'bg-red-700' : 'bg-gray-700'} text-white p-3 flex justify-between items-center animate-fade-in shadow-inner`}>
                             <div className="flex items-center gap-3">
-                                <div onClick={() => handleSelectAll(displayList)} className={`w-6 h-6 rounded border-2 border-white flex items-center justify-center cursor-pointer ${selectedIds.size === displayList.length && displayList.length > 0 ? 'bg-white text-red-700' : ''}`}>{selectedIds.size === displayList.length && <i className="fas fa-check text-xs"></i>}</div>
+                                <div onClick={() => handleSelectAll(displayList)} className={`w-6 h-6 rounded border-2 border-white flex items-center justify-center cursor-pointer ${selectedIds.size === displayList.length ? 'bg-white text-red-700' : ''}`}>{selectedIds.size === displayList.length && <i className="fas fa-check text-xs"></i>}</div>
                                 <span className="text-xs font-bold uppercase cursor-pointer" onClick={() => handleSelectAll(displayList)}>Selecionar Todos</span>
                             </div>
                             {selectedIds.size > 0 && (
@@ -1076,6 +1077,9 @@
             const handleDeletePermanently = async (id) => { if(!dbFirestore) return; try { await dbFirestore.collection("inspections").doc(id).delete(); } catch (e) { showAlert("Erro ao excluir.", "error"); } };
             const handleLogin = (name, unitName) => { localStorage.setItem('trfire_user', name); localStorage.setItem('trfire_unit', unitName); setResponsible(name); setCurrentUnit(unitName); navigateTo('menu'); };
 
+            const handleStartInspection = (type) => { setInspectionType(type); navigateTo('scan'); };
+            const handleRoundStart = (location) => { setRoundLocation(location); setInspectionType('RONDA'); navigateTo('scan'); };
+
             if (authError) {
                 return <AuthErrorScreen error={authError} />;
             }
@@ -1091,7 +1095,7 @@
                     {page === 'userRegister' && <UserRegisterScreen onNavigate={navigateTo} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} />}
                     {page === 'unitRegister' && <UnitRegisterScreen onNavigate={navigateTo} onSaveUnit={handleSaveUnit} unitsList={units} onUpdateUnit={handleUpdateUnit} onDeleteUnit={handleDeleteUnit} showAlert={showAlert} showConfirm={showConfirm} />}
                     {page === 'scan' && <ScannerScreen onNavigate={(target) => navigateTo(target === 'menu' && inspectionType === 'RONDA' ? 'roundsLocation' : target)} onScanSuccess={(d)=>{setScanRes(d); navigateTo(inspectionType === 'RONDA' ? 'roundsForm' : 'form')}} db={db} inspectionType={inspectionType} showAlert={showAlert} />}
-                    {page === 'form' && <FormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} inspectionType={inspectionType} onSave={handleSave} showAlert={showAlert} />}
+                    {page === 'form' && <FormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} onSave={handleSave} inspectionType={inspectionType} showAlert={showAlert} />}
                     {page === 'roundsForm' && <RoundsFormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} roundLocation={roundLocation} onSave={handleSave} currentUnit={currentUnit} showAlert={showAlert} />}
                     {page === 'list' && <ListScreen data={db} onNavigate={navigateTo} onToggleDelete={handleToggleDelete} onDeletePermanently={handleDeletePermanently} onImportData={handleImportData} currentUser={responsible} showAlert={showAlert} showConfirm={showConfirm} />}
                     {page === 'adminSetup' && <UserRegisterScreen onNavigate={navigateTo} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} backDestination="responsible" />}

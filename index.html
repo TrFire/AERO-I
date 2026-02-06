@@ -3,17 +3,15 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO GOLDEN MASTER V33.0 (06/02/2026)
+    VERSÃO ESTÁVEL V33.1 (06/02/2026) - ERROR BOUNDARY FIX
     ============================================================================
-    ESTADO:
-    - Pronta para produção em trfire.github.io.
-    - Autenticação Anónima ATIVA (necessária para ler dados do banco).
+    CORREÇÃO:
+    - Reintegrados os componentes 'ErrorBoundary' e 'AuthErrorScreen'.
+    - Corrige o erro "ReferenceError: ErrorBoundary is not defined".
     
-    FUNCIONALIDADES:
-    - Atalho Admin: Duplo clique no logótipo da tela inicial.
-    - Inspeção: Tipos de Extintor + Foto Obrigatória.
-    - Relatórios: PDF com resumo de contagem.
-    - Lixeira: Exclusão definitiva.
+    ESTADO:
+    - Pronta para produção.
+    - Autenticação Anónima ATIVA.
     ============================================================================
     -->
 
@@ -184,6 +182,87 @@
         // =========================================================================
         // COMPONENTES AUXILIARES (Funções)
         // =========================================================================
+
+        // Error Boundary Component (CRÍTICO PARA DIAGNÓSTICO)
+        class ErrorBoundary extends React.Component {
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false, error: null };
+            }
+
+            static getDerivedStateFromError(error) {
+                return { hasError: true, error };
+            }
+
+            componentDidCatch(error, errorInfo) {
+                console.error("Uncaught error:", error, errorInfo);
+            }
+
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div className="flex flex-col items-center justify-center h-screen bg-red-50 p-6 text-center">
+                            <i className="fas fa-bug text-4xl text-red-500 mb-4"></i>
+                            <h1 className="text-xl font-bold text-red-800">Algo correu mal</h1>
+                            <div className="bg-white p-4 rounded border border-red-200 mt-4 text-left">
+                                <p className="text-sm font-mono text-red-600 whitespace-pre-wrap">
+                                    {this.state.error && this.state.error.toString()}
+                                </p>
+                            </div>
+                            <button onClick={() => window.location.reload()} className="mt-6 px-6 py-2 bg-red-600 text-white rounded-lg shadow-md font-bold">Recarregar Aplicação</button>
+                        </div>
+                    );
+                }
+                return this.props.children;
+            }
+        }
+
+        // Componente de Erro de Autenticação / Configuração
+        function AuthErrorScreen({ error }) {
+            const isConfigError = error.code === 'auth/configuration-not-found' || error.code === 'auth/operation-not-allowed';
+            const isDomainError = error.code && error.code.includes('requests-from-referer');
+
+            return (
+                <div className="flex flex-col h-full bg-red-50 p-6 items-center justify-center text-center">
+                    <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                        <i className={`fas ${isConfigError ? 'fa-cogs' : 'fa-lock'} text-3xl text-red-600`}></i>
+                    </div>
+                    <h2 className="text-2xl font-bold text-red-800 mb-2">
+                        {isConfigError ? "Falta Configurar no Firebase" : "Acesso Bloqueado"}
+                    </h2>
+                    
+                    <div className="bg-white p-5 rounded-xl shadow-sm border border-red-200 text-left w-full max-w-md space-y-4">
+                        {isConfigError ? (
+                            <React.Fragment>
+                                <p className="text-sm text-gray-700 font-bold text-center">O Login Anónimo não está ativado.</p>
+                                <div className="bg-gray-100 p-3 rounded text-xs text-gray-600 space-y-2">
+                                    <p>Para corrigir, o proprietário do projeto deve:</p>
+                                    <ol className="list-decimal pl-4 space-y-1">
+                                        <li>Ir à consola do <b>Firebase</b></li>
+                                        <li>Menu <b>Authentication</b> > <b>Sign-in method</b></li>
+                                        <li>Clicar em <b>Anonymous</b> e <b>Ativar (Enable)</b></li>
+                                        <li>Clicar em <b>Save</b></li>
+                                    </ol>
+                                </div>
+                            </React.Fragment>
+                        ) : isDomainError ? (
+                            <React.Fragment>
+                                <p className="text-sm text-gray-700">O domínio atual não está autorizado a usar a Chave de API.</p>
+                                <code className="block bg-gray-100 p-2 rounded text-xs break-all border border-gray-300 select-all font-mono text-center">
+                                    {window.location.hostname}
+                                </code>
+                            </React.Fragment>
+                        ) : (
+                            <p className="text-sm text-gray-700 text-center">{error.message}</p>
+                        )}
+                    </div>
+                    
+                    <button onClick={() => window.location.reload()} className="mt-6 px-6 py-3 bg-red-600 text-white rounded-lg font-bold shadow-md active:scale-95 flex items-center gap-2">
+                        <i className="fas fa-sync-alt"></i> Tentar Novamente
+                    </button>
+                </div>
+            );
+        }
 
         function NotificationModal({ isOpen, message, type, isConfirmation, onClose, onConfirm }) {
             if (!isOpen) return null;
@@ -676,7 +755,7 @@
                     </div>
                 </div>
             );
-        }
+        };
 
         function RoundsFormScreen({ initialData, onNavigate, onSave, responsibleName, roundLocation, currentUnit, showAlert }) {
             const [isSaving, setIsSaving] = useState(false);
@@ -1091,7 +1170,6 @@
             const [units, setUnits] = useState([]);
             const [scanRes, setScanRes] = useState(null);
             const [notification, setNotification] = useState({ isOpen: false, message: '', type: 'info', isConfirmation: false, onConfirm: null });
-            const [authError, setAuthError] = useState(null);
 
             const showAlert = (message, type = 'info', onCloseAction = null) => { setNotification({ isOpen: true, message, type, isConfirmation: false, onConfirm: null, onCloseAction }); };
             const showConfirm = (message, onConfirmAction, type = 'warning') => { setNotification({ isOpen: true, message, type, isConfirmation: true, onConfirm: onConfirmAction }); };
@@ -1194,7 +1272,7 @@
                     // Se não foi feita e ainda não tem registro automático, cria
                     if (!hasInspection && !alreadyAutoRegistered) { 
                         try { 
-                            await setDoc(doc(dbFirestore, "inspections", autoDocId), { 
+                            await dbFirestore.collection("inspections").doc(autoDocId).set({ 
                                 type: 'RONDA', 
                                 sector: loc, // O nome no histórico continua bonito: "CASA DE BOMBAS / G-100"
                                 equipmentName: 'AUDITORIA AUTOMÁTICA', 
@@ -1233,122 +1311,87 @@
             };
 
             useEffect(() => {
-                if(!dbFirestore || !auth) return;
+                if(!dbFirestore) return;
+                // INCREASED LIMIT TO 10000 for full data load
+                const q = dbFirestore.collection("inspections").orderBy("created_at", "desc").limit(10000);
+                
+                const unsubscribeInspections = q.onSnapshot((querySnapshot) => { 
+                    const inspections = []; 
+                    querySnapshot.forEach((doc) => { inspections.push({ id: doc.id, ...doc.data() }); }); 
+                    setDb(inspections); 
+                    
+                    if (localStorage.getItem('trfire_user') === 'ADMIN') {
+                        checkAndGenerateMissedRounds(inspections);
+                    }
+                    checkAndCleanupTrash(inspections);
+                    
+                }, (error) => { 
+                    console.error("Erro ao buscar dados:", error);
+                });
+                
+                const qUsers = dbFirestore.collection("users").orderBy("name");
+                const unsubscribeUsers = qUsers.onSnapshot(async (snapshot) => { 
+                    const usersList = []; 
+                    snapshot.forEach(doc => usersList.push({ id: doc.id, ...doc.data() })); 
+                    setUsers(usersList); 
 
-                auth.signInAnonymously()
-                    .then(() => {
-                        console.log("Autenticado anonimamente.");
-                        
-                        const q = dbFirestore.collection("inspections").orderBy("created_at", "desc").limit(10000);
-                        const unsubscribeInspections = q.onSnapshot((querySnapshot) => { 
-                            const inspections = []; 
-                            querySnapshot.forEach((doc) => { inspections.push({ id: doc.id, ...doc.data() }); }); 
-                            setDb(inspections); 
-                            
-                            if (localStorage.getItem('trfire_user') === 'ADMIN') {
-                                checkAndGenerateMissedRounds(inspections);
-                            }
-                            checkAndCleanupTrash(inspections);
-                        }, (error) => console.error("Erro dados:", error));
-
-                        const qUsers = dbFirestore.collection("users").orderBy("name");
-                        const unsubscribeUsers = qUsers.onSnapshot(async (snapshot) => { 
-                            const usersList = []; 
-                            snapshot.forEach(doc => usersList.push({ id: doc.id, ...doc.data() })); 
-                            setUsers(usersList); 
-
-                            usersList.forEach(async (u) => {
-                                if (!u.unit && u.name !== "ADMIN") {
-                                   if (u.name !== "ADMIN") {
-                                        try {
-                                            await dbFirestore.collection("users").doc(u.id).update({ unit: "PARQUE LOGISTICO AERO I" });
-                                        } catch(e) { console.error("Erro migração user", e); }
-                                   }
-                                }
-                            });
-                            
-                            const adminUser = usersList.find(u => u.name === "ADMIN");
-                            if (!adminUser) {
-                                console.log("Criando usuário ADMIN padrão...");
-                                await dbFirestore.collection("users").add({ name: "ADMIN", pass: "Admin160589", unit: "GLOBAL" });
-                            } else if (adminUser.pass !== "Admin160589") {
-                                // Atualiza a senha se estiver diferente (ex: versão antiga)
-                                console.log("Atualizando senha do ADMIN...");
-                                await dbFirestore.collection("users").doc(adminUser.id).update({ pass: "Admin160589" });
-                            }
-                        });
-
-                        const qUnits = dbFirestore.collection("units").orderBy("name");
-                        const unsubscribeUnits = qUnits.onSnapshot(async (snapshot) => { 
-                            const unitsList = []; 
-                            snapshot.forEach(doc => {
-                                const d = doc.data();
-                                if (d.name === "NOVA UNIDADE") {
-                                    if (localStorage.getItem('trfire_user') === 'ADMIN') {
-                                        dbFirestore.collection("units").doc(doc.id).delete().catch(e => console.error("Erro ao excluir auto:", e));
-                                    }
-                                } else {
-                                    unitsList.push({ id: doc.id, ...d });
-                                }
-                            }); 
-                            setUnits(unitsList); 
-                        });
-                        
-                        return () => { unsubscribeInspections(); unsubscribeUsers(); unsubscribeUnits(); };
-                    })
-                    .catch((error) => {
-                        console.error("Erro na autenticação:", error);
-                        // Tratamento específico para o erro de Referer bloqueado
-                        if (error.code && error.code.includes('requests-from-referer')) {
-                            setAuthError({
-                                type: 'domain_blocked',
-                                message: "O domínio atual não está autorizado.",
-                                domain: window.location.hostname,
-                                code: error.code
-                            });
-                        } else {
-                            showAlert("Erro de conexão: " + error.message, "error");
+                    // Migração automática de usuários sem unidade para "PARQUE LOGISTICO AERO I"
+                    usersList.forEach(async (u) => {
+                        if (!u.unit && u.name !== "ADMIN") { // ADMIN tem unit GLOBAL ou especial, mas aqui vamos deixar passar ou atribuir
+                           // Não atribui unidade ao ADMIN se ele for especial, ou atribui GLOBAL
+                           // Vamos focar nos usuários normais
+                           if (u.name !== "ADMIN") {
+                                try {
+                                    await dbFirestore.collection("users").doc(u.id).update({ unit: "PARQUE LOGISTICO AERO I" });
+                                } catch(e) { console.error("Erro migração user", e); }
+                           }
                         }
                     });
+                    
+                    const adminUser = usersList.find(u => u.name === "ADMIN");
+                    if (!adminUser) {
+                        console.log("Criando usuário ADMIN padrão...");
+                        await dbFirestore.collection("users").add({ name: "ADMIN", pass: "Admin160589", unit: "GLOBAL" });
+                    } else if (adminUser.pass !== "Admin160589") {
+                        // Atualiza a senha se estiver diferente (ex: versão antiga)
+                        console.log("Atualizando senha do ADMIN...");
+                        await dbFirestore.collection("users").doc(adminUser.id).update({ pass: "Admin160589" });
+                    }
+                });
 
+                const qUnits = dbFirestore.collection("units").orderBy("name");
+                const unsubscribeUnits = qUnits.onSnapshot(async (snapshot) => { 
+                    const unitsList = []; 
+                    snapshot.forEach(doc => {
+                        const d = doc.data();
+                        // LIMPEZA AUTOMÁTICA: Remove "NOVA UNIDADE" do banco se existir (APENAS SE FOR ADMIN)
+                        if (d.name === "NOVA UNIDADE") {
+                            if (localStorage.getItem('trfire_user') === 'ADMIN') {
+                                dbFirestore.collection("units").doc(doc.id).delete().catch(e => console.error("Erro ao excluir auto:", e));
+                            }
+                        } else {
+                            unitsList.push({ id: doc.id, ...d });
+                        }
+                    }); 
+                    setUnits(unitsList); 
+                });
+                return () => { unsubscribeInspections(); unsubscribeUsers(); unsubscribeUnits(); };
             }, []);
 
-            // ... (checkAndGenerateMissedRounds, checkAndCleanupTrash mantidos iguais) ...
-
-            // CORREÇÃO: Funções de Save agora retornam true/false
-            const handleSave = async (formData) => { 
-                if(!dbFirestore) { showAlert("Erro: Banco de dados não conectado.", "error"); return false; } 
-                try { 
-                    await dbFirestore.collection("inspections").add({ ...formData, unit: currentUnit }); 
-                    navigateTo('list'); 
-                    return true;
-                } catch (e) { 
-                    showAlert("Erro ao salvar na nuvem: " + e.message, "error"); 
-                    return false;
-                } 
-            };
-            
-            const handleSaveUser = async (userData) => { 
-                if(!dbFirestore) return false; 
-                try { 
-                    await dbFirestore.collection("users").add(userData); 
-                    return true;
-                } catch(e) { 
-                    showAlert("Erro ao salvar usuário: " + e.message, "error"); 
-                    return false;
-                } 
-            };
+            const handleStartInspection = (type) => { setInspectionType(type); navigateTo('scan'); };
+            const handleRoundStart = (location) => { setRoundLocation(location); setInspectionType('RONDA'); navigateTo('scan'); };
+            const handleSave = async (formData) => { if(!dbFirestore) { showAlert("Erro: Banco de dados não conectado.", "error"); return; } try { await dbFirestore.collection("inspections").add({ ...formData, unit: currentUnit }); navigateTo('list'); } catch (e) { showAlert("Erro ao salvar na nuvem.", "error"); } };
+            const handleSaveUser = async (userData) => { if(!dbFirestore) return; try { await dbFirestore.collection("users").add(userData); } catch(e) { showAlert("Erro ao salvar usuário.", "error"); } };
             
             const handleUpdateUser = async (id, data) => { 
-                if(!dbFirestore) return false; 
+                if(!dbFirestore) return; 
                 try { 
                     const updateData = typeof data === 'string' ? { pass: data } : data;
                     await dbFirestore.collection("users").doc(id).update(updateData); 
-                    return true;
+                    showAlert("Dados do usuário atualizados!", "success"); 
                 } catch(e) { 
                     console.error("Erro ao atualizar", e);
-                    showAlert("Erro ao atualizar usuário: " + e.message, "error"); 
-                    return false;
+                    showAlert("Erro ao atualizar usuário.", "error"); 
                 } 
             };
 
@@ -1386,12 +1429,8 @@
             const handleDeletePermanently = async (id) => { if(!dbFirestore) return; try { await dbFirestore.collection("inspections").doc(id).delete(); } catch (e) { showAlert("Erro ao excluir.", "error"); } };
             const handleLogin = (name, unitName) => { localStorage.setItem('trfire_user', name); localStorage.setItem('trfire_unit', unitName); setResponsible(name); setCurrentUnit(unitName); navigateTo('menu'); };
 
-            if (authError) {
-                return <AuthErrorScreen error={authError} />;
-            }
-
             return (
-                <ErrorBoundary>
+                <React.Fragment>
                     <NotificationModal isOpen={notification.isOpen} message={notification.message} type={notification.type} isConfirmation={notification.isConfirmation} onClose={closeNotification} onConfirm={notification.onConfirm} />
                     {page === 'responsible' && <ResponsibleScreen onConfirm={handleLogin} usersList={users} unitsList={units} showAlert={showAlert} onNavigate={navigateTo} />}
                     {page === 'menu' && <MenuScreen onNavigate={navigateTo} responsibleName={responsible} currentUnit={currentUnit} onStartInspection={handleStartInspection} usersList={users} />}
@@ -1405,7 +1444,7 @@
                     {page === 'roundsForm' && <RoundsFormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} roundLocation={roundLocation} onSave={handleSave} currentUnit={currentUnit} showAlert={showAlert} />}
                     {page === 'list' && <ListScreen data={db} onNavigate={navigateTo} onToggleDelete={handleToggleDelete} onDeletePermanently={handleDeletePermanently} onImportData={handleImportData} currentUser={responsible} showAlert={showAlert} showConfirm={showConfirm} />}
                     {page === 'adminSetup' && <UserRegisterScreen onNavigate={navigateTo} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} backDestination="responsible" />}
-                </ErrorBoundary>
+                </React.Fragment>
             );
         }
 

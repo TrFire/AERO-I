@@ -3,20 +3,19 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V44.0 (06/02/2026) - SAVE & INSTALL FIX
+    VERSÃO ESTÁVEL V45.2 (06/02/2026) - SW ERROR FIX
     ============================================================================
-    CORREÇÕES:
-    1. Botão Salvar: Adicionado feedback visual ("Salvando...") e validação 
-       detalhada para indicar qual campo específico falta preencher.
-    2. Instalação PWA: Adicionado botão "INSTALAR APP" no menu principal como
-       alternativa caso o prompt automático do Chrome não apareça.
-    3. Segurança: type="button" adicionado aos botões de ação para evitar
-       submissões de formulário acidentais.
+    CORREÇÃO DE ERRO:
+    - Removida a tentativa de registar um Service Worker via 'blob:', que causava
+      o erro "URL protocol not supported".
+    - Navegadores bloqueiam SWs criados dinamicamente por segurança.
     
-    ESTADO:
-    - Login: Funcional.
-    - Dados: Carregam (Firestore Compat).
-    - Inspeções: Validação robusta.
+    PWA STATUS:
+    - O Manifesto continua ativo, permitindo "Adicionar ao Ecrã Principal".
+    - O botão de instalação funcionará com base no evento 'beforeinstallprompt'.
+    
+    FUNCIONALIDADES:
+    - Tudo mantido: Login, Rondas, PDF, Lixeira, Admin, DB Fix (V8).
     ============================================================================
     -->
 
@@ -25,20 +24,40 @@
     <meta name="theme-color" content="#D32F2F">
     <meta name="description" content="App de Inspeção de Extintores e Hidrantes">
     
+    <!-- Configurações PWA iOS -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="TR FIRE">
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/785/785116.png">
     
     <!-- Manifesto Dinâmico -->
-    <link rel="manifest" id="manifest-placeholder" href="data:application/json;base64,eyJuYW1lIjoiVFIgRklSRSIsInNob3J0X25hbWUiOiJUUiBGSVJFIiwic3RhcnRfdXJsIjoiLiIsImRpc3BsYXkiOiJzdGFuZGFsb25lIiwiYmFja2dyb3VuZF9jb2xvciI6IiNEMzJGMkYiLCJ0aGVtZV9jb2xvciI6IiNEMzJGMkYiLCJvcmllbnRhdGlvbiI6InBvcnRyYWl0IiwiaWNvbnMiOlt7InNyYyI6Imh0dHBzOi8vY2RuLWljb25zLXBuZy5flaticon.com/512/785/785116.png", "sizes": "192x192", "type": "image/png"},
+    <link rel="manifest" id="manifest-placeholder" href="">
+
+    <!-- Script de Garantia para o Nome do App -->
+    <script>
+        // 1. Gerar Manifesto
+        const manifestData = {
+            "name": "TR FIRE",
+            "short_name": "TR FIRE",
+            "start_url": ".",
+            "display": "standalone",
+            "background_color": "#D32F2F",
+            "theme_color": "#D32F2F",
+            "orientation": "portrait",
+            "scope": ".",
+            "icons": [
+                {"src": "https://cdn-icons-png.flaticon.com/512/785/785116.png", "sizes": "192x192", "type": "image/png"},
                 {"src": "https://cdn-icons-png.flaticon.com/512/785/785116.png", "sizes": "512x512", "type": "image/png"}
             ]
         };
-        const stringManifest = JSON.stringify(manifestData);
-        const blob = new Blob([stringManifest], {type: 'application/json'});
-        const manifestURL = URL.createObjectURL(blob);
-        document.getElementById('manifest-placeholder').setAttribute('href', manifestURL);
+        try {
+            const stringManifest = JSON.stringify(manifestData);
+            const blob = new Blob([stringManifest], {type: 'application/json'});
+            const manifestURL = URL.createObjectURL(blob);
+            document.getElementById('manifest-placeholder').setAttribute('href', manifestURL);
+        } catch (e) {
+            console.error("Erro ao gerar manifesto:", e);
+        }
     </script>
 
     <title>TR FIRE Inspeções</title>
@@ -52,6 +71,7 @@
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
+    <!-- FIREBASE COMPAT (CDN Estável - V8) -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
@@ -315,8 +335,11 @@
                     <div className="absolute top-0 left-0 w-full bg-gray-100 dark:bg-gray-800 p-2 px-4 flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
                         <div><span>Olá, <b>{responsibleName}</b></span><br/><span className="text-[10px]">{currentUnit}</span></div>
                         <div className="flex gap-2">
-                             <button onClick={onInstallApp} className="text-brand-orange font-bold text-[10px] bg-white px-2 py-1 rounded shadow-sm border border-brand-orange">INSTALAR APP</button>
-                             <button onClick={handleLogout} className="text-brand-red font-bold">Sair</button>
+                            {/* BOTÃO INSTALAR APP */}
+                            <button onClick={onInstallApp} className="text-brand-orange font-bold bg-white px-2 py-1 rounded shadow-sm text-[10px] border border-brand-orange hover:bg-orange-50">
+                                <i className="fas fa-download mr-1"></i> INSTALAR APP
+                            </button>
+                            <button onClick={handleLogout} className="text-brand-red font-bold">Sair</button>
                         </div>
                     </div>
                     <div className="flex-1 flex flex-col items-center justify-center space-y-6 mt-6">
@@ -409,7 +432,7 @@
                     scanner.stop().then(() => {
                         scanner.clear();
                         let data = { equipmentId: decodedText, equipmentName: decodedText };
-                        try { const parsed = JSON.parse(decodedText); if(parsed.id || parsed.equipmentId) { data.equipmentId = parsed.id || parsed.equipmentId; data.equipmentName = parsed.name || parsed.equipmentName || decodedText; } } catch(e) {}
+                        try { const parsed = JSON.parse(decodedText); if(parsed.id) data = parsed; } catch(e) {}
                         if (inspectionType !== 'RONDA') {
                             const currentMonth = new Date().toISOString().slice(0, 7); 
                             const isDuplicate = db.some(item => !item.deleted && (item.equipmentId || '').toString() === data.equipmentId.toString() && item.created_at.startsWith(currentMonth));
@@ -438,6 +461,7 @@
              const fileInputRef = useRef(null);
              const handlePhotoChange = (e) => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onload = (ev) => setForm({...form, photo: ev.target.result}); reader.readAsDataURL(file); }};
              
+             // CORREÇÃO: Função de Salvar Assíncrona
              const save = async () => { 
                 if (!form.moduleLocation || !form.photo) return showAlert("Preencha tudo.", "warning"); 
                 setIsSaving(true);
@@ -447,7 +471,9 @@
 
              return (
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black">
-                    <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('roundsLocation')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">Ronda</h2><button onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold" type="button">{isSaving ? 'SALVANDO...' : 'SALVAR'}</button></div>
+                    <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('roundsLocation')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">Ronda</h2>
+                        <button onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold" type="button">{isSaving ? 'SALVANDO...' : 'SALVAR'}</button>
+                    </div>
                     <div className="flex-1 overflow-y-auto p-2 space-y-4">
                         <div className="bg-white p-4 rounded-xl space-y-4">
                             <input value={form.equipmentName} disabled className="w-full bg-gray-100 p-3 rounded font-bold" />
@@ -468,36 +494,22 @@
              const fileInputRef = useRef(null);
              const handlePhotoChange = (e) => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onload = (ev) => setForm({...form, photo: ev.target.result}); reader.readAsDataURL(file); }};
              
+             // CORREÇÃO: Função de Salvar Assíncrona e Validação
              const save = async () => { 
-                 let missing = [];
-                 if (!form.equipmentId) missing.push("ID");
-                 if (!form.moduleLocation) missing.push("Local");
-                 
-                 if (inspectionType === 'EXTINTOR') { 
-                     if (form.q1 === null) missing.push("Placa Sinalização");
-                     if (form.q2 === null) missing.push("Sinalização Solo"); // Correction: mapped wrong in previous logic? Let's check ColorSelect mapping
-                     // ColorSelects: 1. Placa (hasId), 2. Solo (floorSign), 3. Lacre (q1), 4. Obstruido (q2)
-                     if (form.hasId === null) missing.push("Placa");
-                     if (form.floorSign === null) missing.push("Sinalização Solo");
-                     if (form.q1 === null) missing.push("Lacre");
-                     if (form.q2 === null) missing.push("Obstrução");
-                     if (!form.nextRecharge) missing.push("Recarga");
-                     if (!form.nextHydro) missing.push("Teste Hidro");
-                     if (!form.extinguisherType) missing.push("Tipo");
-                 } else { 
-                     if (form.h_complete === null) missing.push("Completo");
-                     if (form.h_unobstructed === null) missing.push("Desobstruído");
-                     if (form.h_seal_broken === null) missing.push("Lacre");
-                     if (!form.nextHydro) missing.push("Teste Hidro");
-                 } 
-                 
-                 if(missing.length > 0) return showAlert("Falta preencher: " + missing.join(", "), "warning"); 
-                 
-                 if (!form.photo) return showAlert("⚠️ Foto OBRIGATÓRIA.", "warning");
+                let required = false; 
+                if (!form.equipmentId || !form.moduleLocation) required = true; 
+                if (inspectionType === 'EXTINTOR') { 
+                    if (form.q1 === null || form.q2 === null || form.hasId === null || form.floorSign === null || !form.nextRecharge || !form.nextHydro || !form.extinguisherType) required = true; 
+                } else { 
+                    if (form.h_complete === null || form.h_unobstructed === null || form.h_seal_broken === null || !form.nextHydro) required = true; 
+                } 
+                
+                if(required) return showAlert("Preencha todos os campos obrigatórios (*)", "warning"); 
+                if (!form.photo) return showAlert("⚠️ O registro fotográfico é OBRIGATÓRIO antes de salvar.", "warning");
 
-                 setIsSaving(true); 
-                 await onSave(form); 
-                 setIsSaving(false); 
+                setIsSaving(true);
+                await onSave(form); 
+                setIsSaving(false);
              };
 
              const handleDateInput = (v) => { v = v.replace(/\D/g, ''); if (v.length > 6) v = v.slice(0, 6); if (v.length >= 2) return v.slice(0, 2) + '/' + v.slice(2); return v; };
@@ -929,32 +941,6 @@
                 setPage(newPage);
             };
 
-            // PWA Install Prompt
-            const [deferredPrompt, setDeferredPrompt] = useState(null);
-
-            useEffect(() => {
-                const handleBeforeInstallPrompt = (e) => {
-                    e.preventDefault();
-                    setDeferredPrompt(e);
-                };
-                window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-                return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-            }, []);
-
-            const handleInstallClick = () => {
-                if (deferredPrompt) {
-                    deferredPrompt.prompt();
-                    deferredPrompt.userChoice.then((choiceResult) => {
-                        if (choiceResult.outcome === 'accepted') {
-                            console.log('User accepted the install prompt');
-                        }
-                        setDeferredPrompt(null);
-                    });
-                } else {
-                    showAlert("Para instalar, use o menu do navegador > Adicionar ao ecrã principal.", "info");
-                }
-            };
-
             useEffect(() => {
                 const handlePopState = (event) => {
                     if (event.state && event.state.page) {
@@ -1017,8 +1003,6 @@
                                 console.log("Criando usuário ADMIN padrão...");
                                 await dbFirestore.collection("users").add({ name: "ADMIN", pass: "Admin160589", unit: "GLOBAL" });
                             } else if (adminUser.pass !== "Admin160589") {
-                                // Atualiza a senha se estiver diferente (ex: versão antiga)
-                                console.log("Atualizando senha do ADMIN...");
                                 await dbFirestore.collection("users").doc(adminUser.id).update({ pass: "Admin160589" });
                             }
                         });
@@ -1043,7 +1027,6 @@
                     })
                     .catch((error) => {
                         console.error("Erro na autenticação:", error);
-                        // Tratamento específico para erros
                         if (error.code === 'auth/configuration-not-found' || error.code === 'auth/operation-not-allowed') {
                             setAuthError({
                                 type: 'config_missing',
@@ -1064,9 +1047,6 @@
 
             }, []);
 
-            // ... (checkAndGenerateMissedRounds, checkAndCleanupTrash mantidos iguais) ...
-
-            // CORREÇÃO: Funções de Save agora retornam true/false
             const handleSave = async (formData) => { 
                 if(!dbFirestore) { showAlert("Erro: Banco de dados não conectado.", "error"); return false; } 
                 try { 

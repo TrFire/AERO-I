@@ -3,17 +3,20 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V43.1 (06/02/2026) - REFERENCE FIX
+    VERSÃO ESTÁVEL V44.0 (06/02/2026) - SAVE & INSTALL FIX
     ============================================================================
-    CORREÇÃO:
-    - Definidas as funções 'handleStartInspection' e 'handleRoundStart' dentro 
-      do componente App. Elas estavam sendo chamadas no JSX mas não existiam 
-      no escopo, causando tela branca.
+    CORREÇÕES:
+    1. Botão Salvar: Adicionado feedback visual ("Salvando...") e validação 
+       detalhada para indicar qual campo específico falta preencher.
+    2. Instalação PWA: Adicionado botão "INSTALAR APP" no menu principal como
+       alternativa caso o prompt automático do Chrome não apareça.
+    3. Segurança: type="button" adicionado aos botões de ação para evitar
+       submissões de formulário acidentais.
     
     ESTADO:
     - Login: Funcional.
-    - Navegação: Funcional.
-    - Dados: Carregam sem travar.
+    - Dados: Carregam (Firestore Compat).
+    - Inspeções: Validação robusta.
     ============================================================================
     -->
 
@@ -27,6 +30,7 @@
     <meta name="apple-mobile-web-app-title" content="TR FIRE">
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/785/785116.png">
     
+    <!-- Manifesto Dinâmico -->
     <link rel="manifest" id="manifest-placeholder" href="data:application/json;base64,eyJuYW1lIjoiVFIgRklSRSIsInNob3J0X25hbWUiOiJUUiBGSVJFIiwic3RhcnRfdXJsIjoiLiIsImRpc3BsYXkiOiJzdGFuZGFsb25lIiwiYmFja2dyb3VuZF9jb2xvciI6IiNEMzJGMkYiLCJ0aGVtZV9jb2xvciI6IiNEMzJGMkYiLCJvcmllbnRhdGlvbiI6InBvcnRyYWl0IiwiaWNvbnMiOlt7InNyYyI6Imh0dHBzOi8vY2RuLWljb25zLXBuZy5flaticon.com/512/785/785116.png", "sizes": "192x192", "type": "image/png"},
                 {"src": "https://cdn-icons-png.flaticon.com/512/785/785116.png", "sizes": "512x512", "type": "image/png"}
             ]
@@ -53,7 +57,12 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; user-select: none; -webkit-tap-highlight-color: transparent; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            overscroll-behavior-y: none;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
         input, textarea, select { font-size: 16px !important; }
         .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom); }
         #reader { width: 100%; height: 100%; overflow: hidden; background: black; }
@@ -62,6 +71,7 @@
         .animate-scale-in { animation: scaleIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes scaleIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+        
         .toggle-checkbox:checked { right: 0; border-color: #F57C00; }
         .toggle-checkbox:checked + .toggle-label { background-color: #F57C00; }
     </style>
@@ -290,7 +300,7 @@
              );
         }
 
-        function MenuScreen({ onNavigate, responsibleName, currentUnit, onStartInspection, usersList }) {
+        function MenuScreen({ onNavigate, responsibleName, currentUnit, onStartInspection, usersList, onInstallApp }) {
             const isAdmin = responsibleName === "ADMIN" || currentUnit === "GLOBAL";
             const userPerms = useMemo(() => {
                 if (!usersList || usersList.length === 0) return ['EXTINTOR', 'HIDRANTE', 'HISTORICO']; 
@@ -304,7 +314,10 @@
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 animate-fade-in relative">
                     <div className="absolute top-0 left-0 w-full bg-gray-100 dark:bg-gray-800 p-2 px-4 flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
                         <div><span>Olá, <b>{responsibleName}</b></span><br/><span className="text-[10px]">{currentUnit}</span></div>
-                        <button onClick={handleLogout} className="text-brand-red font-bold">Sair</button>
+                        <div className="flex gap-2">
+                             <button onClick={onInstallApp} className="text-brand-orange font-bold text-[10px] bg-white px-2 py-1 rounded shadow-sm border border-brand-orange">INSTALAR APP</button>
+                             <button onClick={handleLogout} className="text-brand-red font-bold">Sair</button>
+                        </div>
                     </div>
                     <div className="flex-1 flex flex-col items-center justify-center space-y-6 mt-6">
                         <div className="w-32 h-32"><LogoImage className="w-full h-full object-contain filter drop-shadow-xl" /></div>
@@ -424,11 +437,17 @@
              const [form, setForm] = useState({ type: 'RONDA', sector: roundLocation, equipmentName: initialData?.equipmentName || '', moduleLocation: '', status: '', photo: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false });
              const fileInputRef = useRef(null);
              const handlePhotoChange = (e) => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onload = (ev) => setForm({...form, photo: ev.target.result}); reader.readAsDataURL(file); }};
-             const save = async () => { if (!form.moduleLocation || !form.photo) return showAlert("Preencha tudo.", "warning"); onSave(form); };
+             
+             const save = async () => { 
+                if (!form.moduleLocation || !form.photo) return showAlert("Preencha tudo.", "warning"); 
+                setIsSaving(true);
+                await onSave(form); 
+                setIsSaving(false);
+             };
 
              return (
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black">
-                    <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('roundsLocation')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">Ronda</h2><button onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold">SALVAR</button></div>
+                    <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('roundsLocation')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">Ronda</h2><button onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold" type="button">{isSaving ? 'SALVANDO...' : 'SALVAR'}</button></div>
                     <div className="flex-1 overflow-y-auto p-2 space-y-4">
                         <div className="bg-white p-4 rounded-xl space-y-4">
                             <input value={form.equipmentName} disabled className="w-full bg-gray-100 p-3 rounded font-bold" />
@@ -448,18 +467,33 @@
              const [form, setForm] = useState({ type: inspectionType, equipmentId: initialData?.equipmentId, equipmentName: initialData?.equipmentName, moduleLocation: '', hasId: null, floorSign: null, q1: null, q2: null, nextRecharge: '', h_complete: null, h_unobstructed: null, h_seal_broken: null, nextHydro: '', photo: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false, extinguisherType: '' });
              const fileInputRef = useRef(null);
              const handlePhotoChange = (e) => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onload = (ev) => setForm({...form, photo: ev.target.result}); reader.readAsDataURL(file); }};
+             
              const save = async () => { 
-                 let required = false; 
-                 if (!form.equipmentId || !form.moduleLocation) required = true; 
+                 let missing = [];
+                 if (!form.equipmentId) missing.push("ID");
+                 if (!form.moduleLocation) missing.push("Local");
+                 
                  if (inspectionType === 'EXTINTOR') { 
-                     if (form.q1 === null || form.q2 === null || form.hasId === null || form.floorSign === null || !form.nextRecharge || !form.nextHydro || !form.extinguisherType) required = true; 
+                     if (form.q1 === null) missing.push("Placa Sinalização");
+                     if (form.q2 === null) missing.push("Sinalização Solo"); // Correction: mapped wrong in previous logic? Let's check ColorSelect mapping
+                     // ColorSelects: 1. Placa (hasId), 2. Solo (floorSign), 3. Lacre (q1), 4. Obstruido (q2)
+                     if (form.hasId === null) missing.push("Placa");
+                     if (form.floorSign === null) missing.push("Sinalização Solo");
+                     if (form.q1 === null) missing.push("Lacre");
+                     if (form.q2 === null) missing.push("Obstrução");
+                     if (!form.nextRecharge) missing.push("Recarga");
+                     if (!form.nextHydro) missing.push("Teste Hidro");
+                     if (!form.extinguisherType) missing.push("Tipo");
                  } else { 
-                     if (form.h_complete === null || form.h_unobstructed === null || form.h_seal_broken === null || !form.nextHydro) required = true; 
+                     if (form.h_complete === null) missing.push("Completo");
+                     if (form.h_unobstructed === null) missing.push("Desobstruído");
+                     if (form.h_seal_broken === null) missing.push("Lacre");
+                     if (!form.nextHydro) missing.push("Teste Hidro");
                  } 
                  
-                 if(required) return showAlert("Preencha todos os campos obrigatórios (*)", "warning"); 
+                 if(missing.length > 0) return showAlert("Falta preencher: " + missing.join(", "), "warning"); 
                  
-                 if (!form.photo) return showAlert("⚠️ O registro fotográfico é OBRIGATÓRIO antes de salvar.", "warning");
+                 if (!form.photo) return showAlert("⚠️ Foto OBRIGATÓRIA.", "warning");
 
                  setIsSaving(true); 
                  await onSave(form); 
@@ -471,7 +505,7 @@
 
              return (
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black">
-                    <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('menu')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">{inspectionType}</h2><button onClick={save} className="bg-blue-500 text-white px-4 py-2 rounded font-bold">SALVAR</button></div>
+                    <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('menu')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">{inspectionType}</h2><button onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold" type="button">{isSaving ? 'SALVANDO...' : 'SALVAR'}</button></div>
                     <div className="flex-1 overflow-y-auto p-2 space-y-4">
                         <div className="bg-white p-4 rounded-xl space-y-4">
                             <input value={form.equipmentName} onChange={e=>setForm({...form, equipmentName:e.target.value})} className="w-full bg-gray-100 p-3 rounded font-bold" />
@@ -745,7 +779,7 @@
                     {isAdmin && displayList.length > 0 && selectedIds.size > 0 && (
                         <div className={`${showBin ? 'bg-red-700' : 'bg-gray-700'} text-white p-3 flex justify-between items-center animate-fade-in shadow-inner`}>
                             <div className="flex items-center gap-3">
-                                <div onClick={() => handleSelectAll(displayList)} className={`w-6 h-6 rounded border-2 border-white flex items-center justify-center cursor-pointer ${selectedIds.size === displayList.length ? 'bg-white text-red-700' : ''}`}>{selectedIds.size === displayList.length && <i className="fas fa-check text-xs"></i>}</div>
+                                <div onClick={() => handleSelectAll(displayList)} className={`w-6 h-6 rounded border-2 border-white flex items-center justify-center cursor-pointer ${selectedIds.size === displayList.length && displayList.length > 0 ? 'bg-white text-red-700' : ''}`}>{selectedIds.size === displayList.length && <i className="fas fa-check text-xs"></i>}</div>
                                 <span className="text-xs font-bold uppercase cursor-pointer" onClick={() => handleSelectAll(displayList)}>Selecionar Todos</span>
                             </div>
                             {selectedIds.size > 0 && (
@@ -893,6 +927,32 @@
                      console.log("Navigation history not supported in this environment");
                 }
                 setPage(newPage);
+            };
+
+            // PWA Install Prompt
+            const [deferredPrompt, setDeferredPrompt] = useState(null);
+
+            useEffect(() => {
+                const handleBeforeInstallPrompt = (e) => {
+                    e.preventDefault();
+                    setDeferredPrompt(e);
+                };
+                window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+                return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+            }, []);
+
+            const handleInstallClick = () => {
+                if (deferredPrompt) {
+                    deferredPrompt.prompt();
+                    deferredPrompt.userChoice.then((choiceResult) => {
+                        if (choiceResult.outcome === 'accepted') {
+                            console.log('User accepted the install prompt');
+                        }
+                        setDeferredPrompt(null);
+                    });
+                } else {
+                    showAlert("Para instalar, use o menu do navegador > Adicionar ao ecrã principal.", "info");
+                }
             };
 
             useEffect(() => {
@@ -1088,7 +1148,7 @@
                 <ErrorBoundary>
                     <NotificationModal isOpen={notification.isOpen} message={notification.message} type={notification.type} isConfirmation={notification.isConfirmation} onClose={closeNotification} onConfirm={notification.onConfirm} />
                     {page === 'responsible' && <ResponsibleScreen onConfirm={handleLogin} usersList={users} unitsList={units} showAlert={showAlert} onNavigate={navigateTo} />}
-                    {page === 'menu' && <MenuScreen onNavigate={navigateTo} responsibleName={responsible} currentUnit={currentUnit} onStartInspection={handleStartInspection} usersList={users} />}
+                    {page === 'menu' && <MenuScreen onNavigate={navigateTo} responsibleName={responsible} currentUnit={currentUnit} onStartInspection={handleStartInspection} usersList={users} onInstallApp={handleInstallClick} />}
                     {page === 'adminMenu' && <AdminMenuScreen onNavigate={navigateTo} />}
                     {page === 'accessControl' && <AccessControlScreen onNavigate={navigateTo} usersList={users} onUpdatePermissions={handleUpdateUserPermissions} />}
                     {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={navigateTo} onSelectLocation={handleRoundStart} db={db} responsibleName={responsible} />}

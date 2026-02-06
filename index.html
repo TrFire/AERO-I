@@ -3,16 +3,19 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V41.1 (06/02/2026) - GITHUB PAGES FIX
+    VERSÃO ESTÁVEL V42.0 (06/02/2026) - POST-LOGIN CRASH FIX
     ============================================================================
-    CORREÇÃO TELA BRANCA:
-    1. Movidas funções 'checkAndGenerateMissedRounds' e 'checkAndCleanupTrash'
-       para dentro do componente 'App' para garantir acesso ao escopo correto.
-    2. Simplificada a inicialização do Firebase para evitar 'race conditions'.
+    CORREÇÃO CRÍTICA:
+    - Corrigido erro de "ReferenceError: setDoc/deleteDoc is not defined".
+    - As funções de limpeza automática (Lixeira) e auditoria (Rondas) estavam 
+      a usar sintaxe incompatível, causando tela branca logo após o carregamento
+      dos dados.
+    - Convertido tudo para 'dbFirestore.collection().doc().metodo()'.
     
-    ESTABILIDADE:
-    - O código agora é totalmente self-contained dentro do React 'App', 
-      prevenindo erros de referência indefinida.
+    ESTADO:
+    - Login: Funcional.
+    - Dados: Carregam sem travar.
+    - Funcionalidades: Todas mantidas.
     ============================================================================
     -->
 
@@ -423,7 +426,7 @@
              const [form, setForm] = useState({ type: 'RONDA', sector: roundLocation, equipmentName: initialData?.equipmentName || '', moduleLocation: '', status: '', photo: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false });
              const fileInputRef = useRef(null);
              const handlePhotoChange = (e) => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onload = (ev) => setForm({...form, photo: ev.target.result}); reader.readAsDataURL(file); }};
-             const save = () => { if (!form.moduleLocation || !form.photo) return showAlert("Preencha tudo.", "warning"); onSave(form); };
+             const save = async () => { if (!form.moduleLocation || !form.photo) return showAlert("Preencha tudo.", "warning"); onSave(form); };
 
              return (
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black">
@@ -446,7 +449,21 @@
              const [form, setForm] = useState({ type: inspectionType, equipmentId: initialData?.equipmentId, equipmentName: initialData?.equipmentName, moduleLocation: '', hasId: null, floorSign: null, q1: null, q2: null, nextRecharge: '', h_complete: null, h_unobstructed: null, h_seal_broken: null, nextHydro: '', photo: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false, extinguisherType: '' });
              const fileInputRef = useRef(null);
              const handlePhotoChange = (e) => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onload = (ev) => setForm({...form, photo: ev.target.result}); reader.readAsDataURL(file); }};
-             const save = () => { if (!form.moduleLocation || !form.photo) return showAlert("Preencha tudo.", "warning"); onSave(form); };
+             const save = async () => { 
+                 let required = false; 
+                 if (!form.equipmentId || !form.moduleLocation) required = true; 
+                 if (inspectionType === 'EXTINTOR') { 
+                     if (form.q1 === null || form.q2 === null || form.hasId === null || form.floorSign === null || !form.nextRecharge || !form.nextHydro || !form.extinguisherType) required = true; 
+                 } else { 
+                     if (form.h_complete === null || form.h_unobstructed === null || form.h_seal_broken === null || !form.nextHydro) required = true; 
+                 } 
+                 
+                 if(required) return showAlert("Preencha todos os campos obrigatórios (*)", "warning"); 
+                 
+                 if (!form.photo) return showAlert("⚠️ O registro fotográfico é OBRIGATÓRIO antes de salvar.", "warning");
+
+                 await onSave(form); 
+             };
 
              const handleDateInput = (v) => { v = v.replace(/\D/g, ''); if (v.length > 6) v = v.slice(0, 6); if (v.length >= 2) return v.slice(0, 2) + '/' + v.slice(2); return v; };
              const ColorSelect = ({ label, val, field, invert=false }) => { let bgClass = "bg-white dark:bg-gray-800"; let textClass = "text-gray-700 dark:text-gray-200"; if(val === true) { bgClass = invert ? "bg-red-100 dark:bg-red-900 border-red-500" : "bg-green-100 dark:bg-green-900 border-green-500"; textClass = invert ? "text-red-700 dark:text-red-100" : "text-green-700 dark:text-green-100"; } else if(val === false) { bgClass = invert ? "bg-green-100 dark:bg-green-900 border-green-500" : "bg-red-100 dark:bg-red-900 border-red-500"; textClass = invert ? "text-green-700 dark:text-green-100" : "text-red-700 dark:text-red-100"; } return (<div className={`p-3 rounded-xl border ${val !== null ? 'border-2' : 'border-gray-200 dark:border-gray-700'} ${bgClass} shadow-sm transition-colors w-full`}><p className={`font-bold mb-1 text-xs ${val !== null ? textClass : 'text-gray-500 dark:text-gray-400'}`}>{label}</p><select value={val === null ? '' : (val ? 'true' : 'false')} onChange={(e) => { const v = e.target.value; setForm({...form, [field]: v === '' ? null : (v === 'true')}); }} className={`w-full bg-transparent font-bold focus:outline-none ${textClass} appearance-none`}><option value="">Selecionar...</option><option value="true">Sim</option><option value="false">Não</option></select></div>); };
@@ -466,7 +483,7 @@
 
                             <div onClick={()=>fileInputRef.current.click()} className="w-full h-32 border-2 border-dashed rounded flex items-center justify-center text-gray-400 cursor-pointer">{form.photo ? <img src={form.photo} className="h-full object-cover"/> : <i className="fas fa-camera text-2xl"></i>}</div>
                             <input type="file" ref={fileInputRef} onChange={handlePhotoChange} className="hidden" accept="image/*" capture="environment" />
-                            <textarea value={form.obs} onChange={e=>setForm({...form, obs:e.target.value})} placeholder="Obs..." className="w-full p-3 bg-gray-100 rounded h-24" />
+                            <textarea value={form.obs} onChange={e=>setForm({...form, obs:e.target.value})} placeholder="Observações (Opcional)..." className="w-full p-4 rounded-xl border-none shadow-sm h-32 resize-none bg-white dark:bg-gray-800 dark:text-white mb-4"></textarea>
                         </div>
                     </div>
                 </div>

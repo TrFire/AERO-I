@@ -3,15 +3,14 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V35.0 (06/02/2026) - FULL WIDTH & FIELDS
+    VERSÃO ESTÁVEL V36.0 (06/02/2026) - CAMERA FORCE UPDATE
     ============================================================================
-    MELHORIAS VISUAIS:
-    - Layout expandido (Full Width): Margens reduzidas para aproveitar o ecrã.
-    - Telas de Inspeção: Campos reorganizados e numeração adicionada.
-    - Edição habilitada: Campo de nome do equipamento agora pode ser editado.
+    MELHORIAS:
+    - Campo de Foto: Adicionado atributo 'capture="environment"' para forçar 
+      a abertura da câmera traseira e inibir a galeria em dispositivos móveis.
     
     FUNCIONALIDADES:
-    - Todas as anteriores mantidas (Auth Anónimo, Admin, PDF, etc).
+    - Todas as anteriores mantidas (Layout Full, Auth Anónimo, PDF, etc).
     ============================================================================
     -->
 
@@ -402,6 +401,7 @@
                                 <button key={loc} onClick={() => onSelectLocation(loc)} className={`w-full py-5 bg-white dark:bg-gray-800 border-2 ${done ? 'border-green-500' : 'border-gray-100 dark:border-gray-700 hover:border-blue-500'} text-gray-700 dark:text-white rounded-2xl text-lg font-bold shadow-sm flex items-center justify-between px-6`}>
                                     <div className="flex flex-col items-start"><span>{loc}</span><span className={`text-[10px] font-bold uppercase mt-1 ${done ? 'text-green-500' : 'text-orange-500'}`}>{done ? 'Realizado' : 'Pendente'}</span></div>
                                     {!done && getTimeBadge()}
+                                    <i className={`fas ${done ? 'fa-check text-green-500' : 'fa-chevron-right text-gray-300 group-hover:text-blue-500'}`}></i>
                                 </button>
                             );
                         })}
@@ -453,7 +453,7 @@
                             <select value={form.moduleLocation} onChange={e=>setForm({...form, moduleLocation:e.target.value})} className="w-full p-3 bg-gray-100 rounded font-bold"><option value="">Local...</option>{ROUND_AREAS.map(o=><option key={o} value={o}>{o}</option>)}</select>
                             <select value={form.status} onChange={e=>setForm({...form, status:e.target.value})} className="w-full p-3 bg-gray-100 rounded font-bold"><option value="">Status...</option><option value="Conforme">Conforme</option><option value="Não Conforme">Não Conforme</option></select>
                             <div onClick={()=>fileInputRef.current.click()} className="w-full h-32 border-2 border-dashed rounded flex items-center justify-center text-gray-400 cursor-pointer">{form.photo ? <img src={form.photo} className="h-full object-cover"/> : <i className="fas fa-camera text-2xl"></i>}</div>
-                            <input type="file" ref={fileInputRef} onChange={handlePhotoChange} className="hidden" accept="image/*" />
+                            <input type="file" ref={fileInputRef} onChange={handlePhotoChange} className="hidden" accept="image/*" capture="environment" />
                             <textarea value={form.obs} onChange={e=>setForm({...form, obs:e.target.value})} placeholder="Obs..." className="w-full p-3 bg-gray-100 rounded h-24" />
                         </div>
                     </div>
@@ -484,7 +484,7 @@
                             {inspectionType === 'EXTINTOR' ? (<><div className="grid grid-cols-2 gap-2"><ColorSelect label="1. Placa de Sinalização?" field="hasId" val={form.hasId} /><ColorSelect label="2. Sinalização de Solo?" field="floorSign" val={form.floorSign} /></div><div className="grid grid-cols-2 gap-2"><ColorSelect label="3. Violação no Lacre?" field="q1" val={form.q1} invert={true} /><ColorSelect label="4. Obstruído?" field="q2" val={form.q2} invert={true} /></div><div className="grid grid-cols-2 gap-2"><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">Próx. Recarga *</label><input type="tel" value={form.nextRecharge} onChange={e=>setForm({...form, nextRecharge: handleDateInput(e.target.value)})} placeholder="Ex: 12/2026" className="w-full bg-transparent font-bold dark:text-white"/></div><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">Teste Hidro. *</label><input type="tel" value={form.nextHydro} onChange={e=>setForm({...form, nextHydro: handleDateInput(e.target.value)})} placeholder="Ex: 12/2026" className="w-full bg-transparent font-bold dark:text-white"/></div></div></>) : (<><div className="grid grid-cols-2 gap-2"><ColorSelect label="1. Equip. Completo?" field="h_complete" val={form.h_complete} /><ColorSelect label="2. Equip. Desobstruído?" field="h_unobstructed" val={form.h_unobstructed} /></div><div className="grid grid-cols-2 gap-2"><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">3. Próx. Teste Hidro. *</label><input type="tel" value={form.nextHydro} onChange={e=>setForm({...form, nextHydro: handleDateInput(e.target.value)})} placeholder="Ex: 12/2026" className="w-full bg-transparent font-bold dark:text-white"/></div><ColorSelect label="4. Lacre Rompido?" field="h_seal_broken" val={form.h_seal_broken} invert={true} /></div></>)}
 
                             <div onClick={()=>fileInputRef.current.click()} className="w-full h-32 border-2 border-dashed rounded flex items-center justify-center text-gray-400 cursor-pointer">{form.photo ? <img src={form.photo} className="h-full object-cover"/> : <i className="fas fa-camera text-2xl"></i>}</div>
-                            <input type="file" ref={fileInputRef} onChange={handlePhotoChange} className="hidden" accept="image/*" />
+                            <input type="file" ref={fileInputRef} onChange={handlePhotoChange} className="hidden" accept="image/*" capture="environment" />
                             <textarea value={form.obs} onChange={e=>setForm({...form, obs:e.target.value})} placeholder="Obs..." className="w-full p-3 bg-gray-100 rounded h-24" />
                         </div>
                     </div>

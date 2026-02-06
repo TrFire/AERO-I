@@ -3,20 +3,19 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V46.0 (06/02/2026) - REFERENCE ERROR FIX
+    VERSÃO ESTÁVEL V47.0 (06/02/2026) - SAVE & INSPECTION FIX
     ============================================================================
-    CORREÇÃO CRÍTICA:
-    - Reintegradas as funções 'handleInstallClick' e 'handleStartInspection' 
-      dentro do componente App.
-    - O erro de "ReferenceError" causava tela branca ao renderizar o Menu após
-      o login.
+    CORREÇÕES CRÍTICAS:
+    1. Botão Salvar: Implementada sanitização de dados (JSON.parse/stringify) 
+       antes do envio para remover 'undefined', que trava o Firestore.
+    2. Componente de Seleção: 'ColorSelect' movido para escopo global para 
+       evitar re-renderizações que impediam a seleção correta.
+    3. Atualização de Lista: A tela de histórico agora deve refletir imediatamente
+       os novos itens salvos.
     
     ESTRUTURA:
-    - Todas as funções de ação (Handlers) estão agora agrupadas dentro do App
-      para garantir visibilidade (scope) correta.
-    
-    FUNCIONALIDADES:
-    - PWA Install, DB V8 Compat, Layout Full Width, Histórico, Admin.
+    - Todas as funções vitais (handleSave, handleLogin) consolidadas.
+    - Layout ajustado para preencher a tela (Full Width).
     ============================================================================
     -->
 
@@ -35,7 +34,6 @@
     <link rel="manifest" id="manifest-placeholder" href="">
 
     <script>
-        // 1. Gerar Manifesto
         const manifestData = {
             "name": "TR FIRE",
             "short_name": "TR FIRE",
@@ -56,7 +54,7 @@
             const manifestURL = URL.createObjectURL(blob);
             document.getElementById('manifest-placeholder').setAttribute('href', manifestURL);
         } catch (e) {
-            console.error("Erro ao gerar manifesto:", e);
+            console.error("Erro manifesto:", e);
         }
     </script>
 
@@ -104,12 +102,12 @@
     <div id="root" class="h-full w-full flex items-center justify-center">
         <div class="flex flex-col items-center gap-4">
             <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-red"></div>
-            <div class="text-brand-orange font-bold text-sm tracking-widest">A CONECTAR...</div>
+            <div class="text-brand-orange font-bold text-sm tracking-widest">A CARREGAR SISTEMA...</div>
         </div>
     </div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef, useMemo } = React;
+        const { useState, useEffect, useRef, useMemo, useCallback } = React;
         const ReactDOM = window.ReactDOM;
         const jsPDF = window.jspdf ? window.jspdf.jsPDF : null;
 
@@ -149,6 +147,8 @@
         const formatDate = (dateStr) => { if (!dateStr) return '-'; return new Date(dateStr).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); };
         const LogoImage = ({ className }) => (<img src={LOGO_SRC} onError={(e) => {e.target.onerror = null; e.target.src=FALLBACK_LOGO}} alt="Logo" className={className} />);
 
+        // --- COMPONENTES ---
+
         class ErrorBoundary extends React.Component {
             constructor(props) { super(props); this.state = { hasError: false, error: null }; }
             static getDerivedStateFromError(error) { return { hasError: true, error }; }
@@ -167,7 +167,7 @@
             }
         }
 
-        function NotificationModal({ isOpen, message, type, isConfirmation, onClose, onConfirm }) {
+        const NotificationModal = ({ isOpen, message, type, isConfirmation, onClose, onConfirm }) => {
             if (!isOpen) return null;
             const colors = { error: 'bg-red-500', success: 'bg-green-500', warning: 'bg-yellow-500', info: 'bg-blue-500' };
             const icon = { error: 'fa-times', success: 'fa-check', warning: 'fa-exclamation', info: 'fa-info' };
@@ -186,30 +186,48 @@
             );
         }
 
-        function AuthErrorScreen({ error }) {
-            return (
-                <div className="flex flex-col h-full bg-red-50 p-6 items-center justify-center text-center">
-                    <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mb-4"><i className="fas fa-lock text-3xl text-red-600"></i></div>
-                    <h2 className="text-2xl font-bold text-red-800 mb-2">Acesso Bloqueado</h2>
-                    <p className="text-sm text-gray-700 mb-4">{error.message}</p>
-                    <button onClick={() => window.location.reload()} className="mt-4 px-6 py-3 bg-red-600 text-white rounded-lg font-bold shadow-md">Tentar Novamente</button>
-                    <p className="mt-2 text-[10px] text-gray-400 font-mono">Código: {error.code}</p>
-                </div>
-            );
-        }
+        const AuthErrorScreen = ({ error }) => (
+            <div className="flex flex-col h-full bg-red-50 p-6 items-center justify-center text-center">
+                <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mb-4"><i className="fas fa-lock text-3xl text-red-600"></i></div>
+                <h2 className="text-2xl font-bold text-red-800 mb-2">Acesso Bloqueado</h2>
+                <p className="text-sm text-gray-700 mb-4">{error.message}</p>
+                <button onClick={() => window.location.reload()} className="mt-4 px-6 py-3 bg-red-600 text-white rounded-lg font-bold shadow-md">Tentar Novamente</button>
+                <p className="mt-2 text-[10px] text-gray-400 font-mono">Código: {error.code}</p>
+            </div>
+        );
 
-        function ResponsibleScreen({ onConfirm, usersList, unitsList, showAlert, onNavigate }) {
+        // Componente de Seleção de Cores (Sim/Não) - Movido para fora para evitar re-render issues
+        const ColorSelect = ({ label, val, field, onChange, invert=false }) => { 
+            let bgClass = "bg-white dark:bg-gray-800"; 
+            let textClass = "text-gray-700 dark:text-gray-200"; 
+            if(val === true) { 
+                bgClass = invert ? "bg-red-100 dark:bg-red-900 border-red-500" : "bg-green-100 dark:bg-green-900 border-green-500"; 
+                textClass = invert ? "text-red-700 dark:text-red-100" : "text-green-700 dark:text-green-100"; 
+            } else if(val === false) { 
+                bgClass = invert ? "bg-green-100 dark:bg-green-900 border-green-500" : "bg-red-100 dark:bg-red-900 border-red-500"; 
+                textClass = invert ? "text-green-700 dark:text-green-100" : "text-red-700 dark:text-red-100"; 
+            } 
+            return (
+                <div className={`p-3 rounded-xl border ${val !== null ? 'border-2' : 'border-gray-200 dark:border-gray-700'} ${bgClass} shadow-sm transition-colors w-full`}>
+                    <p className={`font-bold mb-1 text-xs ${val !== null ? textClass : 'text-gray-500 dark:text-gray-400'}`}>{label}</p>
+                    <select 
+                        value={val === null ? '' : (val ? 'true' : 'false')} 
+                        onChange={(e) => onChange(field, e.target.value)} 
+                        className={`w-full bg-transparent font-bold focus:outline-none ${textClass} appearance-none`}
+                    >
+                        <option value="">Selecionar...</option>
+                        <option value="true">Sim</option>
+                        <option value="false">Não</option>
+                    </select>
+                </div>
+            ); 
+        };
+
+        const ResponsibleScreen = ({ onConfirm, usersList, unitsList, showAlert }) => {
             const [selectedName, setSelectedName] = useState("");
             const [selectedUnit, setSelectedUnit] = useState("");
             const [password, setPassword] = useState("");
             const [showPassword, setShowPassword] = useState(false);
-            const [lastTap, setLastTap] = useState(0);
-
-            const handleLogoTap = () => {
-                const now = Date.now();
-                if (now - lastTap < 400) { onNavigate('adminSetup'); }
-                setLastTap(now);
-            };
 
             const handleLoginAttempt = () => {
                 const nameUpper = selectedName.toUpperCase().trim();
@@ -225,7 +243,7 @@
 
             return (
                 <div className="flex flex-col h-full bg-brand-red p-4 items-center justify-center animate-fade-in relative">
-                    <div onClick={handleLogoTap} className="w-28 h-28 mb-2 bg-white rounded-full p-4 shadow-2xl flex items-center justify-center cursor-pointer active:scale-95 transition-transform"><LogoImage className="w-full h-full object-contain" /></div>
+                    <div className="w-28 h-28 mb-2 bg-white rounded-full p-4 shadow-2xl flex items-center justify-center"><LogoImage className="w-full h-full object-contain" /></div>
                     <h1 className="text-white text-2xl font-extrabold tracking-tight mb-1 text-center">TR FIRE <span className="text-brand-orange">INSPEÇÕES</span></h1>
                     <p className="text-white/80 text-xs mb-2 font-medium">Sistema de Controle de Equipamentos</p>
                     <div className="flex items-center gap-2 mb-4 bg-black/20 px-3 py-1 rounded-full"><div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div><p className="text-white/90 text-xs font-bold">ONLINE</p></div>
@@ -238,9 +256,9 @@
                     <div className="absolute bottom-2 w-full text-center space-y-1"><div className="text-white/90 text-[10px] text-center mb-0.5 leading-tight font-medium"><p>Copyright © 2026 Fire Personality ME</p><p>Todos os direitos reservados</p><p>(Thawillys Rocha)</p></div><p className="text-white/40 text-[10px]">Versão Beta 1.5</p></div>
                 </div>
             );
-        }
+        };
 
-        function UnitRegisterScreen({ onNavigate, onSaveUnit, unitsList, onUpdateUnit, onDeleteUnit, showAlert, showConfirm }) {
+        const UnitRegisterScreen = ({ onNavigate, onSaveUnit, unitsList, onUpdateUnit, onDeleteUnit, showAlert, showConfirm }) => {
             const [newUnit, setNewUnit] = useState({ name: '', address: '' });
             const [editingId, setEditingId] = useState(null);
             const handleSave = async () => {
@@ -257,9 +275,9 @@
                     <div className="mt-8 space-y-2">{unitsList.map(u => (<div key={u.id} className="p-4 border rounded-xl flex justify-between"><div><b>{u.name}</b><br/><span className="text-xs">{u.address}</span></div><div><button onClick={() => handleEditClick(u)} className="mr-2 text-blue-500"><i className="fas fa-pen"></i></button><button onClick={()=>showConfirm("Excluir?", ()=>onDeleteUnit(u.id), "error")} className="text-red-500"><i className="fas fa-trash"></i></button></div></div>))}</div>
                 </div>
             );
-        }
+        };
 
-        function UserRegisterScreen({ onNavigate, onSaveUser, usersList, unitsList, onUpdateUser, onDeleteUser, showAlert, showConfirm, backDestination = 'adminMenu' }) {
+        const UserRegisterScreen = ({ onNavigate, onSaveUser, usersList, unitsList, onUpdateUser, onDeleteUser, showAlert, showConfirm, backDestination = 'adminMenu' }) => {
             const [newUser, setNewUser] = useState({ name: '', pass: '', unit: '' });
             const [editingId, setEditingId] = useState(null);
             const handleSave = async () => {
@@ -284,9 +302,9 @@
                     <div className="mt-8 space-y-2">{usersList.map(u => (<div key={u.id} className="p-4 border rounded-xl flex justify-between"><div><b>{u.name}</b><br/><span className="text-xs">{u.unit || 'GLOBAL'}</span></div><div><button onClick={() => handleEditClick(u)} className="mr-2 text-blue-500"><i className="fas fa-pen"></i></button><button onClick={()=>showConfirm("Excluir?", ()=>onDeleteUser(u.id), "error")} className="text-red-500"><i className="fas fa-trash"></i></button></div></div>))}</div>
                 </div>
             );
-        }
+        };
 
-        function AdminMenuScreen({ onNavigate }) {
+        const AdminMenuScreen = ({ onNavigate }) => {
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 animate-fade-in relative">
                     <div className="absolute top-4 left-4"><button onClick={() => onNavigate('menu')} className="w-10 h-10 rounded-full bg-gray-100"><i className="fas fa-arrow-left"></i></button></div>
@@ -298,9 +316,9 @@
                     </div>
                 </div>
             );
-        }
+        };
 
-        function AccessControlScreen({ onNavigate, usersList, onUpdatePermissions }) {
+        const AccessControlScreen = ({ onNavigate, usersList, onUpdatePermissions }) => {
              const [selectedUser, setSelectedUser] = useState(null);
              const togglePermission = (permId) => { if(!selectedUser) return; const current = selectedUser.permissions || []; const next = current.includes(permId) ? current.filter(p=>p!==permId) : [...current, permId]; setSelectedUser({...selectedUser, permissions: next}); onUpdatePermissions(selectedUser.id, next); };
              return (
@@ -318,9 +336,9 @@
                     )}
                 </div>
              );
-        }
+        };
 
-        function MenuScreen({ onNavigate, responsibleName, currentUnit, onStartInspection, usersList, onInstallApp }) {
+        const MenuScreen = ({ onNavigate, responsibleName, currentUnit, onStartInspection, usersList, onInstallApp }) => {
             const isAdmin = responsibleName === "ADMIN" || currentUnit === "GLOBAL";
             const userPerms = useMemo(() => {
                 if (!usersList || usersList.length === 0) return ['EXTINTOR', 'HIDRANTE', 'HISTORICO']; 
@@ -353,9 +371,9 @@
                     </div>
                 </div>
             );
-        }
+        };
 
-        function RoundsLocationScreen({ onNavigate, onSelectLocation, db, responsibleName }) {
+        const RoundsLocationScreen = ({ onNavigate, onSelectLocation, db, responsibleName }) => {
             const [shiftInfo, setShiftInfo] = useState({ name: '', start: null, end: null });
             const [tick, setTick] = useState(0); 
 
@@ -419,9 +437,9 @@
                     </div>
                 </div>
             );
-        }
+        };
 
-        function ScannerScreen({ onNavigate, onScanSuccess, db, inspectionType, showAlert }) {
+        const ScannerScreen = ({ onNavigate, onScanSuccess, db, inspectionType, showAlert }) => {
             const scannerRef = useRef(null);
             useEffect(() => {
                 const scanner = new Html5Qrcode("reader");
@@ -454,18 +472,12 @@
             );
         };
 
-        function RoundsFormScreen({ initialData, onNavigate, onSave, responsibleName, roundLocation, currentUnit, showAlert }) {
+        const RoundsFormScreen = ({ initialData, onNavigate, onSave, responsibleName, roundLocation, currentUnit, showAlert }) => {
              const [isSaving, setIsSaving] = useState(false);
              const [form, setForm] = useState({ type: 'RONDA', sector: roundLocation, equipmentName: initialData?.equipmentName || '', moduleLocation: '', status: '', photo: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false });
              const fileInputRef = useRef(null);
              const handlePhotoChange = (e) => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onload = (ev) => setForm({...form, photo: ev.target.result}); reader.readAsDataURL(file); }};
-             
-             const save = async () => { 
-                if (!form.moduleLocation || !form.photo) return showAlert("Preencha tudo.", "warning"); 
-                setIsSaving(true);
-                await onSave(form); 
-                setIsSaving(false);
-             };
+             const save = async () => { if (!form.moduleLocation || !form.photo) return showAlert("Preencha tudo.", "warning"); setIsSaving(true); await onSave(form); setIsSaving(false); };
 
              return (
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black">
@@ -482,33 +494,51 @@
                     </div>
                 </div>
             );
-        }
+        };
 
-        function FormScreen({ initialData, onNavigate, onSave, responsibleName, inspectionType, showAlert }) {
+        const FormScreen = ({ initialData, onNavigate, onSave, responsibleName, inspectionType, showAlert }) => {
              const [isSaving, setIsSaving] = useState(false);
              const [form, setForm] = useState({ type: inspectionType, equipmentId: initialData?.equipmentId, equipmentName: initialData?.equipmentName, moduleLocation: '', hasId: null, floorSign: null, q1: null, q2: null, nextRecharge: '', h_complete: null, h_unobstructed: null, h_seal_broken: null, nextHydro: '', photo: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false, extinguisherType: '' });
              const fileInputRef = useRef(null);
              const handlePhotoChange = (e) => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onload = (ev) => setForm({...form, photo: ev.target.result}); reader.readAsDataURL(file); }};
              
+             // --- CORREÇÃO DE SALVAMENTO: Validação detalhada ---
              const save = async () => { 
-                let required = false; 
-                if (!form.equipmentId || !form.moduleLocation) required = true; 
-                if (inspectionType === 'EXTINTOR') { 
-                    if (form.q1 === null || form.q2 === null || form.hasId === null || form.floorSign === null || !form.nextRecharge || !form.nextHydro || !form.extinguisherType) required = true; 
-                } else { 
-                    if (form.h_complete === null || form.h_unobstructed === null || form.h_seal_broken === null || !form.nextHydro) required = true; 
-                } 
-                
-                if(required) return showAlert("Preencha todos os campos obrigatórios (*)", "warning"); 
-                if (!form.photo) return showAlert("⚠️ O registro fotográfico é OBRIGATÓRIO antes de salvar.", "warning");
+                 let missing = [];
+                 if (!form.equipmentId) missing.push("ID");
+                 if (!form.moduleLocation) missing.push("Local");
+                 
+                 if (inspectionType === 'EXTINTOR') { 
+                     if (form.hasId === null) missing.push("Placa");
+                     if (form.floorSign === null) missing.push("Sinalização Solo");
+                     if (form.q1 === null) missing.push("Lacre");
+                     if (form.q2 === null) missing.push("Obstrução");
+                     if (!form.nextRecharge) missing.push("Recarga");
+                     if (!form.nextHydro) missing.push("Teste Hidro");
+                     if (!form.extinguisherType) missing.push("Tipo");
+                 } else { 
+                     if (form.h_complete === null) missing.push("Completo");
+                     if (form.h_unobstructed === null) missing.push("Desobstruído");
+                     if (form.h_seal_broken === null) missing.push("Lacre");
+                     if (!form.nextHydro) missing.push("Teste Hidro");
+                 } 
+                 
+                 if(missing.length > 0) return showAlert("Falta preencher: " + missing.join(", "), "warning"); 
+                 
+                 if (!form.photo) return showAlert("⚠️ Foto OBRIGATÓRIA.", "warning");
 
-                setIsSaving(true);
-                await onSave(form); 
-                setIsSaving(false);
+                 setIsSaving(true); 
+                 await onSave(form); 
+                 setIsSaving(false); 
              };
 
              const handleDateInput = (v) => { v = v.replace(/\D/g, ''); if (v.length > 6) v = v.slice(0, 6); if (v.length >= 2) return v.slice(0, 2) + '/' + v.slice(2); return v; };
-             const ColorSelect = ({ label, val, field, invert=false }) => { let bgClass = "bg-white dark:bg-gray-800"; let textClass = "text-gray-700 dark:text-gray-200"; if(val === true) { bgClass = invert ? "bg-red-100 dark:bg-red-900 border-red-500" : "bg-green-100 dark:bg-green-900 border-green-500"; textClass = invert ? "text-red-700 dark:text-red-100" : "text-green-700 dark:text-green-100"; } else if(val === false) { bgClass = invert ? "bg-green-100 dark:bg-green-900 border-green-500" : "bg-red-100 dark:bg-red-900 border-red-500"; textClass = invert ? "text-green-700 dark:text-green-100" : "text-red-700 dark:text-red-100"; } return (<div className={`p-3 rounded-xl border ${val !== null ? 'border-2' : 'border-gray-200 dark:border-gray-700'} ${bgClass} shadow-sm transition-colors w-full`}><p className={`font-bold mb-1 text-xs ${val !== null ? textClass : 'text-gray-500 dark:text-gray-400'}`}>{label}</p><select value={val === null ? '' : (val ? 'true' : 'false')} onChange={(e) => { const v = e.target.value; setForm({...form, [field]: v === '' ? null : (v === 'true')}); }} className={`w-full bg-transparent font-bold focus:outline-none ${textClass} appearance-none`}><option value="">Selecionar...</option><option value="true">Sim</option><option value="false">Não</option></select></div>); };
+             
+             // Helper para atualização segura do estado (evita problemas com closures)
+             const handleSelectChange = (field, value) => {
+                 const boolVal = value === '' ? null : (value === 'true');
+                 setForm(prev => ({...prev, [field]: boolVal}));
+             };
 
              return (
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black">
@@ -521,7 +551,7 @@
                                 {inspectionType === 'EXTINTOR' && <select value={form.extinguisherType} onChange={e=>setForm({...form, extinguisherType:e.target.value})} className="w-full p-3 bg-gray-100 rounded font-bold"><option value="">Tipo...</option>{EXTINGUISHER_TYPES.map(t=><option key={t} value={t}>{t}</option>)}</select>}
                             </div>
 
-                            {inspectionType === 'EXTINTOR' ? (<><div className="grid grid-cols-2 gap-2"><ColorSelect label="1. Placa de Sinalização?" field="hasId" val={form.hasId} /><ColorSelect label="2. Sinalização de Solo?" field="floorSign" val={form.floorSign} /></div><div className="grid grid-cols-2 gap-2"><ColorSelect label="3. Violação no Lacre?" field="q1" val={form.q1} invert={true} /><ColorSelect label="4. Obstruído?" field="q2" val={form.q2} invert={true} /></div><div className="grid grid-cols-2 gap-2"><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">Próx. Recarga *</label><input type="tel" value={form.nextRecharge} onChange={e=>setForm({...form, nextRecharge: handleDateInput(e.target.value)})} placeholder="Ex: 12/2026" className="w-full bg-transparent font-bold dark:text-white"/></div><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">Teste Hidro. *</label><input type="tel" value={form.nextHydro} onChange={e=>setForm({...form, nextHydro: handleDateInput(e.target.value)})} placeholder="Ex: 12/2026" className="w-full bg-transparent font-bold dark:text-white"/></div></div></>) : (<><div className="grid grid-cols-2 gap-2"><ColorSelect label="1. Equip. Completo?" field="h_complete" val={form.h_complete} /><ColorSelect label="2. Equip. Desobstruído?" field="h_unobstructed" val={form.h_unobstructed} /></div><div className="grid grid-cols-2 gap-2"><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">3. Próx. Teste Hidro. *</label><input type="tel" value={form.nextHydro} onChange={e=>setForm({...form, nextHydro: handleDateInput(e.target.value)})} placeholder="Ex: 12/2026" className="w-full bg-transparent font-bold dark:text-white"/></div><ColorSelect label="4. Lacre Rompido?" field="h_seal_broken" val={form.h_seal_broken} invert={true} /></div></>)}
+                            {inspectionType === 'EXTINTOR' ? (<><div className="grid grid-cols-2 gap-2"><ColorSelect label="1. Placa de Sinalização?" field="hasId" val={form.hasId} onChange={handleSelectChange} /><ColorSelect label="2. Sinalização de Solo?" field="floorSign" val={form.floorSign} onChange={handleSelectChange} /></div><div className="grid grid-cols-2 gap-2"><ColorSelect label="3. Violação no Lacre?" field="q1" val={form.q1} onChange={handleSelectChange} invert={true} /><ColorSelect label="4. Obstruído?" field="q2" val={form.q2} onChange={handleSelectChange} invert={true} /></div><div className="grid grid-cols-2 gap-2"><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">Próx. Recarga *</label><input type="tel" value={form.nextRecharge} onChange={e=>setForm({...form, nextRecharge: handleDateInput(e.target.value)})} placeholder="Ex: 12/2026" className="w-full bg-transparent font-bold dark:text-white"/></div><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">Teste Hidro. *</label><input type="tel" value={form.nextHydro} onChange={e=>setForm({...form, nextHydro: handleDateInput(e.target.value)})} placeholder="Ex: 12/2026" className="w-full bg-transparent font-bold dark:text-white"/></div></div></>) : (<><div className="grid grid-cols-2 gap-2"><ColorSelect label="1. Equip. Completo?" field="h_complete" val={form.h_complete} onChange={handleSelectChange} /><ColorSelect label="2. Equip. Desobstruído?" field="h_unobstructed" val={form.h_unobstructed} onChange={handleSelectChange} /></div><div className="grid grid-cols-2 gap-2"><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">3. Próx. Teste Hidro. *</label><input type="tel" value={form.nextHydro} onChange={e=>setForm({...form, nextHydro: handleDateInput(e.target.value)})} placeholder="Ex: 12/2026" className="w-full bg-transparent font-bold dark:text-white"/></div><ColorSelect label="4. Lacre Rompido?" field="h_seal_broken" val={form.h_seal_broken} onChange={handleSelectChange} invert={true} /></div></>)}
 
                             <div onClick={()=>fileInputRef.current.click()} className="w-full h-32 border-2 border-dashed rounded flex items-center justify-center text-gray-400 cursor-pointer">{form.photo ? <img src={form.photo} className="h-full object-cover"/> : <i className="fas fa-camera text-2xl"></i>}</div>
                             <input type="file" ref={fileInputRef} onChange={handlePhotoChange} className="hidden" accept="image/*" capture="environment" />
@@ -530,9 +560,9 @@
                     </div>
                 </div>
             );
-        }
+        };
 
-        function ListScreen({ data, onNavigate, onToggleDelete, onDeletePermanently, onImportData, currentUser, showAlert, showConfirm }) {
+        const ListScreen = ({ data, onNavigate, onToggleDelete, onDeletePermanently, onImportData, currentUser, showAlert, showConfirm }) => {
             const [showFilter, setShowFilter] = useState(false);
             const [showPdfModal, setShowPdfModal] = useState(false); 
             const [showBackupModal, setShowBackupModal] = useState(false);
@@ -556,18 +586,12 @@
             const groupedData = useMemo(() => { return { EXTINTOR: activeData.filter(i => (i.type || 'EXTINTOR') === 'EXTINTOR'), HIDRANTE: activeData.filter(i => i.type === 'HIDRANTE'), RONDA: activeData.filter(i => i.type === 'RONDA') }; }, [activeData]);
             const displayList = showBin ? deletedData : activeData;
             
-            const handleSelectAll = (itemsToSelect) => {
-                if (!itemsToSelect || itemsToSelect.length === 0) return;
-                
-                const allSelected = itemsToSelect.every(item => selectedIds.has(item.id));
-                const newSet = new Set(selectedIds);
-                
-                if (allSelected) {
-                    itemsToSelect.forEach(item => newSet.delete(item.id));
+            const handleSelectAll = () => {
+                if (selectedIds.size === displayList.length) {
+                    setSelectedIds(new Set());
                 } else {
-                    itemsToSelect.forEach(item => newSet.add(item.id));
+                    setSelectedIds(new Set(displayList.map(i => i.id)));
                 }
-                setSelectedIds(newSet);
             };
 
             const toggleSelection = (id) => {
@@ -786,7 +810,7 @@
                     {isAdmin && displayList.length > 0 && selectedIds.size > 0 && (
                         <div className={`${showBin ? 'bg-red-700' : 'bg-gray-700'} text-white p-3 flex justify-between items-center animate-fade-in shadow-inner`}>
                             <div className="flex items-center gap-3">
-                                <div onClick={() => handleSelectAll(displayList)} className={`w-6 h-6 rounded border-2 border-white flex items-center justify-center cursor-pointer ${selectedIds.size === displayList.length ? 'bg-white text-red-700' : ''}`}>{selectedIds.size === displayList.length && <i className="fas fa-check text-xs"></i>}</div>
+                                <div onClick={() => handleSelectAll(displayList)} className={`w-6 h-6 rounded border-2 border-white flex items-center justify-center cursor-pointer ${selectedIds.size === displayList.length && displayList.length > 0 ? 'bg-white text-red-700' : ''}`}>{selectedIds.size === displayList.length && <i className="fas fa-check text-xs"></i>}</div>
                                 <span className="text-xs font-bold uppercase cursor-pointer" onClick={() => handleSelectAll(displayList)}>Selecionar Todos</span>
                             </div>
                             {selectedIds.size > 0 && (
@@ -913,14 +937,14 @@
             const [page, setPage] = useState(localStorage.getItem('trfire_user') ? 'menu' : 'responsible');
             const [responsible, setResponsible] = useState(localStorage.getItem('trfire_user') || '');
             const [currentUnit, setCurrentUnit] = useState(localStorage.getItem('trfire_unit') || '');
+            const [inspectionType, setInspectionType] = useState('EXTINTOR');
+            const [roundLocation, setRoundLocation] = useState('');
             const [db, setDb] = useState([]);
             const [users, setUsers] = useState([]);
             const [units, setUnits] = useState([]);
             const [scanRes, setScanRes] = useState(null);
             const [notification, setNotification] = useState({ isOpen: false, message: '', type: 'info', isConfirmation: false, onConfirm: null });
             const [authError, setAuthError] = useState(null);
-            const [inspectionType, setInspectionType] = useState('');
-            const [roundLocation, setRoundLocation] = useState('');
 
             const showAlert = (message, type = 'info', onCloseAction = null) => { setNotification({ isOpen: true, message, type, isConfirmation: false, onConfirm: null, onCloseAction }); };
             const showConfirm = (message, onConfirmAction, type = 'warning') => { setNotification({ isOpen: true, message, type, isConfirmation: true, onConfirm: onConfirmAction }); };
@@ -1076,8 +1100,13 @@
             // CORREÇÃO: Funções de Save agora retornam true/false
             const handleSave = async (formData) => { 
                 if(!dbFirestore) { showAlert("Erro: Banco de dados não conectado.", "error"); return false; } 
+                
+                // SANITIZAÇÃO DE DADOS (Remove undefineds)
+                const cleanData = JSON.parse(JSON.stringify(formData));
+                cleanData.unit = currentUnit || "NÃO DEFINIDA"; // Garante unidade
+
                 try { 
-                    await dbFirestore.collection("inspections").add({ ...formData, unit: currentUnit }); 
+                    await dbFirestore.collection("inspections").add(cleanData); 
                     navigateTo('list'); 
                     return true;
                 } catch (e) { 

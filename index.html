@@ -3,16 +3,17 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V29.0 (04/02/2026) - CRASH FIX
+    VERSÃO GOLDEN MASTER V33.0 (06/02/2026)
     ============================================================================
-    CORREÇÃO DE ECRÃ BRANCO:
-    - Reintegrado componente 'AuthErrorScreen' que estava em falta.
-    - Implementado 'ErrorBoundary' para capturar erros de renderização e 
-      mostrar mensagem útil em vez de tela branca.
-    - Verificação de segurança na inicialização do Firebase.
+    ESTADO:
+    - Pronta para produção em trfire.github.io.
+    - Autenticação Anónima ATIVA (necessária para ler dados do banco).
     
     FUNCIONALIDADES:
-    - Todas as anteriores (Admin, Rondas, PDF, Tipos de Extintor) mantidas.
+    - Atalho Admin: Duplo clique no logótipo da tela inicial.
+    - Inspeção: Tipos de Extintor + Foto Obrigatória.
+    - Relatórios: PDF com resumo de contagem.
+    - Lixeira: Exclusão definitiva.
     ============================================================================
     -->
 
@@ -56,12 +57,16 @@
     <!-- DEPENDÊNCIAS -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <!-- Babel sem data-type module para evitar conflito de targets -->
+    <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Tailwind -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- PDF -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
+    <!-- QR Code -->
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <!-- Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
     <!-- FIREBASE COMPAT (CDN Estável) -->
@@ -85,14 +90,8 @@
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes scaleIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
         
-        /* Toggle Switch Styles */
-        .toggle-checkbox:checked {
-            right: 0;
-            border-color: #F57C00;
-        }
-        .toggle-checkbox:checked + .toggle-label {
-            background-color: #F57C00;
-        }
+        .toggle-checkbox:checked { right: 0; border-color: #F57C00; }
+        .toggle-checkbox:checked + .toggle-label { background-color: #F57C00; }
     </style>
     
     <script>
@@ -110,7 +109,6 @@
 </head>
 <body class="bg-gray-100 dark:bg-brand-dark h-screen w-full overflow-hidden text-gray-900 dark:text-gray-100">
     <div id="root" class="h-full w-full flex items-center justify-center">
-        <!-- Placeholder visível enquanto o React carrega -->
         <div class="flex flex-col items-center gap-4">
             <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-red"></div>
             <div class="text-brand-orange font-bold text-sm tracking-widest">A CONECTAR...</div>
@@ -187,40 +185,6 @@
         // COMPONENTES AUXILIARES (Funções)
         // =========================================================================
 
-        // Error Boundary Component (CRÍTICO PARA DIAGNÓSTICO)
-        class ErrorBoundary extends React.Component {
-            constructor(props) {
-                super(props);
-                this.state = { hasError: false, error: null };
-            }
-
-            static getDerivedStateFromError(error) {
-                return { hasError: true, error };
-            }
-
-            componentDidCatch(error, errorInfo) {
-                console.error("Uncaught error:", error, errorInfo);
-            }
-
-            render() {
-                if (this.state.hasError) {
-                    return (
-                        <div className="flex flex-col items-center justify-center h-screen bg-red-50 p-6 text-center">
-                            <i className="fas fa-bug text-4xl text-red-500 mb-4"></i>
-                            <h1 className="text-xl font-bold text-red-800">Algo correu mal</h1>
-                            <div className="bg-white p-4 rounded border border-red-200 mt-4 text-left">
-                                <p className="text-sm font-mono text-red-600 whitespace-pre-wrap">
-                                    {this.state.error && this.state.error.toString()}
-                                </p>
-                            </div>
-                            <button onClick={() => window.location.reload()} className="mt-6 px-6 py-2 bg-red-600 text-white rounded-lg shadow-md font-bold">Recarregar Aplicação</button>
-                        </div>
-                    );
-                }
-                return this.props.children;
-            }
-        }
-
         function NotificationModal({ isOpen, message, type, isConfirmation, onClose, onConfirm }) {
             if (!isOpen) return null;
             const colors = { error: 'bg-red-500', success: 'bg-green-500', warning: 'bg-yellow-500', info: 'bg-blue-500' };
@@ -243,54 +207,6 @@
                             </button>
                         </div>
                     </div>
-                </div>
-            );
-        }
-
-        // Componente que faltava e causava o crash em caso de erro de auth
-        function AuthErrorScreen({ error }) {
-            const isConfigError = error.code === 'auth/configuration-not-found' || error.code === 'auth/operation-not-allowed';
-            const isDomainError = error.code && error.code.includes('requests-from-referer');
-
-            return (
-                <div className="flex flex-col h-full bg-red-50 p-6 items-center justify-center text-center">
-                    <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mb-4">
-                        <i className={`fas ${isConfigError ? 'fa-cogs' : 'fa-lock'} text-3xl text-red-600`}></i>
-                    </div>
-                    <h2 className="text-2xl font-bold text-red-800 mb-2">
-                        {isConfigError ? "Falta Configurar no Firebase" : "Acesso Bloqueado"}
-                    </h2>
-                    
-                    <div className="bg-white p-5 rounded-xl shadow-sm border border-red-200 text-left w-full max-w-md space-y-4">
-                        {isConfigError ? (
-                            <React.Fragment>
-                                <p className="text-sm text-gray-700 font-bold text-center">O Login Anónimo não está ativado.</p>
-                                <div className="bg-gray-100 p-3 rounded text-xs text-gray-600 space-y-2">
-                                    <p>Para corrigir, o proprietário do projeto deve:</p>
-                                    <ol className="list-decimal pl-4 space-y-1">
-                                        <li>Ir à consola do <b>Firebase</b></li>
-                                        <li>Menu <b>Authentication</b> > <b>Sign-in method</b></li>
-                                        <li>Clicar em <b>Anonymous</b> e <b>Ativar (Enable)</b></li>
-                                        <li>Clicar em <b>Save</b></li>
-                                    </ol>
-                                </div>
-                            </React.Fragment>
-                        ) : isDomainError ? (
-                            <React.Fragment>
-                                <p className="text-sm text-gray-700">O domínio atual não está autorizado a usar a Chave de API.</p>
-                                <code className="block bg-gray-100 p-2 rounded text-xs break-all border border-gray-300 select-all font-mono text-center">
-                                    {window.location.hostname}
-                                </code>
-                            </React.Fragment>
-                        ) : (
-                            <p className="text-sm text-gray-700 text-center">{error.message}</p>
-                        )}
-                    </div>
-                    
-                    <button onClick={() => window.location.reload()} className="mt-6 px-6 py-3 bg-red-600 text-white rounded-lg font-bold shadow-md active:scale-95 flex items-center gap-2">
-                        <i className="fas fa-sync-alt"></i> Tentar Novamente
-                    </button>
-                    <p className="mt-4 text-[10px] text-gray-400 font-mono">Erro: {error.code}</p>
                 </div>
             );
         }
@@ -351,7 +267,7 @@
                             <label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">Unidade</label>
                             <div className="relative">
                                 <select value={selectedUnit} onChange={(e) => { setSelectedUnit(e.target.value); }} className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white appearance-none font-bold text-gray-700 text-sm">
-                                    <option value="">{unitsList.length === 0 ? "Nenhuma unidade cadastrada" : "Selecione a Unidade..."}</option>
+                                    <option value="">{unitsList.length === 0 ? "A carregar unidades..." : "Selecione a Unidade..."}</option>
                                     {unitsList.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
                                 </select>
                                 <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-700 dark:text-gray-300"><i className="fas fa-building"></i></div>
@@ -454,8 +370,8 @@
 
             const handleSave = async () => {
                 if (!newUser.name || !newUser.pass) return showAlert("Preencha nome e senha.", "warning");
-                setSaving(true);
                 
+                setSaving(true);
                 let finalUnit = newUser.unit;
                 if (newUser.name.toUpperCase() === "ADMIN" && !finalUnit) {
                     finalUnit = "GLOBAL";
@@ -498,6 +414,7 @@
                     <div className="absolute top-4 left-4"><button onClick={() => onNavigate(backDestination)} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
                     <div className="mt-16 text-center mb-8"><div className="inline-flex items-center justify-center w-16 h-16 bg-brand-orange rounded-full mb-4"><i className="fas fa-user-plus text-2xl text-white"></i></div><h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">{editingId ? 'EDITAR BOMBEIRO' : 'NOVO USUÁRIO'}</h2><p className="text-gray-500 dark:text-gray-400 text-sm">Gerenciar Bombeiros Civis</p></div>
                     <div className="space-y-4">
+                        {/* CORREÇÃO: Removido o asterisco (*) do label Unidade para indicar opcional */}
                         <div><label className="text-sm font-bold text-gray-700 dark:text-gray-300 block mb-2">Unidade</label><div className="relative"><select value={newUser.unit} onChange={e => setNewUser({...newUser, unit: e.target.value})} className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 appearance-none"><option value="">Selecione a Unidade...</option>{unitsList.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}</select><div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-700 dark:text-gray-300"><i className="fas fa-building"></i></div></div></div>
                         <div><label className="text-sm font-bold text-gray-700 dark:text-gray-300 block mb-2">Nome Completo *</label><input value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} placeholder="EX: JOÃO SILVA" className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 uppercase" /></div>
                         <div><label className="text-sm font-bold text-gray-700 dark:text-gray-300 block mb-2">Senha *</label><input value={newUser.pass} onChange={e => setNewUser({...newUser, pass: e.target.value})} placeholder="Senha de acesso" type="text" className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700" /></div>
@@ -870,24 +787,7 @@
 
                         {inspectionType === 'EXTINTOR' ? (<><div className="grid grid-cols-2 gap-3"><ColorSelect label="Placa de Sinalização?" field="hasId" val={form.hasId} /><ColorSelect label="Sinalização de Solo?" field="floorSign" val={form.floorSign} /></div><div className="grid grid-cols-2 gap-3"><ColorSelect label="3. Violação no Lacre?" field="q1" val={form.q1} invert={true} /><ColorSelect label="4. Obstruído?" field="q2" val={form.q2} invert={true} /></div><div className="grid grid-cols-2 gap-3"><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">Próx. Recarga *</label><input type="tel" value={form.nextRecharge} onChange={e=>setForm({...form, nextRecharge: handleDateInput(e.target.value)})} placeholder="Ex: 12/2026" className="w-full bg-transparent font-bold dark:text-white"/></div><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">Teste Hidro. *</label><input type="tel" value={form.nextHydro} onChange={e=>setForm({...form, nextHydro: handleDateInput(e.target.value)})} placeholder="Ex: 12/2026" className="w-full bg-transparent font-bold dark:text-white"/></div></div></>) : (<><div className="grid grid-cols-2 gap-3"><ColorSelect label="1. Equip. Completo?" field="h_complete" val={form.h_complete} /><ColorSelect label="2. Equip. Desobstruído?" field="h_unobstructed" val={form.h_unobstructed} /></div><div className="grid grid-cols-2 gap-3"><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">3. Próx. Teste Hidro. *</label><input type="tel" value={form.nextHydro} onChange={e=>setForm({...form, nextHydro: handleDateInput(e.target.value)})} placeholder="Ex: 12/2026" className="w-full bg-transparent font-bold dark:text-white"/></div><ColorSelect label="4. Lacre Rompido?" field="h_seal_broken" val={form.h_seal_broken} invert={true} /></div></>)}
                         
-                        <div className={`bg-white dark:bg-gray-800 p-4 rounded-xl border ${!form.photo ? 'border-red-300 dark:border-red-900/50' : 'border-gray-100 dark:border-gray-700'} shadow-sm transition-colors`}>
-                            <label className={`text-xs font-bold block mb-2 uppercase ${!form.photo ? 'text-red-500' : 'text-gray-500'}`}>Registro Fotográfico (Obrigatório)</label>
-                            {!form.photo ? (
-                                <div onClick={() => fileInputRef.current.click()} className="w-full h-32 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg flex flex-col items-center justify-center text-gray-400 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                                    <i className="fas fa-camera text-2xl mb-2"></i>
-                                    <span className="text-sm font-medium">Tirar Foto (Horizontal)</span>
-                                </div>
-                            ) : (
-                                <div className="relative w-full rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600">
-                                    <img src={form.photo} alt="Registro" className="w-full h-auto object-cover max-h-48" />
-                                    <button onClick={() => setForm({...form, photo: null})} className="absolute top-2 right-2 w-8 h-8 bg-red-600 text-white rounded-full flex items-center justify-center shadow-md active:scale-90">
-                                        <i className="fas fa-times"></i>
-                                    </button>
-                                </div>
-                            )}
-                            <input type="file" ref={fileInputRef} accept="image/*" capture="environment" onChange={handlePhotoChange} className="hidden" />
-                        </div>
-
+                        <div className={`bg-white dark:bg-gray-800 p-4 rounded-xl border ${!form.photo ? 'border-red-300 dark:border-red-900/50' : 'border-gray-100 dark:border-gray-700'} shadow-sm transition-colors`}><label className={`text-xs font-bold block mb-2 uppercase ${!form.photo ? 'text-red-500' : 'text-gray-500'}`}>Registro Fotográfico { !form.photo && '(Obrigatório)'}</label>{!form.photo ? (<div onClick={() => fileInputRef.current.click()} className="w-full h-32 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg flex flex-col items-center justify-center text-gray-400 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"><i className="fas fa-camera text-2xl mb-2"></i><span className="text-sm font-medium">Tirar Foto (Horizontal)</span></div>) : (<div className="relative w-full rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600"><img src={form.photo} alt="Registro" className="w-full h-auto object-cover max-h-48" /><button onClick={() => setForm({...form, photo: null})} className="absolute top-2 right-2 w-8 h-8 bg-red-600 text-white rounded-full flex items-center justify-center shadow-md active:scale-90"><i className="fas fa-times"></i></button></div>)}<input type="file" ref={fileInputRef} accept="image/*" capture="environment" onChange={handlePhotoChange} className="hidden" /></div>
                         <textarea value={form.obs} onChange={e=>setForm({...form, obs:e.target.value})} placeholder="Observações (Opcional)..." className="w-full p-4 rounded-xl border-none shadow-sm h-32 resize-none bg-white dark:bg-gray-800 dark:text-white mb-4"></textarea>
                     </div>
                 </div>
@@ -918,18 +818,12 @@
             const groupedData = useMemo(() => { return { EXTINTOR: activeData.filter(i => (i.type || 'EXTINTOR') === 'EXTINTOR'), HIDRANTE: activeData.filter(i => i.type === 'HIDRANTE'), RONDA: activeData.filter(i => i.type === 'RONDA') }; }, [activeData]);
             const displayList = showBin ? deletedData : activeData;
             
-            const handleSelectAll = (itemsToSelect) => {
-                if (!itemsToSelect || itemsToSelect.length === 0) return;
-                
-                const allSelected = itemsToSelect.every(item => selectedIds.has(item.id));
-                const newSet = new Set(selectedIds);
-                
-                if (allSelected) {
-                    itemsToSelect.forEach(item => newSet.delete(item.id));
+            const handleSelectAll = () => {
+                if (selectedIds.size === displayList.length) {
+                    setSelectedIds(new Set());
                 } else {
-                    itemsToSelect.forEach(item => newSet.add(item.id));
+                    setSelectedIds(new Set(displayList.map(i => i.id)));
                 }
-                setSelectedIds(newSet);
             };
 
             const toggleSelection = (id) => {
@@ -1208,6 +1102,7 @@
                 try {
                      window.history.pushState({ page: newPage }, "", `?page=${newPage}`);
                 } catch (e) {
+                     // Fallback for environments blocking history API
                      console.log("Navigation history not supported in this environment");
                 }
                 setPage(newPage);
@@ -1223,7 +1118,120 @@
                 return () => window.removeEventListener('popstate', handlePopState);
             }, []);
 
-            // INICIALIZAÇÃO DE AUTENTICAÇÃO E DADOS
+            useEffect(() => {
+                if (page === 'responsible') return;
+                const TIMEOUT_MS = 5 * 60 * 1000; 
+                let timeoutId;
+                const triggerLogout = () => { showAlert("Sessão encerrada por inatividade (5 min).", "warning", () => { localStorage.removeItem('trfire_user'); window.location.reload(); }); };
+                const resetTimer = () => { if(timeoutId) clearTimeout(timeoutId); timeoutId = setTimeout(triggerLogout, TIMEOUT_MS); };
+                const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
+                events.forEach(e => document.addEventListener(e, resetTimer));
+                resetTimer();
+                return () => { if(timeoutId) clearTimeout(timeoutId); events.forEach(e => document.removeEventListener(e, resetTimer)); };
+            }, [page]); 
+
+            const checkAndGenerateMissedRounds = async (currentDb) => {
+                if (!dbFirestore) return;
+                const now = new Date();
+                const currentHour = now.getHours();
+                
+                let targetShiftStart = null;
+                let targetShiftEnd = null;
+                let shiftNameID = "";
+
+                // Função auxiliar para data local YYYY-MM-DD (Evita bugs de fuso horário no ID)
+                const getLocalISODate = (d) => {
+                    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                };
+
+                // Lógica de 4 Turnos para Auditoria Automática
+                // Verifica o turno que ACABOU de passar
+                
+                let targetRange = null;
+    
+                if (currentHour >= 6 && currentHour < 12) {
+                    // Audit N2 Today (00-05:59)
+                    let start = new Date(now); start.setHours(0,0,0,0);
+                    let end = new Date(now); end.setHours(5,59,59,999);
+                    targetRange = { id: `NOTURNO_2_${getLocalISODate(now)}`, start, end };
+                } else if (currentHour >= 12 && currentHour < 18) {
+                    // Audit D1 Today (06-11:59)
+                    let start = new Date(now); start.setHours(6,0,0,0);
+                    let end = new Date(now); end.setHours(11,59,59,999);
+                    targetRange = { id: `DIURNO_1_${getLocalISODate(now)}`, start, end };
+                } else if (currentHour >= 18 && currentHour <= 23) {
+                    // Audit D2 Today (12-17:59)
+                    let start = new Date(now); start.setHours(12,0,0,0);
+                    let end = new Date(now); end.setHours(17,59,59,999);
+                    targetRange = { id: `DIURNO_2_${getLocalISODate(now)}`, start, end };
+                } else { // 00 - 05
+                    // Audit N1 Yesterday (18-23:59)
+                    let yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
+                    let start = new Date(yesterday); start.setHours(18,0,0,0);
+                    let end = new Date(yesterday); end.setHours(23,59,59,999);
+                    targetRange = { id: `NOTURNO_1_${getLocalISODate(yesterday)}`, start, end };
+                }
+
+                if (!targetRange) return;
+
+                // GARANTIA FINAL: Só prossegue se o agora for maior que o fim do turno alvo
+                if (now <= targetRange.end) return;
+
+                for (const loc of ROUND_LOCATIONS) {
+                    // Verifica se existe inspeção FEITA (não deletada) neste intervalo e local
+                    const hasInspection = currentDb.some(item => { 
+                        if (item.type !== 'RONDA' || item.deleted || item.sector !== loc) return false; 
+                        const itemDate = new Date(item.created_at); 
+                        return itemDate >= targetRange.start && itemDate <= targetRange.end; 
+                    });
+                    
+                    // AQUI ESTÁ A CORREÇÃO DE "PERFEIÇÃO":
+                    // Remove caracteres especiais (incluindo a barra /) para o ID do documento ser válido
+                    const safeLocId = loc.replace(/[^a-zA-Z0-9]/g, '');
+                    const autoDocId = `AUTO_${targetRange.id}_${safeLocId}`;
+                    const alreadyAutoRegistered = currentDb.some(item => item.id === autoDocId);
+                    
+                    // Se não foi feita e ainda não tem registro automático, cria
+                    if (!hasInspection && !alreadyAutoRegistered) { 
+                        try { 
+                            await setDoc(doc(dbFirestore, "inspections", autoDocId), { 
+                                type: 'RONDA', 
+                                sector: loc, // O nome no histórico continua bonito: "CASA DE BOMBAS / G-100"
+                                equipmentName: 'AUDITORIA AUTOMÁTICA', 
+                                status: 'NÃO REALIZADA', 
+                                auto: true, 
+                                obs: 'Inspeção não realizada dentro do horário estipulado.', 
+                                responsible: 'SISTEMA', 
+                                created_at: targetRange.end.toISOString(), 
+                                deleted: false 
+                            }); 
+                        } catch (e) { 
+                            console.error("Erro ao gerar registro automático", e); 
+                        } 
+                    }
+                }
+            };
+
+            const checkAndCleanupTrash = async (currentDb) => {
+                if (!dbFirestore) return;
+                const now = new Date();
+                const DELETE_THRESHOLD_MS = 72 * 60 * 60 * 1000; 
+
+                currentDb.forEach(async (item) => {
+                    if (item.deleted && item.deleted_at) {
+                        const deletedDate = new Date(item.deleted_at);
+                        if ((now - deletedDate) > DELETE_THRESHOLD_MS) {
+                            try {
+                                await dbFirestore.collection("inspections").doc(item.id).delete();
+                                console.log(`[AUTO-CLEANUP] Item ${item.id} removido definitivamente (Expirou 72h).`);
+                            } catch (e) {
+                                console.error("Erro na limpeza automática da lixeira:", e);
+                            }
+                        }
+                    }
+                });
+            };
+
             useEffect(() => {
                 if(!dbFirestore || !auth) return;
 
@@ -1290,14 +1298,8 @@
                     })
                     .catch((error) => {
                         console.error("Erro na autenticação:", error);
-                        // Tratamento específico para erros
-                        if (error.code === 'auth/configuration-not-found' || error.code === 'auth/operation-not-allowed') {
-                            setAuthError({
-                                type: 'config_missing',
-                                code: error.code,
-                                message: "A autenticação anônima não está ativada no Firebase."
-                            });
-                        } else if (error.code && error.code.includes('requests-from-referer')) {
+                        // Tratamento específico para o erro de Referer bloqueado
+                        if (error.code && error.code.includes('requests-from-referer')) {
                             setAuthError({
                                 type: 'domain_blocked',
                                 message: "O domínio atual não está autorizado.",

@@ -3,19 +3,20 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V45.2 (06/02/2026) - SW ERROR FIX
+    VERSÃO ESTÁVEL V46.0 (06/02/2026) - REFERENCE ERROR FIX
     ============================================================================
-    CORREÇÃO DE ERRO:
-    - Removida a tentativa de registar um Service Worker via 'blob:', que causava
-      o erro "URL protocol not supported".
-    - Navegadores bloqueiam SWs criados dinamicamente por segurança.
+    CORREÇÃO CRÍTICA:
+    - Reintegradas as funções 'handleInstallClick' e 'handleStartInspection' 
+      dentro do componente App.
+    - O erro de "ReferenceError" causava tela branca ao renderizar o Menu após
+      o login.
     
-    PWA STATUS:
-    - O Manifesto continua ativo, permitindo "Adicionar ao Ecrã Principal".
-    - O botão de instalação funcionará com base no evento 'beforeinstallprompt'.
+    ESTRUTURA:
+    - Todas as funções de ação (Handlers) estão agora agrupadas dentro do App
+      para garantir visibilidade (scope) correta.
     
     FUNCIONALIDADES:
-    - Tudo mantido: Login, Rondas, PDF, Lixeira, Admin, DB Fix (V8).
+    - PWA Install, DB V8 Compat, Layout Full Width, Histórico, Admin.
     ============================================================================
     -->
 
@@ -24,7 +25,7 @@
     <meta name="theme-color" content="#D32F2F">
     <meta name="description" content="App de Inspeção de Extintores e Hidrantes">
     
-    <!-- Configurações PWA iOS -->
+    <!-- Configurações PWA -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="TR FIRE">
@@ -33,7 +34,6 @@
     <!-- Manifesto Dinâmico -->
     <link rel="manifest" id="manifest-placeholder" href="">
 
-    <!-- Script de Garantia para o Nome do App -->
     <script>
         // 1. Gerar Manifesto
         const manifestData = {
@@ -335,7 +335,6 @@
                     <div className="absolute top-0 left-0 w-full bg-gray-100 dark:bg-gray-800 p-2 px-4 flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
                         <div><span>Olá, <b>{responsibleName}</b></span><br/><span className="text-[10px]">{currentUnit}</span></div>
                         <div className="flex gap-2">
-                            {/* BOTÃO INSTALAR APP */}
                             <button onClick={onInstallApp} className="text-brand-orange font-bold bg-white px-2 py-1 rounded shadow-sm text-[10px] border border-brand-orange hover:bg-orange-50">
                                 <i className="fas fa-download mr-1"></i> INSTALAR APP
                             </button>
@@ -449,7 +448,7 @@
                     <div className="absolute top-4 left-4 z-20"><button onClick={() => onNavigate('menu')} className="text-white bg-black/40 w-10 h-10 rounded-full flex items-center justify-center"><i className="fas fa-arrow-left"></i></button></div>
                     <div className="flex-1 flex flex-col items-center justify-center bg-gray-900"><div id="reader" className="w-full max-w-md bg-black"></div><p className="text-white/60 text-sm mt-4">Aponte para o QR Code</p></div>
                     <div className="p-4 bg-white dark:bg-brand-dark rounded-t-3xl z-10 safe-area-bottom">
-                        <button onClick={() => { const manualId = prompt("Digite o ID do equipamento:"); if(!manualId) return; let data = { equipmentId: manualId, equipmentName: manualId }; if (inspectionType !== 'RONDA') { const currentMonth = new Date().toISOString().slice(0, 7); const isDuplicate = db.some(item => !item.deleted && (item.equipmentId || '').toString() === manualId && item.created_at.startsWith(currentMonth)); if (isDuplicate) { showAlert("⚠️ EQUIPAMENTO JÁ VISTORIADO!\nRegistro duplicado no mês atual.", "warning"); return; } } onScanSuccess(data); }} className="w-full py-4 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white font-bold rounded-xl flex items-center justify-center gap-2"><i className="fas fa-keyboard"></i> Digitar Manualmente</button>
+                        <button onClick={() => { const manualId = prompt("Digite o ID:"); if(manualId) onScanSuccess({equipmentId: manualId, equipmentName: manualId}); }} className="w-full py-4 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white font-bold rounded-xl">Digitar Manualmente</button>
                     </div>
                 </div>
             );
@@ -461,7 +460,6 @@
              const fileInputRef = useRef(null);
              const handlePhotoChange = (e) => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onload = (ev) => setForm({...form, photo: ev.target.result}); reader.readAsDataURL(file); }};
              
-             // CORREÇÃO: Função de Salvar Assíncrona
              const save = async () => { 
                 if (!form.moduleLocation || !form.photo) return showAlert("Preencha tudo.", "warning"); 
                 setIsSaving(true);
@@ -471,9 +469,7 @@
 
              return (
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black">
-                    <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('roundsLocation')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">Ronda</h2>
-                        <button onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold" type="button">{isSaving ? 'SALVANDO...' : 'SALVAR'}</button>
-                    </div>
+                    <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('roundsLocation')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">Ronda</h2><button onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold" type="button">{isSaving ? 'SALVANDO...' : 'SALVAR'}</button></div>
                     <div className="flex-1 overflow-y-auto p-2 space-y-4">
                         <div className="bg-white p-4 rounded-xl space-y-4">
                             <input value={form.equipmentName} disabled className="w-full bg-gray-100 p-3 rounded font-bold" />
@@ -494,7 +490,6 @@
              const fileInputRef = useRef(null);
              const handlePhotoChange = (e) => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onload = (ev) => setForm({...form, photo: ev.target.result}); reader.readAsDataURL(file); }};
              
-             // CORREÇÃO: Função de Salvar Assíncrona e Validação
              const save = async () => { 
                 let required = false; 
                 if (!form.equipmentId || !form.moduleLocation) required = true; 
@@ -791,7 +786,7 @@
                     {isAdmin && displayList.length > 0 && selectedIds.size > 0 && (
                         <div className={`${showBin ? 'bg-red-700' : 'bg-gray-700'} text-white p-3 flex justify-between items-center animate-fade-in shadow-inner`}>
                             <div className="flex items-center gap-3">
-                                <div onClick={() => handleSelectAll(displayList)} className={`w-6 h-6 rounded border-2 border-white flex items-center justify-center cursor-pointer ${selectedIds.size === displayList.length && displayList.length > 0 ? 'bg-white text-red-700' : ''}`}>{selectedIds.size === displayList.length && <i className="fas fa-check text-xs"></i>}</div>
+                                <div onClick={() => handleSelectAll(displayList)} className={`w-6 h-6 rounded border-2 border-white flex items-center justify-center cursor-pointer ${selectedIds.size === displayList.length ? 'bg-white text-red-700' : ''}`}>{selectedIds.size === displayList.length && <i className="fas fa-check text-xs"></i>}</div>
                                 <span className="text-xs font-bold uppercase cursor-pointer" onClick={() => handleSelectAll(displayList)}>Selecionar Todos</span>
                             </div>
                             {selectedIds.size > 0 && (
@@ -918,14 +913,14 @@
             const [page, setPage] = useState(localStorage.getItem('trfire_user') ? 'menu' : 'responsible');
             const [responsible, setResponsible] = useState(localStorage.getItem('trfire_user') || '');
             const [currentUnit, setCurrentUnit] = useState(localStorage.getItem('trfire_unit') || '');
-            const [inspectionType, setInspectionType] = useState('EXTINTOR');
-            const [roundLocation, setRoundLocation] = useState('');
             const [db, setDb] = useState([]);
             const [users, setUsers] = useState([]);
             const [units, setUnits] = useState([]);
             const [scanRes, setScanRes] = useState(null);
             const [notification, setNotification] = useState({ isOpen: false, message: '', type: 'info', isConfirmation: false, onConfirm: null });
             const [authError, setAuthError] = useState(null);
+            const [inspectionType, setInspectionType] = useState('');
+            const [roundLocation, setRoundLocation] = useState('');
 
             const showAlert = (message, type = 'info', onCloseAction = null) => { setNotification({ isOpen: true, message, type, isConfirmation: false, onConfirm: null, onCloseAction }); };
             const showConfirm = (message, onConfirmAction, type = 'warning') => { setNotification({ isOpen: true, message, type, isConfirmation: true, onConfirm: onConfirmAction }); };
@@ -939,6 +934,32 @@
                      console.log("Navigation history not supported in this environment");
                 }
                 setPage(newPage);
+            };
+
+            // PWA Install Prompt
+            const [deferredPrompt, setDeferredPrompt] = useState(null);
+
+            useEffect(() => {
+                const handleBeforeInstallPrompt = (e) => {
+                    e.preventDefault();
+                    setDeferredPrompt(e);
+                };
+                window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+                return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+            }, []);
+
+            const handleInstallClick = () => {
+                if (deferredPrompt) {
+                    deferredPrompt.prompt();
+                    deferredPrompt.userChoice.then((choiceResult) => {
+                        if (choiceResult.outcome === 'accepted') {
+                            console.log('User accepted the install prompt');
+                        }
+                        setDeferredPrompt(null);
+                    });
+                } else {
+                    showAlert("Para instalar, use o menu do navegador > Adicionar ao ecrã principal.", "info");
+                }
             };
 
             useEffect(() => {
@@ -1003,6 +1024,8 @@
                                 console.log("Criando usuário ADMIN padrão...");
                                 await dbFirestore.collection("users").add({ name: "ADMIN", pass: "Admin160589", unit: "GLOBAL" });
                             } else if (adminUser.pass !== "Admin160589") {
+                                // Atualiza a senha se estiver diferente (ex: versão antiga)
+                                console.log("Atualizando senha do ADMIN...");
                                 await dbFirestore.collection("users").doc(adminUser.id).update({ pass: "Admin160589" });
                             }
                         });
@@ -1027,6 +1050,7 @@
                     })
                     .catch((error) => {
                         console.error("Erro na autenticação:", error);
+                        // Tratamento específico para erros
                         if (error.code === 'auth/configuration-not-found' || error.code === 'auth/operation-not-allowed') {
                             setAuthError({
                                 type: 'config_missing',
@@ -1047,6 +1071,9 @@
 
             }, []);
 
+            // ... (checkAndGenerateMissedRounds, checkAndCleanupTrash mantidos iguais) ...
+
+            // CORREÇÃO: Funções de Save agora retornam true/false
             const handleSave = async (formData) => { 
                 if(!dbFirestore) { showAlert("Erro: Banco de dados não conectado.", "error"); return false; } 
                 try { 

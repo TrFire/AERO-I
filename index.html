@@ -3,18 +3,19 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V60.0 (08/02/2026) - REPORTS & UI FIXES
+    VERSÃO ESTÁVEL V61.0 (08/02/2026) - NO IMAGE STORAGE STORAGE
     ============================================================================
-    CORREÇÕES E MELHORIAS:
-    1. Histórico: Corrigido o "z-index" e posicionamento dos menus de Filtro e 
-       Backup para garantir que abrem sobre a lista e respondem ao clique.
-    2. Relatórios PDF:
-       - Adicionados todos os campos técnicos (ID, Validades, Itens de Checklist).
-       - EXTINTORES: Adicionado "Resumo Quantitativo" automático na última página,
-         contabilizando totais por tipo (ex: 5x ABC, 2x CO2).
+    ALTERAÇÃO ESTRUTURAL (BANCO DE DADOS):
+    - A obrigatoriedade da foto na UI foi mantida (o usuário TEM de tirar foto).
+    - NO ENTANTO, na função 'handleSave', a string da imagem é removida do objeto
+      antes do envio ao Firebase.
+    - Foi adicionada a flag 'hasPhoto: true' para confirmar no histórico que
+      o protocolo foi seguido, mas sem gastar espaço de armazenamento.
     
-    FUNCIONALIDADES MANTIDAS:
-    - Botão Salvar (V8), PWA, Layout Full, Câmera Traseira (240px).
+    ESTADO:
+    - Login/Menus: OK.
+    - Inspeção: Exige foto -> Salva dados (Texto apenas).
+    - PWA: Instalável (Botão oculto, via browser).
     ============================================================================
     -->
 
@@ -485,13 +486,25 @@
                     reader.readAsDataURL(file); 
                 } 
              };
+             
+             // --- NO IMAGE STORAGE CHANGE ---
              const save = async () => { 
                  if (!form.moduleLocation || !form.photo) return showAlert("Preencha tudo.", "warning"); 
+                 
                  setIsSaving(true); 
-                 const success = await onSave(form); 
+                 
+                 // Deep copy to not mutate state directly before save
+                 const dataToSend = JSON.parse(JSON.stringify(form));
+                 if(dataToSend.photo) {
+                     dataToSend.hasPhoto = true; // Mark that a photo was taken
+                     delete dataToSend.photo; // Remove the heavy string
+                 }
+
+                 const success = await onSave(dataToSend); 
                  setIsSaving(false);
                  if(success) localStorage.removeItem('trfire_temp_round');
              };
+
              return (
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black">
                     <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('roundsLocation')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">Ronda</h2><button onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold" type="button">{isSaving ? '...' : 'SALVAR'}</button></div>
@@ -544,6 +557,7 @@
                 } 
              };
              
+             // --- NO IMAGE STORAGE CHANGE ---
              const save = async () => { 
                  let missing = [];
                  if (!form.equipmentId) missing.push("ID");
@@ -558,10 +572,20 @@
                      if (form.h_seal_broken === null) missing.push("Lacre"); if (!form.nextHydro) missing.push("T. Hidro");
                  } 
                  if(missing.length > 0) return showAlert("Falta: " + missing.join(", "), "warning"); 
+                 
+                 // REQUIRE PHOTO IN UI
                  if (!form.photo) return showAlert("⚠️ Foto Obrigatória.", "warning");
 
-                 setIsSaving(true); 
-                 const success = await onSave(form); 
+                 setIsSaving(true);
+                 
+                 // REMOVE PHOTO BEFORE SAVING
+                 const dataToSend = JSON.parse(JSON.stringify(form));
+                 if(dataToSend.photo) {
+                     dataToSend.hasPhoto = true; 
+                     delete dataToSend.photo; 
+                 }
+                 
+                 const success = await onSave(dataToSend); 
                  setIsSaving(false);
                  if(success) localStorage.removeItem('trfire_temp_form');
              };
@@ -687,7 +711,7 @@
 
             const handleExport = () => { const jsonString = JSON.stringify(data, null, 2); const blob = new Blob([jsonString], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup_trfire_${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); setShowBackupModal(false); };
             const handleFileImport = (e) => { const file = e.target.files[0]; if(!file) return; const reader = new FileReader(); reader.onload = (ev) => { try { const json = JSON.parse(ev.target.result); onImportData(json); setShowBackupModal(false); } catch(err) { showAlert("Erro JSON.", "error"); } }; reader.readAsText(file); e.target.value = null; };
-            const generateSpecificPDF = async (type) => { setShowPdfModal(false); const reportData = activeData.filter(item => (item.type || (type === 'RONDA' ? '' : 'EXTINTOR')) === type); if(reportData.length === 0) return showAlert(`Sem dados ATIVOS de ${type} para gerar relatório neste mês.`, "warning"); const doc = new jsPDF({ orientation: "landscape" }); doc.setFillColor(243, 244, 246); doc.rect(0, 0, 297, 40, 'F'); doc.setTextColor(33, 33, 33); doc.setFontSize(22); let title = ""; if (type === 'EXTINTOR') title = "CHECK-LIST EXTINTORES MENSAL"; else if (type === 'HIDRANTE') title = "CHECK-LIST HIDRANTES MENSAL"; else if (type === 'RONDA') title = "RELATÓRIO DE RONDAS PREVENTIVAS"; doc.text(title, 14, 25); doc.setFontSize(10); doc.setTextColor(100, 100, 100); doc.text(`Mês de Referência: ${formatMonthDisplay(viewMonth).toUpperCase()} | Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 35); doc.setFontSize(9); doc.setTextColor(33, 33, 33); doc.text("Parque Logístico: AERO GRU I", 280, 28, { align: "right" }); doc.text("Empresa: Vilella Assessoria em Segurança do Trabalho", 280, 35, { align: "right" }); let body = []; let head = []; if (type === 'EXTINTOR') { head = [['ID', 'Equipamento', 'Local', 'Tipo', 'Recarga', 'Hidro', 'Placa', 'Solo', 'Lacre', 'Obstruído', 'Obs', 'Resp.', 'Data']]; body = reportData.map(i => [ i.equipmentId || '-', i.equipmentName || '-', i.moduleLocation || '-', i.extinguisherType || '-', i.nextRecharge || '-', i.nextHydro || '-', i.hasId ? 'SIM' : 'NÃO', i.floorSign ? 'SIM' : 'NÃO', i.q1 ? 'SIM' : 'NÃO', i.q2 ? 'SIM' : 'NÃO', i.obs || '-', i.responsible || '-', formatDate(i.created_at) ]); } else if (type === 'HIDRANTE') { head = [['ID', 'Equipamento', 'Local', 'Completo', 'Desobstruído', 'Lacre', 'Hidro', 'Obs', 'Resp.', 'Data']]; body = reportData.map(i => [ i.equipmentId || '-', i.equipmentName || '-', i.moduleLocation || '-', i.h_complete ? 'SIM' : 'NÃO', i.h_unobstructed ? 'NÃO' : 'SIM', i.h_seal_broken ? 'SIM' : 'NÃO', i.nextHydro || '-', i.obs || '-', i.responsible || '-', formatDate(i.created_at) ]); } else if (type === 'RONDA') { head = [['Local', 'Área', 'Galpão', 'Status', 'Obs', 'Resp.', 'Data']]; body = reportData.map(i => [ i.sector || '-', i.equipmentName || '-', i.moduleLocation || '-', i.status || '-', i.obs || '-', i.responsible || '-', formatDate(i.created_at) ]); } doc.autoTable({ head: head, body: body, startY: 45, theme: 'grid', headStyles: { fillColor: [224, 224, 224], textColor: [0, 0, 0], fontStyle: 'bold', lineWidth: 0.1, lineColor: [200, 200, 200] }, styles: { fontSize: 7, textColor: [50, 50, 50], lineColor: [230, 230, 230], lineWidth: 0.1 }, alternateRowStyles: { fillColor: [255, 255, 255] } }); 
+            const generateSpecificPDF = async (type) => { setShowPdfModal(false); const reportData = activeData.filter(item => (item.type || (type === 'RONDA' ? '' : 'EXTINTOR')) === type); if(reportData.length === 0) return showAlert(`Sem dados ATIVOS de ${type} para gerar relatório neste mês.`, "warning"); const doc = new jsPDF({ orientation: "landscape" }); doc.setFillColor(243, 244, 246); doc.rect(0, 0, 297, 40, 'F'); doc.setTextColor(33, 33, 33); doc.setFontSize(22); let title = ""; if (type === 'EXTINTOR') title = "CHECK-LIST EXTINTORES MENSAL"; else if (type === 'HIDRANTE') title = "CHECK-LIST HIDRANTES MENSAL"; else if (type === 'RONDA') title = "RELATÓRIO DE RONDAS PREVENTIVAS"; doc.text(title, 14, 25); doc.setFontSize(10); doc.setTextColor(100, 100, 100); doc.text(`Mês de Referência: ${formatMonthDisplay(viewMonth).toUpperCase()} | Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 35); doc.setFontSize(9); doc.setTextColor(33, 33, 33); doc.text("Parque Logístico: AERO GRU I", 280, 28, { align: "right" }); doc.text("Empresa: Vilella Assessoria em Segurança do Trabalho", 280, 35, { align: "right" }); let body = []; let head = []; if (type === 'EXTINTOR') { head = [['ID', 'Equipamento', 'Local', 'Tipo', 'Recarga', 'Hidro', 'Placa', 'Solo', 'Lacre', 'Obstruído', 'Obs', 'Resp.', 'Data']]; body = reportData.map(i => [ i.equipmentId || '-', i.equipmentName || '-', i.moduleLocation || '-', i.extinguisherType || '-', i.nextRecharge || '-', i.nextHydro || '-', i.hasId ? 'SIM' : 'NÃO', i.floorSign ? 'SIM' : 'NÃO', i.q1 ? 'SIM' : 'NÃO', i.q2 ? 'SIM' : 'NÃO', i.obs || '-', i.responsible || '-', formatDate(i.created_at) ]); } else if (type === 'HIDRANTE') { head = [['ID', 'Equipamento', 'Local', 'Completo', 'Desobstruído', 'Lacre', 'Hidro', 'Obs', 'Resp.', 'Data']]; body = reportData.map(i => [ i.equipmentId || '-', i.equipmentName || '-', i.moduleLocation || '-', i.h_complete ? 'SIM' : 'NÃO', i.h_unobstructed ? 'NÃO' : 'SIM', i.h_seal_broken ? 'SIM' : 'NÃO', i.nextHydro || '-', i.obs || '-', i.responsible || '-', formatDate(i.created_at) ]); } else if (type === 'RONDA') { head = [['Local', 'Área Técnica', 'Data/Hora', 'Resp.', 'Galpão', 'Status', 'Obs']]; body = reportData.map(i => [ i.sector || '-', i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.moduleLocation || '-', i.status || '-', i.obs || '' ]); } doc.autoTable({ head: head, body: body, startY: 45, theme: 'grid', headStyles: { fillColor: [224, 224, 224], textColor: [0, 0, 0], fontStyle: 'bold', lineWidth: 0.1, lineColor: [200, 200, 200] }, styles: { fontSize: 7, textColor: [50, 50, 50], lineColor: [230, 230, 230], lineWidth: 0.1 }, alternateRowStyles: { fillColor: [255, 255, 255] } }); 
             if (type === 'EXTINTOR') {
                 let finalY = doc.lastAutoTable.finalY + 10;
                 const counts = {};
@@ -718,6 +742,8 @@
                         <div className="flex items-center gap-3">
                             {isAdmin && <div onClick={() => toggleSelection(item.id)} className={`w-5 h-5 border rounded flex items-center justify-center ${selectedIds.has(item.id)?'bg-red-500 border-red-500 text-white':''}`}>{selectedIds.has(item.id) && <i className="fas fa-check text-xs"></i>}</div>}
                             <div><span className="font-bold text-sm block">{item.equipmentName}</span><span className="text-xs text-gray-500">{formatDate(item.created_at)} - {item.moduleLocation}</span></div>
+                            {/* NEW: VISUAL INDICATOR OF PHOTO */}
+                            {(item.photo || item.hasPhoto) && <div className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-1 rounded flex items-center gap-1"><i className="fas fa-camera"></i> Foto</div>}
                         </div>
                         <div className="flex flex-col items-end">{showBin ? (<i onClick={() => confirmBulkRestore(item.id)} className="fas fa-trash-restore text-green-500"></i>) : (<i onClick={() => onToggleDelete(item.id, true)} className="fas fa-trash text-red-300"></i>)}</div>
                     </div>
@@ -821,7 +847,7 @@
                     </div>
                 </div>
             );
-        }
+        };
 
         // =========================================================================
         // APP COMPONENT (Main)
@@ -946,7 +972,6 @@
                     
                     if (!hasInspection && !alreadyAutoRegistered) { 
                         try { 
-                            // FIXED SYNTAX FOR V8
                             await dbFirestore.collection("inspections").doc(autoDocId).set({ 
                                 type: 'RONDA', 
                                 sector: loc, 
@@ -1026,8 +1051,6 @@
                                 console.log("Criando usuário ADMIN padrão...");
                                 await dbFirestore.collection("users").add({ name: "ADMIN", pass: "Admin160589", unit: "GLOBAL" });
                             } else if (adminUser.pass !== "Admin160589") {
-                                // Atualiza a senha se estiver diferente (ex: versão antiga)
-                                console.log("Atualizando senha do ADMIN...");
                                 await dbFirestore.collection("users").doc(adminUser.id).update({ pass: "Admin160589" });
                             }
                         });
@@ -1078,6 +1101,13 @@
                 
                 const cleanData = JSON.parse(JSON.stringify(formData));
                 cleanData.unit = currentUnit || "NÃO DEFINIDA"; 
+                
+                // NO IMAGE STORAGE LOGIC:
+                // Check if photo exists, mark it as taken (for history display), then delete the heavy string.
+                if (cleanData.photo) {
+                    cleanData.hasPhoto = true; 
+                    delete cleanData.photo;
+                }
 
                 try { 
                     await dbFirestore.collection("inspections").add(cleanData); 

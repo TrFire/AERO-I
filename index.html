@@ -3,16 +3,18 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V58.0 (08/02/2026) - HIDE INSTALL BUTTON
+    VERSÃO ESTÁVEL V60.0 (08/02/2026) - REPORTS & UI FIXES
     ============================================================================
-    ALTERAÇÕES VISUAIS:
-    1. Menu Principal: O botão "INSTALAR APP" foi removido da interface conforme
-       solicitado, deixando o cabeçalho mais limpo.
+    CORREÇÕES E MELHORIAS:
+    1. Histórico: Corrigido o "z-index" e posicionamento dos menus de Filtro e 
+       Backup para garantir que abrem sobre a lista e respondem ao clique.
+    2. Relatórios PDF:
+       - Adicionados todos os campos técnicos (ID, Validades, Itens de Checklist).
+       - EXTINTORES: Adicionado "Resumo Quantitativo" automático na última página,
+         contabilizando totais por tipo (ex: 5x ABC, 2x CO2).
     
-    MANUTENÇÃO TÉCNICA:
-    - Mantidas todas as correções de referência (Componentes definidos antes do App).
-    - Mantida a configuração da câmera traseira (capture="environment").
-    - Mantida a sintaxe V8 do Firestore para evitar tela branca.
+    FUNCIONALIDADES MANTIDAS:
+    - Botão Salvar (V8), PWA, Layout Full, Câmera Traseira (240px).
     ============================================================================
     -->
 
@@ -21,7 +23,6 @@
     <meta name="theme-color" content="#D32F2F">
     <meta name="description" content="App de Inspeção de Extintores e Hidrantes">
     
-    <!-- Configurações PWA -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="TR FIRE">
@@ -508,7 +509,7 @@
             );
         };
 
-        function FormScreen({ initialData, onNavigate, onSave, responsibleName, inspectionType, showAlert }) {
+        const FormScreen = ({ initialData, onNavigate, onSave, responsibleName, inspectionType, showAlert }) => {
              const savedForm = useMemo(() => {
                 const saved = localStorage.getItem('trfire_temp_form');
                 return saved ? JSON.parse(saved) : null;
@@ -630,7 +631,7 @@
             }, [data]);
 
             const formatMonthDisplay = (yyyy_mm) => { 
-                if(!yyyy_mm || typeof yyyy_mm !== 'string' || !yyyy_mm.includes('-')) return "MÊS INVÁLIDO"; 
+                if(!yyyy_mm || typeof yyy_mm !== 'string' || !yyyy_mm.includes('-')) return "MÊS INVÁLIDO"; 
                 try {
                     const [year, month] = yyyy_mm.split('-'); 
                     const date = new Date(parseInt(year), parseInt(month) - 1); 
@@ -686,7 +687,17 @@
 
             const handleExport = () => { const jsonString = JSON.stringify(data, null, 2); const blob = new Blob([jsonString], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup_trfire_${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); setShowBackupModal(false); };
             const handleFileImport = (e) => { const file = e.target.files[0]; if(!file) return; const reader = new FileReader(); reader.onload = (ev) => { try { const json = JSON.parse(ev.target.result); onImportData(json); setShowBackupModal(false); } catch(err) { showAlert("Erro JSON.", "error"); } }; reader.readAsText(file); e.target.value = null; };
-            const generateSpecificPDF = async (type) => { setShowPdfModal(false); const reportData = activeData.filter(item => (item.type || (type === 'RONDA' ? '' : 'EXTINTOR')) === type); if(reportData.length === 0) return showAlert(`Sem dados ATIVOS de ${type} para gerar relatório neste mês.`, "warning"); const doc = new jsPDF({ orientation: "landscape" }); doc.setFillColor(243, 244, 246); doc.rect(0, 0, 297, 40, 'F'); doc.setTextColor(33, 33, 33); doc.setFontSize(22); let title = ""; if (type === 'EXTINTOR') title = "CHECK-LIST EXTINTORES MENSAL"; else if (type === 'HIDRANTE') title = "CHECK-LIST HIDRANTES MENSAL"; else if (type === 'RONDA') title = "RELATÓRIO DE RONDAS PREVENTIVAS"; doc.text(title, 14, 25); doc.setFontSize(10); doc.setTextColor(100, 100, 100); doc.text(`Mês de Referência: ${formatMonthDisplay(viewMonth).toUpperCase()} | Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 35); doc.setFontSize(9); doc.setTextColor(33, 33, 33); doc.text("Parque Logístico: AERO GRU I", 280, 28, { align: "right" }); doc.text("Empresa: Vilella Assessoria em Segurança do Trabalho", 280, 35, { align: "right" }); let body = []; let head = []; if (type === 'EXTINTOR') { head = [['Módulo/Local?', 'Equipamento', 'Data/Hora', 'Resp.', 'Placa Sinal.?', 'Pint. de Solo?', 'Lacre Rompido?', 'Eq. Obstruído?', 'Próx. Recarga?', 'T. Hidro?', 'Observações']]; body = reportData.map(i => [ i.moduleLocation || '-', i.extinguisherType || '-', i.equipmentName, formatDate(i.created_at), i.responsible || '-', i.hasId ? 'SIM' : 'NÃO', i.floorSign ? 'SIM' : 'NÃO', i.q1 ? 'SIM' : 'NÃO', i.q2 ? 'SIM' : 'NÃO', i.nextRecharge || '-', i.nextHydro || '-', i.obs || '' ]); } else if (type === 'HIDRANTE') { head = [['Módulo/Local?', 'Equipamento', 'Data/Hora', 'Resp.', 'Eq. Completo?', 'Eq. Obstruído?', 'Lacre Rompido?', 'Próx. T-Hidro', 'Observações']]; body = reportData.map(i => [ i.moduleLocation || '-', i.equipmentName, formatDate(i.created_at), i.responsible || '-', i.h_complete ? 'SIM' : 'NÃO', i.h_unobstructed ? 'NÃO' : 'SIM', i.h_seal_broken ? 'SIM' : 'NÃO', i.nextHydro || '-', i.obs || '' ]); } else if (type === 'RONDA') { head = [['Local', 'Área Técnica', 'Data/Hora', 'Resp.', 'Galpão', 'Status', 'Obs']]; body = reportData.map(i => [ i.sector || '-', i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.moduleLocation || '-', i.status || '-', i.obs || '' ]); } doc.autoTable({ head: head, body: body, startY: 45, theme: 'grid', headStyles: { fillColor: [224, 224, 224], textColor: [0, 0, 0], fontStyle: 'bold', lineWidth: 0.1, lineColor: [200, 200, 200] }, styles: { fontSize: 8, textColor: [50, 50, 50], lineColor: [230, 230, 230], lineWidth: 0.1 }, alternateRowStyles: { fillColor: [255, 255, 255] } }); doc.save(`TRFIRE_Relatorio_${type}_${viewMonth}.pdf`); };
+            const generateSpecificPDF = async (type) => { setShowPdfModal(false); const reportData = activeData.filter(item => (item.type || (type === 'RONDA' ? '' : 'EXTINTOR')) === type); if(reportData.length === 0) return showAlert(`Sem dados ATIVOS de ${type} para gerar relatório neste mês.`, "warning"); const doc = new jsPDF({ orientation: "landscape" }); doc.setFillColor(243, 244, 246); doc.rect(0, 0, 297, 40, 'F'); doc.setTextColor(33, 33, 33); doc.setFontSize(22); let title = ""; if (type === 'EXTINTOR') title = "CHECK-LIST EXTINTORES MENSAL"; else if (type === 'HIDRANTE') title = "CHECK-LIST HIDRANTES MENSAL"; else if (type === 'RONDA') title = "RELATÓRIO DE RONDAS PREVENTIVAS"; doc.text(title, 14, 25); doc.setFontSize(10); doc.setTextColor(100, 100, 100); doc.text(`Mês de Referência: ${formatMonthDisplay(viewMonth).toUpperCase()} | Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 35); doc.setFontSize(9); doc.setTextColor(33, 33, 33); doc.text("Parque Logístico: AERO GRU I", 280, 28, { align: "right" }); doc.text("Empresa: Vilella Assessoria em Segurança do Trabalho", 280, 35, { align: "right" }); let body = []; let head = []; if (type === 'EXTINTOR') { head = [['ID', 'Equipamento', 'Local', 'Tipo', 'Recarga', 'Hidro', 'Placa', 'Solo', 'Lacre', 'Obstruído', 'Obs', 'Resp.', 'Data']]; body = reportData.map(i => [ i.equipmentId || '-', i.equipmentName || '-', i.moduleLocation || '-', i.extinguisherType || '-', i.nextRecharge || '-', i.nextHydro || '-', i.hasId ? 'SIM' : 'NÃO', i.floorSign ? 'SIM' : 'NÃO', i.q1 ? 'SIM' : 'NÃO', i.q2 ? 'SIM' : 'NÃO', i.obs || '-', i.responsible || '-', formatDate(i.created_at) ]); } else if (type === 'HIDRANTE') { head = [['ID', 'Equipamento', 'Local', 'Completo', 'Desobstruído', 'Lacre', 'Hidro', 'Obs', 'Resp.', 'Data']]; body = reportData.map(i => [ i.equipmentId || '-', i.equipmentName || '-', i.moduleLocation || '-', i.h_complete ? 'SIM' : 'NÃO', i.h_unobstructed ? 'NÃO' : 'SIM', i.h_seal_broken ? 'SIM' : 'NÃO', i.nextHydro || '-', i.obs || '-', i.responsible || '-', formatDate(i.created_at) ]); } else if (type === 'RONDA') { head = [['Local', 'Área', 'Galpão', 'Status', 'Obs', 'Resp.', 'Data']]; body = reportData.map(i => [ i.sector || '-', i.equipmentName || '-', i.moduleLocation || '-', i.status || '-', i.obs || '-', i.responsible || '-', formatDate(i.created_at) ]); } doc.autoTable({ head: head, body: body, startY: 45, theme: 'grid', headStyles: { fillColor: [224, 224, 224], textColor: [0, 0, 0], fontStyle: 'bold', lineWidth: 0.1, lineColor: [200, 200, 200] }, styles: { fontSize: 7, textColor: [50, 50, 50], lineColor: [230, 230, 230], lineWidth: 0.1 }, alternateRowStyles: { fillColor: [255, 255, 255] } }); 
+            if (type === 'EXTINTOR') {
+                let finalY = doc.lastAutoTable.finalY + 10;
+                const counts = {};
+                reportData.forEach(item => { const t = item.extinguisherType || 'Indefinido'; counts[t] = (counts[t] || 0) + 1; });
+                if (finalY > 150) { doc.addPage(); finalY = 20; }
+                doc.setFontSize(12); doc.setTextColor(33, 33, 33); doc.text("Resumo Quantitativo:", 14, finalY);
+                const summaryBody = Object.entries(counts).map(([t, c]) => [t, c]);
+                doc.autoTable({ head: [['Tipo', 'Quantidade']], body: summaryBody, startY: finalY + 5, theme: 'striped', tableWidth: 'wrap', styles: { fontSize: 9 } });
+            }
+            doc.save(`TRFIRE_${type}_${viewMonth}.pdf`); };
             const renderItem = (item) => {
                 const isHid = item.type === 'HIDRANTE';
                 const isRonda = item.type === 'RONDA';
@@ -729,7 +740,10 @@
                         </div>
                     )}
                     {/* Modais */}
-                    {showPdfModal && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white p-6 rounded-xl w-full max-w-sm text-center"><h3 className="font-bold mb-4">Gerar Relatório PDF</h3><div className="flex flex-col gap-2"><button onClick={() => generateSpecificPDF('EXTINTOR')} className="p-3 bg-red-100 text-red-800 rounded font-bold">Extintores</button><button onClick={() => generateSpecificPDF('HIDRANTE')} className="p-3 bg-orange-100 text-orange-800 rounded font-bold">Hidrantes</button><button onClick={() => generateSpecificPDF('RONDA')} className="p-3 bg-blue-100 text-blue-800 rounded font-bold">Rondas</button><button onClick={() => setShowPdfModal(false)} className="p-3 bg-gray-200 rounded mt-2">Cancelar</button></div></div></div>)}
+                    {showFilter && !showBin && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowFilter(false)}><div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-2xl w-64 border border-gray-200 dark:border-gray-700" onClick={e => e.stopPropagation()}><h3 className="font-bold mb-3 dark:text-white text-sm uppercase">Filtrar por</h3><div className="space-y-3"><div><label className="text-xs text-gray-500 block mb-1">De</label><input type="date" value={filters.startDate} onChange={e=>setFilters({...filters, startDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Até</label><input type="date" value={filters.endDate} onChange={e=>setFilters({...filters, endDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Tipo</label><select value={filters.type} onChange={e=>setFilters({...filters, type: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option><option value="EXTINTOR">Extintor</option><option value="HIDRANTE">Hidrante</option></select></div><div><label className="text-xs text-gray-500 block mb-1">Responsável</label><select value={filters.responsible} onChange={e=>setFilters({...filters, responsible: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{responsibles.map(r => <option key={r} value={r}>{r}</option>)}</select></div><div><label className="text-xs text-gray-500 block mb-1">Módulo/Local</label><select value={filters.moduleLocation} onChange={e=>setFilters({...filters, moduleLocation: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{LOCATION_OPTIONS.map(l => <option key={l} value={l}>{l}</option>)}</select></div><div className="flex gap-2 pt-2"><button onClick={() => setFilters({startDate:'', endDate:'', type:'', responsible:'', moduleLocation:''})} className="flex-1 py-1 text-xs font-bold text-gray-500 bg-gray-200 dark:bg-gray-700 rounded">Limpar</button><button onClick={() => setShowFilter(false)} className="flex-1 py-1 text-xs font-bold text-white bg-brand-red rounded">Fechar</button></div></div></div></div>)}
+                    {showPdfModal && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm text-center shadow-2xl animate-scale-in"><h3 className="text-xl font-black mb-6 dark:text-white uppercase tracking-tight">Gerar Relatório PDF</h3><div className="flex flex-col gap-3"><button onClick={() => generateSpecificPDF('EXTINTOR')} className="p-4 bg-brand-red text-white rounded-xl font-bold shadow-md active:scale-95 transition-transform flex items-center justify-center gap-3"><i className="fas fa-fire-extinguisher text-xl"></i> RELATÓRIO DE EXTINTORES</button><button onClick={() => generateSpecificPDF('HIDRANTE')} className="p-4 bg-brand-orange text-white rounded-xl font-bold shadow-md active:scale-95 transition-transform flex items-center justify-center gap-3"><i className="fas fa-faucet text-xl"></i> RELATÓRIO DE HIDRANTES</button><button onClick={() => generateSpecificPDF('RONDA')} className="p-4 bg-brand-blue text-white rounded-xl font-bold shadow-md active:scale-95 transition-transform flex items-center justify-center gap-3"><i className="fas fa-clipboard-check text-xl"></i> RELATÓRIO DE RONDAS</button><button onClick={() => setShowPdfModal(false)} className="p-4 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-white rounded-xl font-bold mt-2 active:scale-95 transition-transform">CANCELAR</button></div></div></div>)}
+                    {showBackupModal && isAdmin && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm animate-fade-in text-center"><h3 className="text-lg font-bold mb-4 dark:text-white flex items-center justify-center gap-2"><i className="fas fa-database text-blue-500"></i> Backup & Restauração</h3><p className="text-xs text-gray-500 mb-6">Ferramenta exclusiva para ADMINISTRAÇÃO</p><div className="space-y-3"><button onClick={handleExport} className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2"><i className="fas fa-download"></i> EXPORTAR TUDO</button><div className="relative"><input type="file" ref={fileInputRef} onChange={handleFileImport} accept=".json" className="hidden" /><button onClick={() => fileInputRef.current.click()} className="w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2"><i className="fas fa-upload"></i> IMPORTAR DADOS</button></div><button onClick={() => setShowBackupModal(false)} className="w-full py-3 bg-gray-200 text-gray-700 font-bold rounded-xl mt-4">Fechar</button></div></div></div>)}
+                    
                     {/* Lista */}
                     <div className="flex-1 overflow-y-auto p-3 space-y-2">
                          {/* Lista Principal com Seções */}
@@ -1038,6 +1052,7 @@
                     })
                     .catch((error) => {
                         console.error("Erro na autenticação:", error);
+                        // Tratamento específico para erros
                         if (error.code === 'auth/configuration-not-found' || error.code === 'auth/operation-not-allowed') {
                             setAuthError({
                                 type: 'config_missing',
@@ -1073,15 +1088,62 @@
                     return false;
                 } 
             };
-            const handleSaveUser = async (userData) => { if(!dbFirestore) return false; try { await dbFirestore.collection("users").add(userData); return true; } catch(e) { showAlert("Erro ao salvar usuário: " + e.message, "error"); return false; } };
-            const handleUpdateUser = async (id, data) => { if(!dbFirestore) return false; try { const updateData = typeof data === 'string' ? { pass: data } : data; await dbFirestore.collection("users").doc(id).update(updateData); return true; } catch(e) { console.error("Erro ao atualizar", e); showAlert("Erro ao atualizar usuário: " + e.message, "error"); return false; } };
-            const handleUpdateUserPermissions = async (id, newPermissions) => { if (!dbFirestore) return; try { await dbFirestore.collection("users").doc(id).update({ permissions: newPermissions }); } catch(e) { console.error("Erro ao atualizar permissões", e); showAlert("Erro ao salvar permissão.", "error"); } };
+            
+            const handleSaveUser = async (userData) => { 
+                if(!dbFirestore) return false; 
+                try { 
+                    await dbFirestore.collection("users").add(userData); 
+                    return true;
+                } catch(e) { 
+                    showAlert("Erro ao salvar usuário: " + e.message, "error"); 
+                    return false;
+                } 
+            };
+            
+            const handleUpdateUser = async (id, data) => { 
+                if(!dbFirestore) return false; 
+                try { 
+                    const updateData = typeof data === 'string' ? { pass: data } : data;
+                    await dbFirestore.collection("users").doc(id).update(updateData); 
+                    return true;
+                } catch(e) { 
+                    console.error("Erro ao atualizar", e);
+                    showAlert("Erro ao atualizar usuário: " + e.message, "error"); 
+                    return false;
+                } 
+            };
+
+            const handleUpdateUserPermissions = async (id, newPermissions) => {
+                if (!dbFirestore) return;
+                try {
+                    await dbFirestore.collection("users").doc(id).update({ permissions: newPermissions });
+                } catch(e) {
+                    console.error("Erro ao atualizar permissões", e);
+                    showAlert("Erro ao salvar permissão.", "error");
+                }
+            };
+
             const handleDeleteUser = async (id) => { if(!dbFirestore) return; try { await dbFirestore.collection("users").doc(id).delete(); showAlert("Usuário excluído!", "success"); } catch(e) { showAlert("Erro ao excluir usuário.", "error"); } };
             const handleSaveUnit = async (unitData) => { if(!dbFirestore) return; try { await dbFirestore.collection("units").add(unitData); } catch(e) { showAlert("Erro ao salvar unidade.", "error"); } };
             const handleUpdateUnit = async (id, data) => { if(!dbFirestore) return; try { await dbFirestore.collection("units").doc(id).update(data); showAlert("Unidade atualizada!", "success"); } catch(e) { showAlert("Erro ao atualizar unidade.", "error"); } };
             const handleDeleteUnit = async (id) => { if(!dbFirestore) return; try { await dbFirestore.collection("units").doc(id).delete(); showAlert("Unidade excluída!", "success"); } catch(e) { showAlert("Erro ao excluir unidade.", "error"); } };
             const handleImportData = async (jsonData) => { if(!dbFirestore) return showAlert("Erro BD.", "error"); if(!Array.isArray(jsonData)) return showAlert("JSON Inválido.", "error"); showConfirm(`Importar ${jsonData.length} registros?`, async () => { let c=0; for (const i of jsonData) { try { if (i.id) await dbFirestore.collection("inspections").doc(i.id).set(i); else await dbFirestore.collection("inspections").add(i); c++; } catch(e){} } showAlert(`Sucesso: ${c}`, "success"); }, "warning"); };
-            const handleToggleDelete = async (id, status) => { if(!dbFirestore) return; try { const updateData = { deleted: status }; if (status) { updateData.deleted_at = new Date().toISOString(); } else { updateData.deleted_at = null; } await dbFirestore.collection("inspections").doc(id).update(updateData); } catch (e) { showAlert("Erro ao atualizar.", "error"); } };
+            
+            const handleToggleDelete = async (id, status) => { 
+                if(!dbFirestore) return; 
+                try { 
+                    const updateData = { deleted: status };
+                    if (status) {
+                        updateData.deleted_at = new Date().toISOString();
+                    } else {
+                        updateData.deleted_at = null;
+                    }
+                    await dbFirestore.collection("inspections").doc(id).update(updateData); 
+                } catch (e) { 
+                    showAlert("Erro ao atualizar.", "error"); 
+                } 
+            };
+            
             const handleDeletePermanently = async (id) => { if(!dbFirestore) return; try { await dbFirestore.collection("inspections").doc(id).delete(); } catch (e) { showAlert("Erro ao excluir.", "error"); } };
             const handleLogin = (name, unitName) => { localStorage.setItem('trfire_user', name); localStorage.setItem('trfire_unit', unitName); setResponsible(name); setCurrentUnit(unitName); navigateTo('menu'); };
 

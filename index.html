@@ -3,19 +3,16 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V61.0 (08/02/2026) - NO IMAGE STORAGE STORAGE
+    VERSÃO ESTÁVEL V64.0 (08/02/2026) - ROUNDS EDIT LOCATION
     ============================================================================
-    ALTERAÇÃO ESTRUTURAL (BANCO DE DADOS):
-    - A obrigatoriedade da foto na UI foi mantida (o usuário TEM de tirar foto).
-    - NO ENTANTO, na função 'handleSave', a string da imagem é removida do objeto
-      antes do envio ao Firebase.
-    - Foi adicionada a flag 'hasPhoto: true' para confirmar no histórico que
-      o protocolo foi seguido, mas sem gastar espaço de armazenamento.
+    NOVIDADES:
+    1. Admin (Locais de Ronda): Agora é possível EDITAR o nome dos locais já
+       cadastrados, além de adicionar e excluir.
     
-    ESTADO:
-    - Login/Menus: OK.
-    - Inspeção: Exige foto -> Salva dados (Texto apenas).
-    - PWA: Instalável (Botão oculto, via browser).
+    FUNCIONALIDADES:
+    - Rondas: Modal com turnos.
+    - Fotos: Compressão 240px (sem armazenamento).
+    - Histórico: Filtro por mês e seleção por categoria.
     ============================================================================
     -->
 
@@ -51,9 +48,7 @@
             const blob = new Blob([stringManifest], {type: 'application/json'});
             const manifestURL = URL.createObjectURL(blob);
             document.getElementById('manifest-placeholder').setAttribute('href', manifestURL);
-        } catch (e) {
-            console.error("Erro manifesto:", e);
-        }
+        } catch (e) { console.error("Erro manifesto:", e); }
     </script>
 
     <title>TR FIRE Inspeções</title>
@@ -133,7 +128,9 @@
         const FALLBACK_LOGO = "https://cdn-icons-png.flaticon.com/512/785/785116.png";
         const LOCATION_OPTIONS = ["ANJUN", "AZUL CARGO", "AREAS COMUNS", "EQ. RESERVA", "LATAM", "MELI", "POWER SOURCE", "TOTAL EXP."];
         const EXTINGUISHER_TYPES = ["ABC- 4KG", "ABC- 6KG", "AGUA- 10LT", "AVD- 9LT", "CO²- 6KG", "EM- 9LT", "PÓ BC- 4KG", "PÓ BC- 6KG", "PÓ BC- 8KG", "PÓ BC- 12KG"];
-        const ROUND_LOCATIONS = ["CASA DE BOMBAS / G-100", "TANQUE DE DIESEL / G-100", "RTI / G-100", "GERADOR / G-100", "CASA DE BOMBAS / G-200", "TANQUE DE DIESEL / G-200", "RTI / G-200", "GERADOR / G-200", "GERADOR / G-300"];
+        
+        // LOCAIS PADRÃO PARA SEEDING (Caso o banco esteja vazio)
+        const DEFAULT_ROUND_LOCATIONS = ["CASA DE BOMBAS / G-100", "TANQUE DE DIESEL / G-100", "RTI / G-100", "GERADOR / G-100", "CASA DE BOMBAS / G-200", "TANQUE DE DIESEL / G-200", "RTI / G-200", "GERADOR / G-200", "GERADOR / G-300"];
         const ROUND_AREAS = ["G-100", "G-200", "G-300"];
         
         const formatDate = (dateStr) => { 
@@ -241,6 +238,80 @@
             );
         };
 
+        // ==========================================
+        //  NOVA TELA: GERENCIAR LOCAIS DE RONDA (COM EDIÇÃO)
+        // ==========================================
+        function RoundLocationsRegisterScreen({ onNavigate, onSaveLocation, onUpdateLocation, locationsList, onDeleteLocation, showAlert, showConfirm }) {
+            const [newLocation, setNewLocation] = useState("");
+            const [saving, setSaving] = useState(false);
+            const [editingId, setEditingId] = useState(null);
+
+            const handleSave = async () => {
+                if (!newLocation) return showAlert("Digite o nome do local.", "warning");
+                setSaving(true);
+                
+                if (editingId) {
+                    await onUpdateLocation(editingId, { name: newLocation.toUpperCase() });
+                    showAlert("Local atualizado!", "success");
+                    setEditingId(null);
+                } else {
+                    await onSaveLocation({ name: newLocation.toUpperCase() });
+                    showAlert("Local adicionado!", "success");
+                }
+                
+                setSaving(false);
+                setNewLocation("");
+            };
+
+            const handleEditClick = (loc) => {
+                setEditingId(loc.id);
+                setNewLocation(loc.name);
+            };
+
+            const handleCancelEdit = () => {
+                setEditingId(null);
+                setNewLocation("");
+            };
+
+            const handleDelete = (id) => {
+                showConfirm("Excluir este local?", () => onDeleteLocation(id), "error");
+            };
+
+            return (
+                <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 overflow-y-auto">
+                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate('adminMenu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
+                    <div className="mt-16 text-center mb-8">
+                        <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-full mb-4"><i className="fas fa-map-marker-alt text-2xl text-white"></i></div>
+                        <h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">{editingId ? 'EDITAR LOCAL' : 'LOCAIS DE RONDA'}</h2>
+                        <p className="text-gray-500 dark:text-gray-400 text-sm">Gerenciar pontos de ronda</p>
+                    </div>
+
+                    <div className="space-y-4">
+                        <input value={newLocation} onChange={e => setNewLocation(e.target.value)} placeholder="NOME DO LOCAL (EX: PORTARIA)" className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-blue outline-none dark:text-white font-bold text-gray-700 uppercase" />
+                        <div className="flex gap-2">
+                             {editingId && <button onClick={handleCancelEdit} className="flex-1 py-4 bg-gray-300 text-gray-700 rounded-xl font-bold shadow-lg">CANCELAR</button>}
+                             <button onClick={handleSave} disabled={saving} className="flex-[2] py-4 bg-brand-blue text-white rounded-xl text-lg font-bold shadow-lg active:scale-95 transition-transform">{saving ? 'SALVANDO...' : (editingId ? 'ATUALIZAR' : 'ADICIONAR')}</button>
+                        </div>
+                    </div>
+
+                    <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+                        <h3 className="font-bold text-gray-500 mb-4 text-xs uppercase">Locais Cadastrados ({locationsList.length})</h3>
+                        <div className="space-y-2">
+                            {locationsList.map(loc => (
+                                <div key={loc.id} className={`bg-white dark:bg-gray-900 border ${editingId === loc.id ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-gray-700'} p-4 rounded-xl flex items-center justify-between shadow-sm`}>
+                                    <span className="font-bold text-gray-800 dark:text-white text-sm">{loc.name}</span>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => handleEditClick(loc)} className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center hover:bg-blue-200"><i className="fas fa-pen text-xs"></i></button>
+                                        <button onClick={() => handleDelete(loc.id)} className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center hover:bg-red-200"><i className="fas fa-trash text-xs"></i></button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         function UnitRegisterScreen({ onNavigate, onSaveUnit, unitsList, onUpdateUnit, onDeleteUnit, showAlert, showConfirm }) {
             const [newUnit, setNewUnit] = useState({ name: '', address: '' });
             const [editingId, setEditingId] = useState(null);
@@ -295,6 +366,7 @@
                     <div className="w-full space-y-4">
                         <button onClick={() => onNavigate('accessControl')} className="w-full py-4 bg-purple-600 text-white rounded-xl font-bold shadow-lg">ACESSOS</button>
                         <button onClick={() => onNavigate('unitRegister')} className="w-full py-4 bg-gray-600 text-white rounded-xl font-bold shadow-lg">UNIDADES</button>
+                        <button onClick={() => onNavigate('roundLocRegister')} className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold shadow-lg">LOCAIS DE RONDA</button>
                         <button onClick={() => onNavigate('userRegister')} className="w-full py-4 bg-gray-700 text-white rounded-xl font-bold shadow-lg">BOMBEIROS</button>
                     </div>
                 </div>
@@ -321,7 +393,7 @@
              );
         };
 
-        function MenuScreen({ onNavigate, responsibleName, currentUnit, onStartInspection, usersList }) {
+        function MenuScreen({ onNavigate, responsibleName, currentUnit, onStartInspection, usersList, onInstallApp }) {
             const isAdmin = responsibleName === "ADMIN" || currentUnit === "GLOBAL";
             const userPerms = useMemo(() => {
                 if (!usersList || usersList.length === 0) return ['EXTINTOR', 'HIDRANTE', 'HISTORICO']; 
@@ -340,7 +412,11 @@
                         </div>
                     </div>
                     <div className="flex-1 flex flex-col items-center justify-center space-y-6 mt-6">
-                        <div className="w-32 h-32"><LogoImage className="w-full h-full object-contain filter drop-shadow-xl" /></div>
+                        <div className="flex flex-col items-center justify-center gap-1">
+                            <div className="w-32 h-32"><LogoImage className="w-full h-full object-contain filter drop-shadow-xl" /></div>
+                            <h2 className="text-2xl font-extrabold tracking-tight mt-2 text-brand-red dark:text-white">TR FIRE</h2>
+                            <p className="text-brand-orange text-lg font-bold tracking-widest">INSPEÇÕES</p>
+                        </div>
                         <div className="w-full space-y-3 pb-4">
                             {hasAccess('RONDA') && <button onClick={() => onNavigate('roundsLocation')} className="w-full py-4 bg-brand-blue text-white rounded-xl font-bold shadow-lg">RONDA DIÁRIA</button>}
                             {hasAccess('EXTINTOR') && <button onClick={() => onStartInspection('EXTINTOR')} className="w-full py-4 bg-brand-red text-white rounded-xl font-bold shadow-lg">EXTINTORES</button>}
@@ -353,9 +429,10 @@
             );
         };
 
-        function RoundsLocationScreen({ onNavigate, onSelectLocation, db, responsibleName }) {
-            const [shiftInfo, setShiftInfo] = useState({ name: '', start: null, end: null });
+        function RoundsLocationScreen({ onNavigate, onSelectLocation, db, responsibleName, roundLocationsList }) {
+            const [shiftInfo, setShiftInfo] = useState({ name: '', start: null, end: null, isNight: false });
             const [tick, setTick] = useState(0); 
+            const [selectedLocation, setSelectedLocation] = useState(null); // Para o Modal
 
             useEffect(() => {
                 const updateShift = () => {
@@ -364,60 +441,123 @@
                     let start = new Date(now);
                     let end = new Date(now);
                     let name = "";
+                    let isNight = false;
+
                     if (hour >= 6 && hour < 18) {
-                        name = "Turno Diurno (06:00 - 17:59)";
-                        start.setHours(6, 0, 0, 0);
-                        end.setHours(17, 59, 59, 999);
+                        name = "Turno Diurno";
+                        isNight = false;
                     } else {
-                        name = "Turno Noturno (18:00 - 05:59)";
-                        if (hour >= 18) { start.setHours(18, 0, 0, 0); end.setDate(end.getDate() + 1); end.setHours(5, 59, 59, 999); } 
-                        else { start.setDate(start.getDate() - 1); start.setHours(18, 0, 0, 0); end.setHours(5, 59, 59, 999); }
+                        name = "Turno Noturno";
+                        isNight = true;
                     }
-                    setShiftInfo({ name, start, end });
+                    setShiftInfo({ name, isNight });
                 };
                 updateShift();
                 const interval = setInterval(() => { setTick(t => t + 1); updateShift(); }, 60000); 
                 return () => clearInterval(interval);
             }, []);
 
-            const isLocationDone = (location) => {
-                if (!shiftInfo.start || !db) return false;
-                return db.some(item => {
+            // Calcula estado da ronda específica (1 ou 2)
+            const getRoundStatus = (location, roundNumber) => {
+                const now = new Date();
+                let start = new Date(now);
+                let end = new Date(now);
+                
+                // Definição das janelas de tempo baseadas no turno atual
+                if (!shiftInfo.isNight) {
+                    // DIURNO
+                    if (roundNumber === 1) {
+                        start.setHours(6, 0, 0, 0); end.setHours(11, 59, 59, 999);
+                    } else {
+                        start.setHours(12, 0, 0, 0); end.setHours(17, 59, 59, 999);
+                    }
+                } else {
+                    // NOTURNO
+                    const hour = now.getHours();
+                    if (roundNumber === 1) {
+                        // 18:00 - 23:59
+                        if (hour < 18) { start.setDate(start.getDate() - 1); end.setDate(end.getDate() - 1); }
+                        start.setHours(18, 0, 0, 0); end.setHours(23, 59, 59, 999);
+                    } else {
+                        // 00:00 - 05:59
+                        if (hour >= 18) { start.setDate(start.getDate() + 1); end.setDate(end.getDate() + 1); }
+                        start.setHours(0, 0, 0, 0); end.setHours(5, 59, 59, 999);
+                    }
+                }
+
+                const isDone = db.some(item => {
                     if (item.type !== 'RONDA' || item.deleted) return false;
                     const itemDate = new Date(item.created_at);
-                    return item.sector === location && itemDate >= shiftInfo.start && itemDate <= shiftInfo.end;
+                    return item.sector === location && itemDate >= start && itemDate <= end;
                 });
+
+                // Tempo restante
+                let timeText = "";
+                const diffMs = end - now;
+                if (diffMs > 0) {
+                    const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
+                    const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+                    timeText = `${diffHrs}h ${diffMins}m restantes`;
+                } else {
+                    timeText = "Encerrado";
+                }
+
+                return { isDone, timeText, start, end };
             };
 
-            const getTimeBadge = () => {
-                if (!shiftInfo.end) return null;
-                const now = new Date();
-                const diffMs = shiftInfo.end - now;
-                if (diffMs <= 0) return null;
-                const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
-                const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-                return (<div className="absolute right-12 top-1/2 -translate-y-1/2 bg-brand-orange text-white rounded-lg px-2 py-1.5 font-black text-xs shadow-md border border-white/20 animate-pulse">{diffHrs > 0 ? `+${diffHrs}H` : `+${diffMins}m`}</div>);
+            const handleLocationClick = (locName) => {
+                setSelectedLocation(locName);
             };
 
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-3 animate-fade-in relative">
                     <div className="absolute top-4 left-4"><button onClick={() => onNavigate('menu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
                     <div className="mt-16 text-center mb-6"><h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">LOCAIS DE RONDA</h2></div>
+                    
                     <div className="flex-1 overflow-y-auto space-y-3 pb-6">
-                        {ROUND_LOCATIONS.map(loc => {
-                            const done = isLocationDone(loc);
+                        {roundLocationsList.map(loc => {
+                            // Verifica status global (se fez pelo menos uma hoje, só pra pintar a borda)
+                            // Na verdade, melhor não pintar borda verde se faltar uma.
                             return (
-                                <button key={loc} onClick={() => onSelectLocation(loc)} className={`w-full py-5 bg-white dark:bg-gray-800 border-2 ${done ? 'border-green-500' : 'border-gray-100 dark:border-gray-700 hover:border-blue-500'} text-gray-700 dark:text-white rounded-2xl text-lg font-bold shadow-sm flex items-center justify-between px-6`}>
-                                    <div className="flex flex-col items-start"><span>{loc}</span><span className={`text-[10px] font-bold uppercase mt-1 ${done ? 'text-green-500' : 'text-orange-500'}`}>{done ? 'Realizado' : 'Pendente'}</span></div>
-                                    {!done && getTimeBadge()}
-                                    <i className={`fas ${done ? 'fa-check text-green-500' : 'fa-chevron-right text-gray-300 group-hover:text-blue-500'}`}></i>
+                                <button key={loc.id} onClick={() => handleLocationClick(loc.name)} className={`w-full py-5 bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 hover:border-blue-500 text-gray-700 dark:text-white rounded-2xl text-lg font-bold shadow-sm flex items-center justify-between px-6`}>
+                                    <div className="flex flex-col items-start"><span>{loc.name}</span></div>
+                                    <i className="fas fa-chevron-right text-gray-300"></i>
                                 </button>
                             );
                         })}
                     </div>
+
+                    {/* MODAL DE RONDA DUPLA */}
+                    {selectedLocation && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={() => setSelectedLocation(null)}>
+                            <div className="bg-white dark:bg-gray-900 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative" onClick={e => e.stopPropagation()}>
+                                <button onClick={() => setSelectedLocation(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><i className="fas fa-times text-xl"></i></button>
+                                <h3 className="text-xl font-black text-center mb-2 dark:text-white">{selectedLocation}</h3>
+                                <p className="text-center text-blue-600 font-bold text-sm mb-6 uppercase">{shiftInfo.name}</p>
+
+                                <div className="space-y-4">
+                                    {[1, 2].map(num => {
+                                        const status = getRoundStatus(selectedLocation, num);
+                                        return (
+                                            <div key={num} onClick={() => onSelectLocation(selectedLocation)} className={`p-4 rounded-xl border-l-4 shadow-sm flex justify-between items-center cursor-pointer transition-all active:scale-95 ${status.isDone ? 'bg-green-50 border-green-500' : 'bg-gray-50 border-gray-300 dark:bg-gray-800 dark:border-gray-600'}`}>
+                                                <div>
+                                                    <span className="font-black text-lg block text-gray-800 dark:text-white">{num}ª RONDA</span>
+                                                    <span className={`text-xs font-bold ${status.isDone ? 'text-green-600' : 'text-orange-500'}`}>{status.isDone ? 'REALIZADA' : 'PENDENTE'}</span>
+                                                </div>
+                                                <div className="text-right">
+                                                    <span className="text-xs text-gray-500 font-medium block">Prazo</span>
+                                                    <span className={`text-xs font-bold ${status.timeText === 'Encerrado' ? 'text-red-500' : 'text-blue-600'}`}>{status.timeText}</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
-        }
+        };
 
         function ScannerScreen({ onNavigate, onScanSuccess, db, inspectionType, showAlert }) {
             const scannerRef = useRef(null);
@@ -486,25 +626,13 @@
                     reader.readAsDataURL(file); 
                 } 
              };
-             
-             // --- NO IMAGE STORAGE CHANGE ---
              const save = async () => { 
                  if (!form.moduleLocation || !form.photo) return showAlert("Preencha tudo.", "warning"); 
-                 
                  setIsSaving(true); 
-                 
-                 // Deep copy to not mutate state directly before save
-                 const dataToSend = JSON.parse(JSON.stringify(form));
-                 if(dataToSend.photo) {
-                     dataToSend.hasPhoto = true; // Mark that a photo was taken
-                     delete dataToSend.photo; // Remove the heavy string
-                 }
-
-                 const success = await onSave(dataToSend); 
+                 const success = await onSave(form); 
                  setIsSaving(false);
                  if(success) localStorage.removeItem('trfire_temp_round');
              };
-
              return (
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black">
                     <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('roundsLocation')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">Ronda</h2><button onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold" type="button">{isSaving ? '...' : 'SALVAR'}</button></div>
@@ -557,7 +685,6 @@
                 } 
              };
              
-             // --- NO IMAGE STORAGE CHANGE ---
              const save = async () => { 
                  let missing = [];
                  if (!form.equipmentId) missing.push("ID");
@@ -572,20 +699,10 @@
                      if (form.h_seal_broken === null) missing.push("Lacre"); if (!form.nextHydro) missing.push("T. Hidro");
                  } 
                  if(missing.length > 0) return showAlert("Falta: " + missing.join(", "), "warning"); 
-                 
-                 // REQUIRE PHOTO IN UI
                  if (!form.photo) return showAlert("⚠️ Foto Obrigatória.", "warning");
 
-                 setIsSaving(true);
-                 
-                 // REMOVE PHOTO BEFORE SAVING
-                 const dataToSend = JSON.parse(JSON.stringify(form));
-                 if(dataToSend.photo) {
-                     dataToSend.hasPhoto = true; 
-                     delete dataToSend.photo; 
-                 }
-                 
-                 const success = await onSave(dataToSend); 
+                 setIsSaving(true); 
+                 const success = await onSave(form); 
                  setIsSaving(false);
                  if(success) localStorage.removeItem('trfire_temp_form');
              };
@@ -673,13 +790,18 @@
                     if (!item.created_at || typeof item.created_at !== 'string') return false; 
                     
                     try {
+                        // 1. Month Filter
                         if (item.created_at.slice(0, 7) !== viewMonth) return false; 
-                        const itemDateStr = item.created_at.slice(0, 10); 
-                        if (filters.startDate && itemDateStr < filters.startDate) return false;
-                        if (filters.endDate && itemDateStr > filters.endDate) return false;
+                        
+                        // 3. Type Filter
                         if (filters.type && (item.type || 'EXTINTOR') !== filters.type) return false; 
+                        
+                        // 4. Responsible Filter
                         if (filters.responsible && item.responsible !== filters.responsible) return false; 
+                        
+                        // 5. Location Filter
                         if (filters.moduleLocation && item.moduleLocation !== filters.moduleLocation) return false; 
+                        
                         return true; 
                     } catch (e) { return false; }
                 });
@@ -766,7 +888,7 @@
                         </div>
                     )}
                     {/* Modais */}
-                    {showFilter && !showBin && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowFilter(false)}><div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-2xl w-64 border border-gray-200 dark:border-gray-700" onClick={e => e.stopPropagation()}><h3 className="font-bold mb-3 dark:text-white text-sm uppercase">Filtrar por</h3><div className="space-y-3"><div><label className="text-xs text-gray-500 block mb-1">De</label><input type="date" value={filters.startDate} onChange={e=>setFilters({...filters, startDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Até</label><input type="date" value={filters.endDate} onChange={e=>setFilters({...filters, endDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Tipo</label><select value={filters.type} onChange={e=>setFilters({...filters, type: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option><option value="EXTINTOR">Extintor</option><option value="HIDRANTE">Hidrante</option></select></div><div><label className="text-xs text-gray-500 block mb-1">Responsável</label><select value={filters.responsible} onChange={e=>setFilters({...filters, responsible: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{responsibles.map(r => <option key={r} value={r}>{r}</option>)}</select></div><div><label className="text-xs text-gray-500 block mb-1">Módulo/Local</label><select value={filters.moduleLocation} onChange={e=>setFilters({...filters, moduleLocation: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{LOCATION_OPTIONS.map(l => <option key={l} value={l}>{l}</option>)}</select></div><div className="flex gap-2 pt-2"><button onClick={() => setFilters({startDate:'', endDate:'', type:'', responsible:'', moduleLocation:''})} className="flex-1 py-1 text-xs font-bold text-gray-500 bg-gray-200 dark:bg-gray-700 rounded">Limpar</button><button onClick={() => setShowFilter(false)} className="flex-1 py-1 text-xs font-bold text-white bg-brand-red rounded">Fechar</button></div></div></div></div>)}
+                    {showFilter && !showBin && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowFilter(false)}><div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-2xl w-64 border border-gray-200 dark:border-gray-700" onClick={e => e.stopPropagation()}><h3 className="font-bold mb-3 dark:text-white text-sm uppercase">Filtrar por</h3><div className="space-y-3"><div><label className="text-xs text-gray-500 block mb-1">Mês de Referência</label><input type="month" value={viewMonth} onChange={(e) => setViewMonth(e.target.value)} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white font-bold" /></div><div><label className="text-xs text-gray-500 block mb-1">Tipo</label><select value={filters.type} onChange={e=>setFilters({...filters, type: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option><option value="EXTINTOR">Extintor</option><option value="HIDRANTE">Hidrante</option></select></div><div><label className="text-xs text-gray-500 block mb-1">Responsável</label><select value={filters.responsible} onChange={e=>setFilters({...filters, responsible: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{responsibles.map(r => <option key={r} value={r}>{r}</option>)}</select></div><div><label className="text-xs text-gray-500 block mb-1">Módulo/Local</label><select value={filters.moduleLocation} onChange={e=>setFilters({...filters, moduleLocation: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{LOCATION_OPTIONS.map(l => <option key={l} value={l}>{l}</option>)}</select></div><div className="flex gap-2 pt-2"><button onClick={() => { setFilters({startDate:'', endDate:'', type:'', responsible:'', moduleLocation:''}); setViewMonth(new Date().toISOString().slice(0, 7)); }} className="flex-1 py-1 text-xs font-bold text-gray-500 bg-gray-200 dark:bg-gray-700 rounded">Limpar</button><button onClick={() => setShowFilter(false)} className="flex-1 py-1 text-xs font-bold text-white bg-brand-red rounded">Fechar</button></div></div></div></div>)}
                     {showPdfModal && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm text-center shadow-2xl animate-scale-in"><h3 className="text-xl font-black mb-6 dark:text-white uppercase tracking-tight">Gerar Relatório PDF</h3><div className="flex flex-col gap-3"><button onClick={() => generateSpecificPDF('EXTINTOR')} className="p-4 bg-brand-red text-white rounded-xl font-bold shadow-md active:scale-95 transition-transform flex items-center justify-center gap-3"><i className="fas fa-fire-extinguisher text-xl"></i> RELATÓRIO DE EXTINTORES</button><button onClick={() => generateSpecificPDF('HIDRANTE')} className="p-4 bg-brand-orange text-white rounded-xl font-bold shadow-md active:scale-95 transition-transform flex items-center justify-center gap-3"><i className="fas fa-faucet text-xl"></i> RELATÓRIO DE HIDRANTES</button><button onClick={() => generateSpecificPDF('RONDA')} className="p-4 bg-brand-blue text-white rounded-xl font-bold shadow-md active:scale-95 transition-transform flex items-center justify-center gap-3"><i className="fas fa-clipboard-check text-xl"></i> RELATÓRIO DE RONDAS</button><button onClick={() => setShowPdfModal(false)} className="p-4 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-white rounded-xl font-bold mt-2 active:scale-95 transition-transform">CANCELAR</button></div></div></div>)}
                     {showBackupModal && isAdmin && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm animate-fade-in text-center"><h3 className="text-lg font-bold mb-4 dark:text-white flex items-center justify-center gap-2"><i className="fas fa-database text-blue-500"></i> Backup & Restauração</h3><p className="text-xs text-gray-500 mb-6">Ferramenta exclusiva para ADMINISTRAÇÃO</p><div className="space-y-3"><button onClick={handleExport} className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2"><i className="fas fa-download"></i> EXPORTAR TUDO</button><div className="relative"><input type="file" ref={fileInputRef} onChange={handleFileImport} accept=".json" className="hidden" /><button onClick={() => fileInputRef.current.click()} className="w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2"><i className="fas fa-upload"></i> IMPORTAR DADOS</button></div><button onClick={() => setShowBackupModal(false)} className="w-full py-3 bg-gray-200 text-gray-700 font-bold rounded-xl mt-4">Fechar</button></div></div></div>)}
                     
@@ -861,6 +983,7 @@
             const [db, setDb] = useState([]);
             const [users, setUsers] = useState([]);
             const [units, setUnits] = useState([]);
+            const [roundLocationsList, setRoundLocationsList] = useState([]); // NEW: State for dynamic round locations
             const [scanRes, setScanRes] = useState(null);
             const [notification, setNotification] = useState({ isOpen: false, message: '', type: 'info', isConfirmation: false, onConfirm: null });
             const [authError, setAuthError] = useState(null);
@@ -959,7 +1082,10 @@
 
                 if (!targetRange || now <= targetRange.end) return;
 
-                for (const loc of ROUND_LOCATIONS) {
+                // USE THE DYNAMIC LIST IF AVAILABLE, ELSE FALLBACK
+                const locationsToCheck = roundLocationsList.length > 0 ? roundLocationsList.map(l => l.name) : ROUND_LOCATIONS;
+
+                for (const loc of locationsToCheck) {
                     const hasInspection = currentDb.some(item => { 
                         if (item.type !== 'RONDA' || item.deleted || item.sector !== loc) return false; 
                         const itemDate = new Date(item.created_at); 
@@ -1071,11 +1197,26 @@
                             setUnits(unitsList); 
                         });
                         
-                        return () => { unsubscribeInspections(); unsubscribeUsers(); unsubscribeUnits(); };
+                        // NEW: ROUND LOCATIONS SUBSCRIPTION
+                        const qRoundLocs = dbFirestore.collection("round_locations").orderBy("name");
+                        const unsubscribeRoundLocs = qRoundLocs.onSnapshot(async (snapshot) => {
+                            let locs = [];
+                            if (snapshot.empty) {
+                                // SEEDING IF EMPTY
+                                console.log("Seeding Round Locations...");
+                                DEFAULT_ROUND_LOCATIONS.forEach(name => {
+                                    dbFirestore.collection("round_locations").add({ name });
+                                });
+                            } else {
+                                snapshot.forEach(doc => locs.push({ id: doc.id, ...doc.data() }));
+                                setRoundLocationsList(locs);
+                            }
+                        });
+                        
+                        return () => { unsubscribeInspections(); unsubscribeUsers(); unsubscribeUnits(); unsubscribeRoundLocs(); };
                     })
                     .catch((error) => {
                         console.error("Erro na autenticação:", error);
-                        // Tratamento específico para erros
                         if (error.code === 'auth/configuration-not-found' || error.code === 'auth/operation-not-allowed') {
                             setAuthError({
                                 type: 'config_missing',
@@ -1118,62 +1259,21 @@
                     return false;
                 } 
             };
-            
-            const handleSaveUser = async (userData) => { 
-                if(!dbFirestore) return false; 
-                try { 
-                    await dbFirestore.collection("users").add(userData); 
-                    return true;
-                } catch(e) { 
-                    showAlert("Erro ao salvar usuário: " + e.message, "error"); 
-                    return false;
-                } 
-            };
-            
-            const handleUpdateUser = async (id, data) => { 
-                if(!dbFirestore) return false; 
-                try { 
-                    const updateData = typeof data === 'string' ? { pass: data } : data;
-                    await dbFirestore.collection("users").doc(id).update(updateData); 
-                    return true;
-                } catch(e) { 
-                    console.error("Erro ao atualizar", e);
-                    showAlert("Erro ao atualizar usuário: " + e.message, "error"); 
-                    return false;
-                } 
-            };
-
-            const handleUpdateUserPermissions = async (id, newPermissions) => {
-                if (!dbFirestore) return;
-                try {
-                    await dbFirestore.collection("users").doc(id).update({ permissions: newPermissions });
-                } catch(e) {
-                    console.error("Erro ao atualizar permissões", e);
-                    showAlert("Erro ao salvar permissão.", "error");
-                }
-            };
-
+            const handleSaveUser = async (userData) => { if(!dbFirestore) return false; try { await dbFirestore.collection("users").add(userData); return true; } catch(e) { showAlert("Erro ao salvar usuário: " + e.message, "error"); return false; } };
+            const handleUpdateUser = async (id, data) => { if(!dbFirestore) return false; try { const updateData = typeof data === 'string' ? { pass: data } : data; await dbFirestore.collection("users").doc(id).update(updateData); return true; } catch(e) { console.error("Erro ao atualizar", e); showAlert("Erro ao atualizar usuário: " + e.message, "error"); return false; } };
+            const handleUpdateUserPermissions = async (id, newPermissions) => { if (!dbFirestore) return; try { await dbFirestore.collection("users").doc(id).update({ permissions: newPermissions }); } catch(e) { console.error("Erro ao atualizar permissões", e); showAlert("Erro ao salvar permissão.", "error"); } };
             const handleDeleteUser = async (id) => { if(!dbFirestore) return; try { await dbFirestore.collection("users").doc(id).delete(); showAlert("Usuário excluído!", "success"); } catch(e) { showAlert("Erro ao excluir usuário.", "error"); } };
             const handleSaveUnit = async (unitData) => { if(!dbFirestore) return; try { await dbFirestore.collection("units").add(unitData); } catch(e) { showAlert("Erro ao salvar unidade.", "error"); } };
             const handleUpdateUnit = async (id, data) => { if(!dbFirestore) return; try { await dbFirestore.collection("units").doc(id).update(data); showAlert("Unidade atualizada!", "success"); } catch(e) { showAlert("Erro ao atualizar unidade.", "error"); } };
             const handleDeleteUnit = async (id) => { if(!dbFirestore) return; try { await dbFirestore.collection("units").doc(id).delete(); showAlert("Unidade excluída!", "success"); } catch(e) { showAlert("Erro ao excluir unidade.", "error"); } };
+            
+            // Handlers for Round Locations
+            const handleSaveRoundLocation = async (locData) => { if(!dbFirestore) return; try { await dbFirestore.collection("round_locations").add(locData); } catch(e) { showAlert("Erro ao salvar local.", "error"); } };
+            const handleUpdateRoundLocation = async (id, locData) => { if(!dbFirestore) return; try { await dbFirestore.collection("round_locations").doc(id).update(locData); } catch(e) { showAlert("Erro ao atualizar local.", "error"); } };
+            const handleDeleteRoundLocation = async (id) => { if(!dbFirestore) return; try { await dbFirestore.collection("round_locations").doc(id).delete(); showAlert("Local excluído!", "success"); } catch(e) { showAlert("Erro ao excluir local.", "error"); } };
+
             const handleImportData = async (jsonData) => { if(!dbFirestore) return showAlert("Erro BD.", "error"); if(!Array.isArray(jsonData)) return showAlert("JSON Inválido.", "error"); showConfirm(`Importar ${jsonData.length} registros?`, async () => { let c=0; for (const i of jsonData) { try { if (i.id) await dbFirestore.collection("inspections").doc(i.id).set(i); else await dbFirestore.collection("inspections").add(i); c++; } catch(e){} } showAlert(`Sucesso: ${c}`, "success"); }, "warning"); };
-            
-            const handleToggleDelete = async (id, status) => { 
-                if(!dbFirestore) return; 
-                try { 
-                    const updateData = { deleted: status };
-                    if (status) {
-                        updateData.deleted_at = new Date().toISOString();
-                    } else {
-                        updateData.deleted_at = null;
-                    }
-                    await dbFirestore.collection("inspections").doc(id).update(updateData); 
-                } catch (e) { 
-                    showAlert("Erro ao atualizar.", "error"); 
-                } 
-            };
-            
+            const handleToggleDelete = async (id, status) => { if(!dbFirestore) return; try { const updateData = { deleted: status }; if (status) { updateData.deleted_at = new Date().toISOString(); } else { updateData.deleted_at = null; } await dbFirestore.collection("inspections").doc(id).update(updateData); } catch (e) { showAlert("Erro ao atualizar.", "error"); } };
             const handleDeletePermanently = async (id) => { if(!dbFirestore) return; try { await dbFirestore.collection("inspections").doc(id).delete(); } catch (e) { showAlert("Erro ao excluir.", "error"); } };
             const handleLogin = (name, unitName) => { localStorage.setItem('trfire_user', name); localStorage.setItem('trfire_unit', unitName); setResponsible(name); setCurrentUnit(unitName); navigateTo('menu'); };
 
@@ -1191,9 +1291,10 @@
                     {page === 'menu' && <MenuScreen onNavigate={navigateTo} responsibleName={responsible} currentUnit={currentUnit} onStartInspection={handleStartInspection} usersList={users} onInstallApp={handleInstallClick} />}
                     {page === 'adminMenu' && <AdminMenuScreen onNavigate={navigateTo} />}
                     {page === 'accessControl' && <AccessControlScreen onNavigate={navigateTo} usersList={users} onUpdatePermissions={handleUpdateUserPermissions} />}
-                    {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={navigateTo} onSelectLocation={handleRoundStart} db={db} responsibleName={responsible} />}
+                    {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={navigateTo} onSelectLocation={handleRoundStart} db={db} responsibleName={responsible} roundLocationsList={roundLocationsList} />}
                     {page === 'userRegister' && <UserRegisterScreen onNavigate={navigateTo} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} />}
                     {page === 'unitRegister' && <UnitRegisterScreen onNavigate={navigateTo} onSaveUnit={handleSaveUnit} unitsList={units} onUpdateUnit={handleUpdateUnit} onDeleteUnit={handleDeleteUnit} showAlert={showAlert} showConfirm={showConfirm} />}
+                    {page === 'roundLocRegister' && <RoundLocationsRegisterScreen onNavigate={navigateTo} onSaveLocation={handleSaveRoundLocation} onUpdateLocation={handleUpdateRoundLocation} locationsList={roundLocationsList} onDeleteLocation={handleDeleteRoundLocation} showAlert={showAlert} showConfirm={showConfirm} />}
                     {page === 'scan' && <ScannerScreen onNavigate={(target) => navigateTo(target === 'menu' && inspectionType === 'RONDA' ? 'roundsLocation' : target)} onScanSuccess={(d)=>{setScanRes(d); navigateTo(inspectionType === 'RONDA' ? 'roundsForm' : 'form')}} db={db} inspectionType={inspectionType} showAlert={showAlert} />}
                     {page === 'form' && <FormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} onSave={handleSave} inspectionType={inspectionType} showAlert={showAlert} />}
                     {page === 'roundsForm' && <RoundsFormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} roundLocation={roundLocation} onSave={handleSave} currentUnit={currentUnit} showAlert={showAlert} />}

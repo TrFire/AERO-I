@@ -3,21 +3,16 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V57.0 (08/02/2026) - REFERENCE & INSTALL FIX
+    VERSÃO ESTÁVEL V58.0 (08/02/2026) - HIDE INSTALL BUTTON
     ============================================================================
-    CORREÇÕES TÉCNICAS:
-    1. Erro 'handleInstallClick is not defined': A função foi recolocada no 
-       escopo correto dentro do componente App.
-    2. Erro 'ResponsibleScreen is not defined': Todos os componentes foram 
-       convertidos para declaração 'function' (hoisting) para evitar erros de 
-       inicialização.
-    3. Admin: Adicionada a prop 'onNavigate' em falta na tela ResponsibleScreen
-       para permitir o acesso secreto ao Admin.
+    ALTERAÇÕES VISUAIS:
+    1. Menu Principal: O botão "INSTALAR APP" foi removido da interface conforme
+       solicitado, deixando o cabeçalho mais limpo.
     
-    FUNCIONALIDADES:
-    - Foto: Câmera traseira forçada.
-    - PWA: Botão de instalação funcional.
-    - Histórico: Seleção por categoria.
+    MANUTENÇÃO TÉCNICA:
+    - Mantidas todas as correções de referência (Componentes definidos antes do App).
+    - Mantida a configuração da câmera traseira (capture="environment").
+    - Mantida a sintaxe V8 do Firestore para evitar tela branca.
     ============================================================================
     -->
 
@@ -129,6 +124,7 @@
             else { app = firebase.app(); }
             dbFirestore = firebase.firestore();
             auth = firebase.auth();
+            console.log("Firebase conectado.");
         } catch (error) { console.error("Erro Firebase:", error); }
 
         const LOGO_SRC = "logo.png"; 
@@ -241,7 +237,7 @@
                     <div className="absolute bottom-2 w-full text-center space-y-1"><div className="text-white/90 text-[10px] text-center mb-0.5 leading-tight font-medium"><p>Copyright © 2026 Fire Personality ME</p><p>Todos os direitos reservados</p><p>(Thawillys Rocha)</p></div><p className="text-white/40 text-[10px]">Versão Beta 1.5</p></div>
                 </div>
             );
-        }
+        };
 
         function UnitRegisterScreen({ onNavigate, onSaveUnit, unitsList, onUpdateUnit, onDeleteUnit, showAlert, showConfirm }) {
             const [newUnit, setNewUnit] = useState({ name: '', address: '' });
@@ -260,7 +256,7 @@
                     <div className="mt-8 space-y-2">{unitsList && unitsList.map(u => (<div key={u.id} className="p-4 border rounded-xl flex justify-between"><div><b>{u.name}</b><br/><span className="text-xs">{u.address}</span></div><div><button onClick={() => handleEditClick(u)} className="mr-2 text-blue-500"><i className="fas fa-pen"></i></button><button onClick={()=>showConfirm("Excluir?", ()=>onDeleteUnit(u.id), "error")} className="text-red-500"><i className="fas fa-trash"></i></button></div></div>))}</div>
                 </div>
             );
-        }
+        };
 
         function UserRegisterScreen({ onNavigate, onSaveUser, usersList, unitsList, onUpdateUser, onDeleteUser, showAlert, showConfirm, backDestination = 'adminMenu' }) {
             const [newUser, setNewUser] = useState({ name: '', pass: '', unit: '' });
@@ -287,7 +283,7 @@
                     <div className="mt-8 space-y-2">{usersList && usersList.map(u => (<div key={u.id} className="p-4 border rounded-xl flex justify-between"><div><b>{u.name}</b><br/><span className="text-xs">{u.unit || 'GLOBAL'}</span></div><div><button onClick={() => handleEditClick(u)} className="mr-2 text-blue-500"><i className="fas fa-pen"></i></button><button onClick={()=>showConfirm("Excluir?", ()=>onDeleteUser(u.id), "error")} className="text-red-500"><i className="fas fa-trash"></i></button></div></div>))}</div>
                 </div>
             );
-        }
+        };
 
         function AdminMenuScreen({ onNavigate }) {
             return (
@@ -301,7 +297,7 @@
                     </div>
                 </div>
             );
-        }
+        };
 
         function AccessControlScreen({ onNavigate, usersList, onUpdatePermissions }) {
              const [selectedUser, setSelectedUser] = useState(null);
@@ -321,9 +317,9 @@
                     )}
                 </div>
              );
-        }
+        };
 
-        function MenuScreen({ onNavigate, responsibleName, currentUnit, onStartInspection, usersList, onInstallApp }) {
+        function MenuScreen({ onNavigate, responsibleName, currentUnit, onStartInspection, usersList }) {
             const isAdmin = responsibleName === "ADMIN" || currentUnit === "GLOBAL";
             const userPerms = useMemo(() => {
                 if (!usersList || usersList.length === 0) return ['EXTINTOR', 'HIDRANTE', 'HISTORICO']; 
@@ -338,9 +334,6 @@
                     <div className="absolute top-0 left-0 w-full bg-gray-100 dark:bg-gray-800 p-2 px-4 flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
                         <div><span>Olá, <b>{responsibleName}</b></span><br/><span className="text-[10px]">{currentUnit}</span></div>
                         <div className="flex gap-2">
-                            <button onClick={onInstallApp} className="text-brand-orange font-bold bg-white px-2 py-1 rounded shadow-sm text-[10px] border border-brand-orange hover:bg-orange-50">
-                                <i className="fas fa-download mr-1"></i> INSTALAR APP
-                            </button>
                             <button onClick={handleLogout} className="text-brand-red font-bold">Sair</button>
                         </div>
                     </div>
@@ -356,7 +349,7 @@
                     </div>
                 </div>
             );
-        }
+        };
 
         function RoundsLocationScreen({ onNavigate, onSelectLocation, db, responsibleName }) {
             const [shiftInfo, setShiftInfo] = useState({ name: '', start: null, end: null });
@@ -406,7 +399,7 @@
 
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-3 animate-fade-in relative">
-                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate('menu')} className="w-10 h-10 rounded-full bg-gray-100"><i className="fas fa-arrow-left"></i></button></div>
+                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate('menu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
                     <div className="mt-16 text-center mb-6"><h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">LOCAIS DE RONDA</h2></div>
                     <div className="flex-1 overflow-y-auto space-y-3 pb-6">
                         {ROUND_LOCATIONS.map(loc => {
@@ -455,7 +448,7 @@
                     </div>
                 </div>
             );
-        }
+        };
 
         function RoundsFormScreen({ initialData, onNavigate, onSave, responsibleName, roundLocation, currentUnit, showAlert }) {
             const savedForm = useMemo(() => {
@@ -474,16 +467,21 @@
              const handlePhotoChange = (e) => { 
                 const file = e.target.files[0]; 
                 if (file) { 
-                    const reader = new FileReader(); reader.onload = (event) => { 
-                        const img = new Image(); img.onload = () => { 
-                            const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d'); 
+                    const reader = new FileReader(); 
+                    reader.onload = (event) => { 
+                        const img = new Image(); 
+                        img.onload = () => { 
+                            const canvas = document.createElement('canvas'); 
+                            const ctx = canvas.getContext('2d'); 
                             const MAX = 400; 
                             let width = img.width; let height = img.height; 
                             if (width > height) { if (width > MAX) { height *= MAX / width; width = MAX; } } else { if (height > MAX) { width *= MAX / height; height = MAX; } } 
                             canvas.width = width; canvas.height = height; ctx.drawImage(img, 0, 0, width, height); 
                             setForm(prev => ({ ...prev, photo: canvas.toDataURL('image/jpeg', 0.5) })); 
-                        }; img.src = event.target.result; 
-                    }; reader.readAsDataURL(file); 
+                        }; 
+                        img.src = event.target.result; 
+                    }; 
+                    reader.readAsDataURL(file); 
                 } 
              };
              const save = async () => { 
@@ -508,7 +506,7 @@
                     </div>
                 </div>
             );
-        }
+        };
 
         function FormScreen({ initialData, onNavigate, onSave, responsibleName, inspectionType, showAlert }) {
              const savedForm = useMemo(() => {
@@ -589,9 +587,9 @@
                     </div>
                 </div>
             );
-        }
+        };
 
-        function ListScreen({ data, onNavigate, onToggleDelete, onDeletePermanently, onImportData, currentUser, showAlert, showConfirm }) {
+        const ListScreen = ({ data, onNavigate, onToggleDelete, onDeletePermanently, onImportData, currentUser, showAlert, showConfirm }) => {
             const [showFilter, setShowFilter] = useState(false);
             const [showPdfModal, setShowPdfModal] = useState(false); 
             const [showBackupModal, setShowBackupModal] = useState(false);
@@ -718,7 +716,7 @@
             return (
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black relative">
                     <div className="bg-red-900 text-white p-3 shadow-md flex justify-between items-center sticky top-0 z-20">
-                        <div className="flex items-center gap-2">{showBin ? (<button onClick={()=>setShowBin(false)} className="bg-white/20 px-3 py-1 rounded text-xs">VOLTAR</button>) : (<button onClick={()=>onNavigate('menu')} className="bg-orange-500 px-3 py-1 rounded text-xs font-bold">NOVA</button>)}<span className="text-xs ml-2">{showBin ? 'Lixeira' : `${displayList.length} itens`}</span></div>
+                        <div className="flex items-center gap-2">{showBin ? (<button onClick={()=>setShowBin(false)} className="bg-white/20 px-3 py-1 rounded text-xs">VOLTAR</button>) : (<button onClick={()=>onNavigate('menu')} className="bg-orange-500 px-3 py-1 rounded text-xs font-bold">NOVA LEITURA</button>)}<span className="text-xs ml-2">{showBin ? 'Lixeira' : `${displayList.length} itens`}</span></div>
                         <div className="flex gap-3">{!showBin && (<><i onClick={() => setShowFilter(!showFilter)} className="fas fa-filter text-lg text-yellow-400 cursor-pointer"></i><i onClick={() => setShowPdfModal(true)} className="fas fa-file-pdf text-lg cursor-pointer"></i>{isAdmin && <i onClick={() => setShowBackupModal(true)} className="fas fa-cloud-download-alt text-lg text-blue-300 cursor-pointer"></i>}</>)}<i onClick={() => setShowBin(!showBin)} className={`fas ${showBin ? 'fa-list' : 'fa-trash'} text-lg cursor-pointer`}></i></div>
                     </div>
                     {/* Toolbar de Ações em Massa */}
@@ -1014,6 +1012,8 @@
                                 console.log("Criando usuário ADMIN padrão...");
                                 await dbFirestore.collection("users").add({ name: "ADMIN", pass: "Admin160589", unit: "GLOBAL" });
                             } else if (adminUser.pass !== "Admin160589") {
+                                // Atualiza a senha se estiver diferente (ex: versão antiga)
+                                console.log("Atualizando senha do ADMIN...");
                                 await dbFirestore.collection("users").doc(adminUser.id).update({ pass: "Admin160589" });
                             }
                         });
@@ -1038,7 +1038,6 @@
                     })
                     .catch((error) => {
                         console.error("Erro na autenticação:", error);
-                        // Tratamento específico para erros
                         if (error.code === 'auth/configuration-not-found' || error.code === 'auth/operation-not-allowed') {
                             setAuthError({
                                 type: 'config_missing',
@@ -1061,8 +1060,10 @@
 
             const handleSave = async (formData) => { 
                 if(!dbFirestore) { showAlert("Erro: Banco de dados não conectado.", "error"); return false; } 
+                
                 const cleanData = JSON.parse(JSON.stringify(formData));
                 cleanData.unit = currentUnit || "NÃO DEFINIDA"; 
+
                 try { 
                     await dbFirestore.collection("inspections").add(cleanData); 
                     navigateTo('list'); 
@@ -1082,9 +1083,10 @@
             const handleImportData = async (jsonData) => { if(!dbFirestore) return showAlert("Erro BD.", "error"); if(!Array.isArray(jsonData)) return showAlert("JSON Inválido.", "error"); showConfirm(`Importar ${jsonData.length} registros?`, async () => { let c=0; for (const i of jsonData) { try { if (i.id) await dbFirestore.collection("inspections").doc(i.id).set(i); else await dbFirestore.collection("inspections").add(i); c++; } catch(e){} } showAlert(`Sucesso: ${c}`, "success"); }, "warning"); };
             const handleToggleDelete = async (id, status) => { if(!dbFirestore) return; try { const updateData = { deleted: status }; if (status) { updateData.deleted_at = new Date().toISOString(); } else { updateData.deleted_at = null; } await dbFirestore.collection("inspections").doc(id).update(updateData); } catch (e) { showAlert("Erro ao atualizar.", "error"); } };
             const handleDeletePermanently = async (id) => { if(!dbFirestore) return; try { await dbFirestore.collection("inspections").doc(id).delete(); } catch (e) { showAlert("Erro ao excluir.", "error"); } };
-            const handleLogin = (name, unitName) => { localStorage.setItem('trfire_user', name); localStorage.setItem('trfire_unit', unitName); setResponsible(name); setCurrentUnit(unitName); setPage('menu'); };
-            const handleStartInspection = (type) => { setInspectionType(type); setPage('scan'); };
-            const handleRoundStart = (location) => { setRoundLocation(location); setInspectionType('RONDA'); setPage('scan'); };
+            const handleLogin = (name, unitName) => { localStorage.setItem('trfire_user', name); localStorage.setItem('trfire_unit', unitName); setResponsible(name); setCurrentUnit(unitName); navigateTo('menu'); };
+
+            const handleStartInspection = (type) => { setInspectionType(type); navigateTo('scan'); };
+            const handleRoundStart = (location) => { setRoundLocation(location); setInspectionType('RONDA'); navigateTo('scan'); };
 
             if (authError) {
                 return <AuthErrorScreen error={authError} />;
@@ -1093,18 +1095,18 @@
             return (
                 <ErrorBoundary>
                     <NotificationModal isOpen={notification.isOpen} message={notification.message} type={notification.type} isConfirmation={notification.isConfirmation} onClose={closeNotification} onConfirm={notification.onConfirm} />
-                    {page === 'responsible' && <ResponsibleScreen onConfirm={handleLogin} usersList={users} unitsList={units} showAlert={showAlert} onNavigate={setPage} />}
-                    {page === 'menu' && <MenuScreen onNavigate={setPage} responsibleName={responsible} currentUnit={currentUnit} onStartInspection={handleStartInspection} usersList={users} onInstallApp={handleInstallClick} />}
-                    {page === 'adminMenu' && <AdminMenuScreen onNavigate={setPage} />}
-                    {page === 'accessControl' && <AccessControlScreen onNavigate={setPage} usersList={users} onUpdatePermissions={handleUpdateUserPermissions} />}
-                    {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={setPage} onSelectLocation={handleRoundStart} db={db} responsibleName={responsible} />}
-                    {page === 'userRegister' && <UserRegisterScreen onNavigate={setPage} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} />}
-                    {page === 'unitRegister' && <UnitRegisterScreen onNavigate={setPage} onSaveUnit={handleSaveUnit} unitsList={units} onUpdateUnit={handleUpdateUnit} onDeleteUnit={handleDeleteUnit} showAlert={showAlert} showConfirm={showConfirm} />}
-                    {page === 'scan' && <ScannerScreen onNavigate={(target) => setPage(target === 'menu' && inspectionType === 'RONDA' ? 'roundsLocation' : target)} onScanSuccess={(d)=>{setScanRes(d); setPage(inspectionType === 'RONDA' ? 'roundsForm' : 'form')}} db={db} inspectionType={inspectionType} showAlert={showAlert} />}
-                    {page === 'form' && <FormScreen initialData={scanRes} onNavigate={setPage} responsibleName={responsible} onSave={handleSave} inspectionType={inspectionType} showAlert={showAlert} />}
-                    {page === 'roundsForm' && <RoundsFormScreen initialData={scanRes} onNavigate={setPage} responsibleName={responsible} roundLocation={roundLocation} onSave={handleSave} currentUnit={currentUnit} showAlert={showAlert} />}
-                    {page === 'list' && <ListScreen data={db} onNavigate={setPage} onToggleDelete={handleToggleDelete} onDeletePermanently={onDeletePermanently} onImportData={onImportData} currentUser={responsible} showAlert={showAlert} showConfirm={showConfirm} />}
-                    {page === 'adminSetup' && <UserRegisterScreen onNavigate={setPage} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} backDestination="responsible" />}
+                    {page === 'responsible' && <ResponsibleScreen onConfirm={handleLogin} usersList={users} unitsList={units} showAlert={showAlert} onNavigate={navigateTo} />}
+                    {page === 'menu' && <MenuScreen onNavigate={navigateTo} responsibleName={responsible} currentUnit={currentUnit} onStartInspection={handleStartInspection} usersList={users} onInstallApp={handleInstallClick} />}
+                    {page === 'adminMenu' && <AdminMenuScreen onNavigate={navigateTo} />}
+                    {page === 'accessControl' && <AccessControlScreen onNavigate={navigateTo} usersList={users} onUpdatePermissions={handleUpdateUserPermissions} />}
+                    {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={navigateTo} onSelectLocation={handleRoundStart} db={db} responsibleName={responsible} />}
+                    {page === 'userRegister' && <UserRegisterScreen onNavigate={navigateTo} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} />}
+                    {page === 'unitRegister' && <UnitRegisterScreen onNavigate={navigateTo} onSaveUnit={handleSaveUnit} unitsList={units} onUpdateUnit={handleUpdateUnit} onDeleteUnit={handleDeleteUnit} showAlert={showAlert} showConfirm={showConfirm} />}
+                    {page === 'scan' && <ScannerScreen onNavigate={(target) => navigateTo(target === 'menu' && inspectionType === 'RONDA' ? 'roundsLocation' : target)} onScanSuccess={(d)=>{setScanRes(d); navigateTo(inspectionType === 'RONDA' ? 'roundsForm' : 'form')}} db={db} inspectionType={inspectionType} showAlert={showAlert} />}
+                    {page === 'form' && <FormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} onSave={handleSave} inspectionType={inspectionType} showAlert={showAlert} />}
+                    {page === 'roundsForm' && <RoundsFormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} roundLocation={roundLocation} onSave={handleSave} currentUnit={currentUnit} showAlert={showAlert} />}
+                    {page === 'list' && <ListScreen data={db} onNavigate={navigateTo} onToggleDelete={handleToggleDelete} onDeletePermanently={handleDeletePermanently} onImportData={handleImportData} currentUser={responsible} showAlert={showAlert} showConfirm={showConfirm} />}
+                    {page === 'adminSetup' && <UserRegisterScreen onNavigate={navigateTo} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} backDestination="responsible" />}
                 </ErrorBoundary>
             );
         }

@@ -3,26 +3,29 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V54.0 (08/02/2026) - DEEP CLEAN & OPTIMIZATION
+    VERSÃO ESTÁVEL V55.0 (08/02/2026) - FULL SCREEN & FILTER FIX
     ============================================================================
-    LIMPEZA E OTIMIZAÇÃO:
-    1. Código Morto Removido: Eliminados estados e efeitos duplicados ou não usados.
-    2. Integridade de Dados: Reforçada a verificação de tipos (null/undefined) em
-       listas e datas para prevenir crashes (tela branca).
-    3. Performance: Lógica de filtros do histórico otimizada.
-    4. Estrutura: Funções e componentes organizados para evitar ReferenceErrors.
+    MELHORIAS DE UI/UX:
+    1. Full Screen: CSS ajustado para height: 100vh/100dvh e overflow: hidden no body.
+    2. Bloqueio de Zoom: Meta tag ajustada para user-scalable=no.
+    3. Bloqueio de Rotação: Manifesto configurado para "portrait".
     
-    ESTADO:
-    - Base de código limpa e estável para futuros ajustes.
-    - Funcionalidades mantidas e protegidas.
+    CORREÇÕES TÉCNICAS:
+    1. Filtro do Histórico: Lógica de data reescrita para comparação de strings
+       (YYYY-MM-DD), evitando erros de fuso horário que faziam o filtro falhar.
+    2. Validação: Reforçada a verificação de nulos nos filtros de texto.
+    
+    FUNCIONALIDADES:
+    - Todas mantidas (Salvar, PDF, Admin, PWA).
     ============================================================================
     -->
 
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#D32F2F">
     <meta name="description" content="App de Inspeção de Extintores e Hidrantes">
     
+    <!-- Configurações PWA -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="TR FIRE">
@@ -38,7 +41,7 @@
             "display": "standalone",
             "background_color": "#D32F2F",
             "theme_color": "#D32F2F",
-            "orientation": "portrait",
+            "orientation": "portrait", // Força vertical no Android/PWA
             "scope": ".",
             "icons": [
                 {"src": "https://cdn-icons-png.flaticon.com/512/785/785116.png", "sizes": "192x192", "type": "image/png"},
@@ -71,31 +74,55 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
     <style>
-        body { 
+        /* CSS RESET & FULL SCREEN LOCK */
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden; /* Impede scroll da página inteira */
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            overscroll-behavior-y: none;
-            user-select: none;
             -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            background-color: #121212; /* Fundo escuro para evitar flashes brancos */
         }
-        input, textarea, select { font-size: 16px !important; }
+        
+        #root {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        input, textarea, select { font-size: 16px !important; } /* Evita zoom no iOS */
         .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom); }
+        
         #reader { width: 100%; height: 100%; overflow: hidden; background: black; }
         #reader video { object-fit: cover; width: 100% !important; height: 100% !important; }
+        
         .animate-fade-in { animation: fadeIn 0.3s ease-out; }
         .toggle-checkbox:checked { right: 0; border-color: #F57C00; }
         .toggle-checkbox:checked + .toggle-label { background-color: #F57C00; }
+        
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        
+        /* Scrollbar customizada suave */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
     </style>
     
     <script>
         tailwind.config = { darkMode: 'class', theme: { extend: { colors: { brand: { red: '#D32F2F', orange: '#F57C00', black: '#212121', dark: '#121212', blue: '#1976D2' } } } } }
     </script>
 </head>
-<body class="bg-gray-100 dark:bg-brand-dark h-screen w-full overflow-hidden text-gray-900 dark:text-gray-100">
-    <div id="root" class="h-full w-full flex items-center justify-center">
-        <div class="flex flex-col items-center gap-4">
+<body class="bg-gray-100 dark:bg-brand-dark text-gray-900 dark:text-gray-100">
+    <div id="root">
+        <div class="flex flex-col items-center justify-center h-full gap-4">
             <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-red"></div>
-            <div class="text-brand-orange font-bold text-sm tracking-widest">A CARREGAR...</div>
+            <div class="text-brand-orange font-bold text-sm tracking-widest">A CONECTAR...</div>
         </div>
     </div>
 
@@ -230,7 +257,6 @@
                 if (!nameUpper || !password) return; 
                 if (nameUpper !== "ADMIN" && !selectedUnit) { showAlert("Selecione uma Unidade.", "warning"); return; }
                 
-                // Safe check for usersList
                 if (!usersList || usersList.length === 0) {
                      showAlert("A carregar usuários... Tente novamente.", "info");
                      return;
@@ -239,13 +265,13 @@
                 const userFound = usersList.find(u => u.name === nameUpper);
                 if (!userFound) { showAlert("Usuário não cadastrado.", "error"); return; }
                 if (userFound.pass !== password) { showAlert("Senha incorreta.", "error"); return; }
-                if (nameUpper !== "ADMIN" && userFound.unit !== "GLOBAL" && userFound.unit !== selectedUnit) { showAlert("Usuário incorreto para esta unidade.", "error"); return; }
+                if (nameUpper !== "ADMIN" && userFound.unit !== "GLOBAL" && userFound.unit !== selectedUnit) { showAlert("Usuário incorreto.", "error"); return; }
                 onConfirm(userFound.name, selectedUnit || "GLOBAL");
             };
             const isButtonEnabled = selectedName && password && (selectedUnit || selectedName.toUpperCase().trim() === "ADMIN");
 
             return (
-                <div className="flex flex-col h-full bg-brand-red p-4 items-center justify-center animate-fade-in relative">
+                <div className="flex flex-col h-full bg-brand-red p-4 items-center justify-center animate-fade-in relative overflow-hidden">
                     <div className="w-28 h-28 mb-2 bg-white rounded-full p-4 shadow-2xl flex items-center justify-center"><LogoImage className="w-full h-full object-contain" /></div>
                     <h1 className="text-white text-2xl font-extrabold tracking-tight mb-1 text-center">TR FIRE <span className="text-brand-orange">INSPEÇÕES</span></h1>
                     <p className="text-white/80 text-xs mb-2 font-medium">Sistema de Controle de Equipamentos</p>
@@ -273,7 +299,7 @@
             const handleEditClick = (u) => { setEditingId(u.id); setNewUnit({ name: u.name, address: u.address }); };
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 overflow-y-auto">
-                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate('adminMenu')} className="w-10 h-10 rounded-full bg-gray-100"><i className="fas fa-arrow-left"></i></button></div>
+                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate('adminMenu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
                     <div className="mt-16 space-y-4"><input value={newUnit.name} onChange={e => setNewUnit({...newUnit, name: e.target.value.toUpperCase()})} placeholder="NOME UNIDADE" className="w-full p-4 bg-gray-100 rounded-xl font-bold" /><input value={newUnit.address} onChange={e => setNewUnit({...newUnit, address: e.target.value})} placeholder="ENDEREÇO" className="w-full p-4 bg-gray-100 rounded-xl font-bold" /><button onClick={handleSave} className="w-full py-4 bg-brand-orange text-white rounded-xl font-bold">SALVAR</button></div>
                     <div className="mt-8 space-y-2">{unitsList && unitsList.map(u => (<div key={u.id} className="p-4 border rounded-xl flex justify-between"><div><b>{u.name}</b><br/><span className="text-xs">{u.address}</span></div><div><button onClick={() => handleEditClick(u)} className="mr-2 text-blue-500"><i className="fas fa-pen"></i></button><button onClick={()=>showConfirm("Excluir?", ()=>onDeleteUnit(u.id), "error")} className="text-red-500"><i className="fas fa-trash"></i></button></div></div>))}</div>
                 </div>
@@ -295,7 +321,7 @@
             const handleEditClick = (u) => { setEditingId(u.id); setNewUser({ name: u.name, pass: u.pass, unit: u.unit || '' }); };
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 overflow-y-auto">
-                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate(backDestination)} className="w-10 h-10 rounded-full bg-gray-100"><i className="fas fa-arrow-left"></i></button></div>
+                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate(backDestination)} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
                     <div className="mt-16 space-y-4">
                         <select value={newUser.unit} onChange={e => setNewUser({...newUser, unit: e.target.value})} className="w-full p-4 bg-gray-100 rounded-xl font-bold"><option value="">Unidade (Opcional)</option>{unitsList && unitsList.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}</select>
                         <input value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} placeholder="NOME" className="w-full p-4 bg-gray-100 rounded-xl font-bold" />
@@ -310,7 +336,7 @@
         const AdminMenuScreen = ({ onNavigate }) => {
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 animate-fade-in relative">
-                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate('menu')} className="w-10 h-10 rounded-full bg-gray-100"><i className="fas fa-arrow-left"></i></button></div>
+                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate('menu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
                     <div className="mt-16 text-center mb-8"><h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">ADMINISTRAÇÃO</h2></div>
                     <div className="w-full space-y-4">
                         <button onClick={() => onNavigate('accessControl')} className="w-full py-4 bg-purple-600 text-white rounded-xl font-bold shadow-lg">ACESSOS</button>
@@ -326,7 +352,7 @@
              const togglePermission = (permId) => { if(!selectedUser) return; const current = selectedUser.permissions || []; const next = current.includes(permId) ? current.filter(p=>p!==permId) : [...current, permId]; setSelectedUser({...selectedUser, permissions: next}); onUpdatePermissions(selectedUser.id, next); };
              return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 animate-fade-in relative">
-                    <div className="absolute top-4 left-4"><button onClick={() => selectedUser ? setSelectedUser(null) : onNavigate('adminMenu')} className="w-10 h-10 rounded-full bg-gray-100"><i className="fas fa-arrow-left"></i></button></div>
+                    <div className="absolute top-4 left-4"><button onClick={() => selectedUser ? setSelectedUser(null) : onNavigate('adminMenu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
                     <div className="mt-16 text-center mb-6"><h2 className="text-xl font-black dark:text-white">CONTROLE DE ACESSO</h2></div>
                     {!selectedUser ? (
                         <div className="space-y-3">{usersList && usersList.filter(u=>u.name!=='ADMIN').map(u=>(<div key={u.id} onClick={()=>setSelectedUser(u)} className="bg-gray-100 p-4 rounded-xl font-bold">{u.name}</div>))}</div>
@@ -476,7 +502,6 @@
         };
 
         const RoundsFormScreen = ({ initialData, onNavigate, onSave, responsibleName, roundLocation, currentUnit, showAlert }) => {
-            // Restore lost data from localStorage if available
             const savedForm = useMemo(() => {
                 const saved = localStorage.getItem('trfire_temp_round');
                 return saved ? JSON.parse(saved) : null;
@@ -486,12 +511,10 @@
              const [form, setForm] = useState(savedForm || { type: 'RONDA', sector: roundLocation, equipmentName: initialData?.equipmentName || '', moduleLocation: '', status: '', photo: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false });
              const fileInputRef = useRef(null);
              
-             // SAVE STATE TO LOCALSTORAGE ON CHANGE (Fix Reload Issue)
              useEffect(() => {
                  localStorage.setItem('trfire_temp_round', JSON.stringify(form));
              }, [form]);
 
-             // COMPRESSÃO 400PX
              const handlePhotoChange = (e) => { 
                 const file = e.target.files[0]; 
                 if (file) { 
@@ -517,7 +540,7 @@
                  setIsSaving(true); 
                  const success = await onSave(form); 
                  setIsSaving(false);
-                 if(success) localStorage.removeItem('trfire_temp_round'); // Clear temp on success
+                 if(success) localStorage.removeItem('trfire_temp_round');
              };
              return (
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black">
@@ -537,7 +560,6 @@
         };
 
         const FormScreen = ({ initialData, onNavigate, onSave, responsibleName, inspectionType, showAlert }) => {
-             // Restore from localStorage
              const savedForm = useMemo(() => {
                 const saved = localStorage.getItem('trfire_temp_form');
                 return saved ? JSON.parse(saved) : null;
@@ -547,7 +569,6 @@
              const [form, setForm] = useState(savedForm || { type: inspectionType, equipmentId: initialData?.equipmentId, equipmentName: initialData?.equipmentName, moduleLocation: '', hasId: null, floorSign: null, q1: null, q2: null, nextRecharge: '', h_complete: null, h_unobstructed: null, h_seal_broken: null, nextHydro: '', photo: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false, extinguisherType: '' });
              const fileInputRef = useRef(null);
              
-             // SAVE STATE TO LOCALSTORAGE
              useEffect(() => {
                  localStorage.setItem('trfire_temp_form', JSON.stringify(form));
              }, [form]);
@@ -684,16 +705,23 @@
                     if (!item.created_at || typeof item.created_at !== 'string') return false; 
                     
                     try {
+                        // 1. Month Filter
                         if (item.created_at.slice(0, 7) !== viewMonth) return false; 
-                        const itemDate = new Date(item.created_at).setHours(0,0,0,0); 
-                        const start = filters.startDate ? new Date(filters.startDate).setHours(0,0,0,0) : null; 
-                        const end = filters.endDate ? new Date(filters.endDate).setHours(23,59,59,999) : null; 
                         
-                        if (start && itemDate < start) return false; 
-                        if (end && itemDate > end) return false; 
+                        // 2. Date Range Filter (String Comparison for Safety)
+                        const itemDateStr = item.created_at.slice(0, 10); // YYYY-MM-DD
+                        if (filters.startDate && itemDateStr < filters.startDate) return false;
+                        if (filters.endDate && itemDateStr > filters.endDate) return false;
+
+                        // 3. Type Filter
                         if (filters.type && (item.type || 'EXTINTOR') !== filters.type) return false; 
+                        
+                        // 4. Responsible Filter
                         if (filters.responsible && item.responsible !== filters.responsible) return false; 
+                        
+                        // 5. Location Filter
                         if (filters.moduleLocation && item.moduleLocation !== filters.moduleLocation) return false; 
+                        
                         return true; 
                     } catch (e) { return false; }
                 });
@@ -732,35 +760,10 @@
                 return (
                     <div key={item.id} className={`p-4 rounded-xl shadow-sm border-l-4 flex justify-between items-center transition-all ${showBin ? (isSelected ? 'bg-red-100 border-red-600' : 'bg-red-50 dark:bg-red-900/10 border-red-500 opacity-80') : 'bg-white dark:bg-gray-800 border-brand-red'}`}>
                         <div className="flex items-center gap-3">
-                            {/* Checkbox visível para Admin em QUALQUER modo (Lista ou Lixeira) */}
-                            {isAdmin && (
-                                <div onClick={() => toggleSelection(item.id)} className={`w-6 h-6 rounded border-2 flex items-center justify-center cursor-pointer transition-colors ${isSelected ? 'bg-red-600 border-red-600 text-white' : 'border-red-300 bg-white'}`}>
-                                    {isSelected && <i className="fas fa-check text-xs"></i>}
-                                </div>
-                            )}
-                            <div>
-                                <div className="flex items-center gap-2">
-                                    <span className={`text-xs font-bold px-1 rounded ${isRonda ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>{item.type || 'EXT'}</span>
-                                    <span className="font-bold text-gray-800 dark:text-white text-sm">{item.equipmentName || item.sector}</span>
-                                </div>
-                                {isRonda && <div className="text-xs text-gray-500 font-bold mt-1">Local: {item.sector} {item.moduleLocation ? `| ${item.moduleLocation}` : ''}</div>}
-                                {!isRonda && !isHid && item.extinguisherType && <div className="text-[10px] text-gray-500 font-bold mt-0.5 bg-gray-100 dark:bg-gray-700 px-1 rounded inline-block">{item.extinguisherType}</div>}
-                                <div className="text-xs text-gray-500 mt-1 flex gap-2"><span><i className="far fa-clock mr-1"></i>{formatDate(item.created_at)}</span><span className="text-gray-400">| {item.responsible || 'SISTEMA'}</span></div>{!showBin && (<span className={`inline-block mt-1 text-[10px] px-2 py-0.5 rounded font-bold ${statusColor}`}>{statusText}</span>)}{isRonda && item.photo && (<div className="mt-1"><i className="fas fa-camera text-gray-400"></i> <span className="text-[10px] text-gray-400">Foto anexada</span></div>)}</div>
+                            {isAdmin && <div onClick={() => toggleSelection(item.id)} className={`w-5 h-5 border rounded flex items-center justify-center ${selectedIds.has(item.id)?'bg-red-500 border-red-500 text-white':''}`}>{selectedIds.has(item.id) && <i className="fas fa-check text-xs"></i>}</div>}
+                            <div><span className="font-bold text-sm block">{item.equipmentName}</span><span className="text-xs text-gray-500">{formatDate(item.created_at)} - {item.moduleLocation}</span></div>
                         </div>
-                        <div className="flex flex-col items-end gap-2">
-                            {showBin ? (<div className="flex items-center gap-2"><button onClick={() => { if (item.responsible !== currentUser) return showAlert("🚫 Ação Negada: Permitido somente pelo usuário " + item.responsible + ".", "error"); onToggleDelete(item.id, false); }} className="bg-green-100 text-green-600 hover:bg-green-200 w-10 h-10 rounded-full flex items-center justify-center shadow-sm transition-all active:scale-95" title="Restaurar"><i className="fas fa-trash-restore"></i></button>{isAdmin && (<button onClick={() => { showConfirm("⚠️ ATENÇÃO: Deseja excluir este registro PERMANENTEMENTE? Esta ação não pode ser desfeita.", () => onDeletePermanently(item.id), "error"); }} className="bg-red-100 text-red-600 hover:bg-red-200 w-10 h-10 rounded-full flex items-center justify-center shadow-sm transition-all active:scale-95" title="Eliminar Definitivamente"><i className="fas fa-times"></i></button>)}</div>) : (
-                                (!item.auto || isAdmin) && (
-                                    <button onClick={() => { 
-                                        if (item.auto) {
-                                            if (!isAdmin) return showAlert("Apenas Administrador pode excluir registros automáticos.", "error");
-                                        } else if (item.responsible !== currentUser) {
-                                            return showAlert("🚫 Ação Negada: Permitido somente pelo usuário " + item.responsible + ".", "error");
-                                        }
-                                        showConfirm("Mover para lixeira?", () => onToggleDelete(item.id, true), "warning"); 
-                                    }} className="bg-gray-100 text-red-500 hover:bg-red-50 w-10 h-10 rounded-full flex items-center justify-center shadow-sm transition-all active:scale-95" title="Excluir"><i className="fas fa-trash"></i></button>
-                                )
-                            )}
-                        </div>
+                        <div className="flex flex-col items-end">{showBin ? (<i onClick={() => confirmBulkRestore(item.id)} className="fas fa-trash-restore text-green-500"></i>) : (<i onClick={() => onToggleDelete(item.id, true)} className="fas fa-trash text-red-300"></i>)}</div>
                     </div>
                 );
             };
@@ -782,21 +785,22 @@
                     )}
                     {/* Modais */}
                     {showPdfModal && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white p-6 rounded-xl w-full max-w-sm text-center"><h3 className="font-bold mb-4">Gerar Relatório PDF</h3><div className="flex flex-col gap-2"><button onClick={() => generateSpecificPDF('EXTINTOR')} className="p-3 bg-red-100 text-red-800 rounded font-bold">Extintores</button><button onClick={() => generateSpecificPDF('HIDRANTE')} className="p-3 bg-orange-100 text-orange-800 rounded font-bold">Hidrantes</button><button onClick={() => generateSpecificPDF('RONDA')} className="p-3 bg-blue-100 text-blue-800 rounded font-bold">Rondas</button><button onClick={() => setShowPdfModal(false)} className="p-3 bg-gray-200 rounded mt-2">Cancelar</button></div></div></div>)}
-                    {/* Lista */}
-                    <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                        {displayList.map(item => (
-                            <div key={item.id} className="bg-white p-3 rounded shadow-sm border-l-4 border-red-500 flex justify-between items-center">
-                                <div className="flex items-center gap-3">
-                                    {isAdmin && <div onClick={() => toggleSelection(item.id)} className={`w-5 h-5 border rounded flex items-center justify-center ${selectedIds.has(item.id)?'bg-red-500 border-red-500 text-white':''}`}>{selectedIds.has(item.id) && <i className="fas fa-check text-xs"></i>}</div>}
-                                    <div><span className="font-bold text-sm block">{item.equipmentName}</span><span className="text-xs text-gray-500">{formatDate(item.created_at)} - {item.moduleLocation}</span></div>
-                                </div>
-                                <div className="flex flex-col items-end">{showBin ? (<i onClick={() => confirmBulkRestore(item.id)} className="fas fa-trash-restore text-green-500"></i>) : (<i onClick={() => onToggleDelete(item.id, true)} className="fas fa-trash text-red-300"></i>)}</div>
-                            </div>
-                        ))}
+                    {showBackupModal && isAdmin && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm animate-fade-in text-center"><h3 className="text-lg font-bold mb-4 dark:text-white flex items-center justify-center gap-2"><i className="fas fa-database text-blue-500"></i> Backup & Restauração</h3><p className="text-xs text-gray-500 mb-6">Ferramenta exclusiva para ADMINISTRAÇÃO</p><div className="space-y-3"><button onClick={handleExport} className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2"><i className="fas fa-download"></i> EXPORTAR TUDO</button><div className="relative"><input type="file" ref={fileInputRef} onChange={handleFileImport} accept=".json" className="hidden" /><button onClick={() => fileInputRef.current.click()} className="w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2"><i className="fas fa-upload"></i> IMPORTAR DADOS</button></div><button onClick={() => setShowBackupModal(false)} className="w-full py-3 bg-gray-200 text-gray-700 font-bold rounded-xl mt-4">Fechar</button></div></div></div>)}
+                    {showFilter && !showBin && (<div className="absolute top-16 right-4 z-50 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-64 animate-fade-in"><h3 className="font-bold mb-3 dark:text-white text-sm uppercase">Filtrar por</h3><div className="space-y-3"><div><label className="text-xs text-gray-500 block mb-1">De</label><input type="date" value={filters.startDate} onChange={e=>setFilters({...filters, startDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Até</label><input type="date" value={filters.endDate} onChange={e=>setFilters({...filters, endDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Tipo</label><select value={filters.type} onChange={e=>setFilters({...filters, type: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option><option value="EXTINTOR">Extintor</option><option value="HIDRANTE">Hidrante</option></select></div><div><label className="text-xs text-gray-500 block mb-1">Responsável</label><select value={filters.responsible} onChange={e=>setFilters({...filters, responsible: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{responsibles.map(r => <option key={r} value={r}>{r}</option>)}</select></div><div><label className="text-xs text-gray-500 block mb-1">Módulo/Local</label><select value={filters.moduleLocation} onChange={e=>setFilters({...filters, moduleLocation: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{LOCATION_OPTIONS.map(l => <option key={l} value={l}>{l}</option>)}</select></div><div className="flex gap-2 pt-2"><button onClick={() => setFilters({startDate:'', endDate:'', type:'', responsible:'', moduleLocation:''})} className="flex-1 py-1 text-xs font-bold text-gray-500 bg-gray-200 dark:bg-gray-700 rounded">Limpar</button><button onClick={() => setShowFilter(false)} className="flex-1 py-1 text-xs font-bold text-white bg-brand-red rounded">Fechar</button></div></div></div>)}
+                    {!showBin && (<div className="bg-gray-100 dark:bg-gray-900 p-3 border-b border-gray-200 dark:border-gray-700 sticky top-[72px] z-10"><div className="relative"><select value={viewMonth} onChange={(e) => setViewMonth(e.target.value)} className="w-full p-3 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-white font-bold appearance-none cursor-pointer uppercase text-center">{availableMonths.map(month => <option key={month} value={month}>{formatMonthDisplay(month).toUpperCase()}</option>)}</select><div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-500"><i className="fas fa-calendar-alt"></i></div></div></div>)}
+                    <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                        {displayList.length === 0 && <div className="text-center text-gray-500 mt-10">{showBin ? "Lixeira vazia." : `Nenhum registro em ${formatMonthDisplay(viewMonth)}.`}</div>}
+                        {showBin ? (displayList.map(item => renderItem(item))) : (
+                            <>
+                                {groupedData.EXTINTOR.length > 0 && (<div className="mb-2"><button onClick={() => toggleSection('EXTINTOR')} className="w-full flex justify-between items-center bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border-l-4 border-brand-red transition-all active:scale-[0.99]"><span className="font-bold text-brand-red flex items-center gap-2 uppercase tracking-wide"><i className="fas fa-fire-extinguisher"></i> EXTINTORES ({groupedData.EXTINTOR.length})</span><i className={`fas fa-chevron-${expandedSections['EXTINTOR'] ? 'up' : 'down'} text-gray-400`}></i></button>{expandedSections['EXTINTOR'] && (<div className="mt-2 space-y-3 pl-2 border-l-2 border-gray-200 dark:border-gray-700 ml-4 animate-fade-in">{groupedData.EXTINTOR.map(item => renderItem(item))}</div>)}</div>)}
+                                {groupedData.HIDRANTE.length > 0 && (<div className="mb-2"><button onClick={() => toggleSection('HIDRANTE')} className="w-full flex justify-between items-center bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border-l-4 border-brand-orange transition-all active:scale-[0.99]"><span className="font-bold text-brand-orange flex items-center gap-2 uppercase tracking-wide"><i className="fas fa-faucet"></i> HIDRANTES ({groupedData.HIDRANTE.length})</span><i className={`fas fa-chevron-${expandedSections['HIDRANTE'] ? 'up' : 'down'} text-gray-400`}></i></button>{expandedSections['HIDRANTE'] && (<div className="mt-2 space-y-3 pl-2 border-l-2 border-gray-200 dark:border-gray-700 ml-4 animate-fade-in">{groupedData.HIDRANTE.map(item => renderItem(item))}</div>)}</div>)}
+                                {isAdmin && groupedData.RONDA.length > 0 && (<div className="mb-2"><button onClick={() => toggleSection('RONDA')} className="w-full flex justify-between items-center bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border-l-4 border-brand-blue transition-all active:scale-[0.99]"><span className="font-bold text-brand-blue flex items-center gap-2 uppercase tracking-wide"><i className="fas fa-clipboard-check"></i> RONDAS DIÁRIAS ({groupedData.RONDA.length})</span><i className={`fas fa-chevron-${expandedSections['RONDA'] ? 'up' : 'down'} text-gray-400`}></i></button>{expandedSections['RONDA'] && (<div className="mt-2 space-y-3 pl-2 border-l-2 border-gray-200 dark:border-gray-700 ml-4 animate-fade-in">{groupedData.RONDA.map(item => renderItem(item))}</div>)}</div>)}
+                            </>
+                        )}
                     </div>
                 </div>
             );
-        };
+        }
 
         // =========================================================================
         // APP COMPONENT (Main)

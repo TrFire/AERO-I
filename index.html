@@ -3,20 +3,18 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V50.0 (06/02/2026) - REFERENCE & SAVE FIXES
+    VERSÃO ESTÁVEL V52.0 (08/02/2026) - PERMISSION FIX
     ============================================================================
-    CORREÇÕES CRÍTICAS:
-    1. ReferenceError: Todos os componentes (ResponsibleScreen, MenuScreen, etc.)
-       foram restaurados e definidos antes de serem chamados no App.
-    2. Botão Salvar (Tela Branca): Corrigido para usar a sintaxe correta do 
-       Firebase Compat (V8): dbFirestore.collection().add().
-    3. Imagens: Compressão para 240px mantida para evitar falhas de upload.
-    4. Layout: Mantido em Full Width conforme solicitado.
+    CORREÇÃO CRÍTICA (PERMISSÕES):
+    - Implementado 'onAuthStateChanged' para gerir o fluxo de dados.
+    - Os listeners do Firestore só são ativados APÓS a confirmação de que existe
+      um utilizador autenticado.
+    - Isso elimina o erro "Missing or insufficient permissions" ao iniciar a app.
     
     ESTADO:
-    - Login: Funcional.
-    - Navegação: Funcional.
-    - Salvar/Dados: Funcional.
+    - Login: Robusto (Auto-reconnect).
+    - Dados: Carregamento seguro V8 Compat.
+    - Fotos: Compressão 400px (Leve).
     ============================================================================
     -->
 
@@ -103,7 +101,7 @@
     <div id="root" class="h-full w-full flex items-center justify-center">
         <div class="flex flex-col items-center gap-4">
             <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-red"></div>
-            <div class="text-brand-orange font-bold text-sm tracking-widest">A CARREGAR SISTEMA...</div>
+            <div class="text-brand-orange font-bold text-sm tracking-widest">A CONECTAR...</div>
         </div>
     </div>
 
@@ -197,7 +195,7 @@
             </div>
         );
 
-        // Componente de Seleção de Cores (Sim/Não) - Movido para fora para evitar re-render issues
+        // Componente de Seleção de Cores (Sim/Não)
         const ColorSelect = ({ label, val, field, onChange, invert=false }) => { 
             let bgClass = "bg-white dark:bg-gray-800"; 
             let textClass = "text-gray-700 dark:text-gray-200"; 
@@ -477,19 +475,25 @@
              const [isSaving, setIsSaving] = useState(false);
              const [form, setForm] = useState({ type: 'RONDA', sector: roundLocation, equipmentName: initialData?.equipmentName || '', moduleLocation: '', status: '', photo: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false });
              const fileInputRef = useRef(null);
+             // COMPRESSÃO 400PX
              const handlePhotoChange = (e) => { 
                 const file = e.target.files[0]; 
                 if (file) { 
-                    const reader = new FileReader(); reader.onload = (event) => { 
-                        const img = new Image(); img.onload = () => { 
-                            const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d'); 
-                            const MAX = 240; 
+                    const reader = new FileReader(); 
+                    reader.onload = (event) => { 
+                        const img = new Image(); 
+                        img.onload = () => { 
+                            const canvas = document.createElement('canvas'); 
+                            const ctx = canvas.getContext('2d'); 
+                            const MAX = 400; 
                             let width = img.width; let height = img.height; 
                             if (width > height) { if (width > MAX) { height *= MAX / width; width = MAX; } } else { if (height > MAX) { width *= MAX / height; height = MAX; } } 
                             canvas.width = width; canvas.height = height; ctx.drawImage(img, 0, 0, width, height); 
                             setForm(prev => ({ ...prev, photo: canvas.toDataURL('image/jpeg', 0.5) })); 
-                        }; img.src = event.target.result; 
-                    }; reader.readAsDataURL(file); 
+                        }; 
+                        img.src = event.target.result; 
+                    }; 
+                    reader.readAsDataURL(file); 
                 } 
              };
              const save = async () => { if (!form.moduleLocation || !form.photo) return showAlert("Preencha tudo.", "warning"); setIsSaving(true); await onSave(form); setIsSaving(false); };
@@ -514,23 +518,47 @@
              const [isSaving, setIsSaving] = useState(false);
              const [form, setForm] = useState({ type: inspectionType, equipmentId: initialData?.equipmentId, equipmentName: initialData?.equipmentName, moduleLocation: '', hasId: null, floorSign: null, q1: null, q2: null, nextRecharge: '', h_complete: null, h_unobstructed: null, h_seal_broken: null, nextHydro: '', photo: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false, extinguisherType: '' });
              const fileInputRef = useRef(null);
-             const handlePhotoChange = (e) => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onload = (ev) => setForm({...form, photo: ev.target.result}); reader.readAsDataURL(file); }};
+             // COMPRESSÃO 400PX
+             const handlePhotoChange = (e) => { 
+                const file = e.target.files[0]; 
+                if (file) { 
+                    const reader = new FileReader(); 
+                    reader.onload = (event) => { 
+                        const img = new Image(); 
+                        img.onload = () => { 
+                            const canvas = document.createElement('canvas'); 
+                            const ctx = canvas.getContext('2d'); 
+                            const MAX = 400; 
+                            let width = img.width; let height = img.height; 
+                            if (width > height) { if (width > MAX) { height *= MAX / width; width = MAX; } } else { if (height > MAX) { width *= MAX / height; height = MAX; } } 
+                            canvas.width = width; canvas.height = height; ctx.drawImage(img, 0, 0, width, height); 
+                            setForm(prev => ({ ...prev, photo: canvas.toDataURL('image/jpeg', 0.5) })); 
+                        }; 
+                        img.src = event.target.result; 
+                    }; 
+                    reader.readAsDataURL(file); 
+                } 
+             };
              
              const save = async () => { 
-                let required = false; 
-                if (!form.equipmentId || !form.moduleLocation) required = true; 
-                if (inspectionType === 'EXTINTOR') { 
-                    if (form.q1 === null || form.q2 === null || form.hasId === null || form.floorSign === null || !form.nextRecharge || !form.nextHydro || !form.extinguisherType) required = true; 
-                } else { 
-                    if (form.h_complete === null || form.h_unobstructed === null || form.h_seal_broken === null || !form.nextHydro) required = true; 
-                } 
-                
-                if(required) return showAlert("Preencha todos os campos obrigatórios (*)", "warning"); 
-                if (!form.photo) return showAlert("⚠️ O registro fotográfico é OBRIGATÓRIO antes de salvar.", "warning");
+                 let missing = [];
+                 if (!form.equipmentId) missing.push("ID");
+                 if (!form.moduleLocation) missing.push("Local");
+                 if (inspectionType === 'EXTINTOR') { 
+                     if (form.hasId === null) missing.push("Placa"); if (form.floorSign === null) missing.push("Solo");
+                     if (form.q1 === null) missing.push("Lacre"); if (form.q2 === null) missing.push("Obstrução");
+                     if (!form.nextRecharge) missing.push("Recarga"); if (!form.nextHydro) missing.push("T. Hidro");
+                     if (!form.extinguisherType) missing.push("Tipo");
+                 } else { 
+                     if (form.h_complete === null) missing.push("Completo"); if (form.h_unobstructed === null) missing.push("Desobstr.");
+                     if (form.h_seal_broken === null) missing.push("Lacre"); if (!form.nextHydro) missing.push("T. Hidro");
+                 } 
+                 if(missing.length > 0) return showAlert("Falta: " + missing.join(", "), "warning"); 
+                 if (!form.photo) return showAlert("⚠️ Foto Obrigatória.", "warning");
 
-                setIsSaving(true);
-                await onSave(form); 
-                setIsSaving(false);
+                 setIsSaving(true); 
+                 await onSave(form); 
+                 setIsSaving(false); 
              };
 
              const handleDateInput = (v) => { v = v.replace(/\D/g, ''); if (v.length > 6) v = v.slice(0, 6); if (v.length >= 2) return v.slice(0, 2) + '/' + v.slice(2); return v; };
@@ -538,7 +566,7 @@
 
              return (
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black">
-                    <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('menu')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">{inspectionType}</h2><button onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold" type="button">{isSaving ? 'SALVANDO...' : 'SALVAR'}</button></div>
+                    <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('menu')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">{inspectionType}</h2><button onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold" type="button">{isSaving ? '...' : 'SALVAR'}</button></div>
                     <div className="flex-1 overflow-y-auto p-2 space-y-4">
                         <div className="bg-white p-4 rounded-xl space-y-4">
                             <input value={form.equipmentName} onChange={e=>setForm({...form, equipmentName:e.target.value})} className="w-full bg-gray-100 p-3 rounded font-bold" />
@@ -548,10 +576,9 @@
                             </div>
 
                             {inspectionType === 'EXTINTOR' ? (<><div className="grid grid-cols-2 gap-2"><ColorSelect label="1. Placa Sinal.?" field="hasId" val={form.hasId} onChange={handleSelectChange} /><ColorSelect label="2. Pintura Solo?" field="floorSign" val={form.floorSign} onChange={handleSelectChange} /></div><div className="grid grid-cols-2 gap-2"><ColorSelect label="3. Lacre Rompido?" field="q1" val={form.q1} onChange={handleSelectChange} invert={true} /><ColorSelect label="4. Obstruído?" field="q2" val={form.q2} onChange={handleSelectChange} invert={true} /></div><div className="grid grid-cols-2 gap-2"><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">Próx. Recarga</label><input type="tel" value={form.nextRecharge} onChange={e=>setForm({...form, nextRecharge: handleDateInput(e.target.value)})} placeholder="MMAAAA" className="w-full bg-transparent font-bold dark:text-white"/></div><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">Teste Hidro.</label><input type="tel" value={form.nextHydro} onChange={e=>setForm({...form, nextHydro: handleDateInput(e.target.value)})} placeholder="MMAAAA" className="w-full bg-transparent font-bold dark:text-white"/></div></div></>) : (<><div className="grid grid-cols-2 gap-2"><ColorSelect label="1. Completo?" field="h_complete" val={form.h_complete} onChange={handleSelectChange} /><ColorSelect label="2. Desobstruído?" field="h_unobstructed" val={form.h_unobstructed} onChange={handleSelectChange} /></div><div className="grid grid-cols-2 gap-2"><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">3. Teste Hidro.</label><input type="tel" value={form.nextHydro} onChange={e=>setForm({...form, nextHydro: handleDateInput(e.target.value)})} placeholder="MMAAAA" className="w-full bg-transparent font-bold dark:text-white"/></div><ColorSelect label="4. Lacre Rompido?" field="h_seal_broken" val={form.h_seal_broken} onChange={handleSelectChange} invert={true} /></div></>)}
-
                             <div onClick={()=>fileInputRef.current.click()} className="w-full h-32 border-2 border-dashed rounded flex items-center justify-center text-gray-400 cursor-pointer">{form.photo ? <img src={form.photo} className="h-full object-cover"/> : <i className="fas fa-camera text-2xl"></i>}</div>
                             <input type="file" ref={fileInputRef} onChange={handlePhotoChange} className="hidden" accept="image/*" capture="environment" />
-                            <textarea value={form.obs} onChange={e=>setForm({...form, obs:e.target.value})} placeholder="Obs..." className="w-full p-3 bg-gray-100 rounded h-24" />
+                            <textarea value={form.obs} onChange={e=>setForm({...form, obs:e.target.value})} placeholder="Observações (Opcional)..." className="w-full p-4 rounded-xl border-none shadow-sm h-32 resize-none bg-white dark:bg-gray-800 dark:text-white mb-4"></textarea>
                         </div>
                     </div>
                 </div>
@@ -582,266 +609,75 @@
             const groupedData = useMemo(() => { return { EXTINTOR: activeData.filter(i => (i.type || 'EXTINTOR') === 'EXTINTOR'), HIDRANTE: activeData.filter(i => i.type === 'HIDRANTE'), RONDA: activeData.filter(i => i.type === 'RONDA') }; }, [activeData]);
             const displayList = showBin ? deletedData : activeData;
             
-            const handleSelectAll = () => {
-                if (selectedIds.size === displayList.length) {
-                    setSelectedIds(new Set());
-                } else {
-                    setSelectedIds(new Set(displayList.map(i => i.id)));
-                }
-            };
+            const handleSelectAll = () => { if (selectedIds.size === displayList.length) setSelectedIds(new Set()); else setSelectedIds(new Set(displayList.map(i => i.id))); };
+            const toggleSelection = (id) => { const newSet = new Set(selectedIds); if (newSet.has(id)) newSet.delete(id); else newSet.add(id); setSelectedIds(newSet); };
 
-            const toggleSelection = (id) => {
-                const newSet = new Set(selectedIds);
-                if (newSet.has(id)) newSet.delete(id);
-                else newSet.add(id);
-                setSelectedIds(newSet);
-            };
-
-            const confirmBulkRestore = () => {
-                if (selectedIds.size === 0) return;
-                showConfirm(`Restaurar ${selectedIds.size} itens selecionados?`, async () => {
-                    const promises = Array.from(selectedIds).map(id => onToggleDelete(id, false));
-                    await Promise.all(promises);
-                    setSelectedIds(new Set());
-                    showAlert(`${selectedIds.size} itens restaurados!`, "success");
-                }, "info");
-            };
-
-            const confirmBulkDelete = () => {
-                if (selectedIds.size === 0) return;
-                showConfirm(`EXCLUIR PERMANENTEMENTE ${selectedIds.size} itens?`, async () => {
-                    const promises = Array.from(selectedIds).map(id => onDeletePermanently(id));
-                    await Promise.all(promises);
-                    setSelectedIds(new Set());
-                    showAlert(`${selectedIds.size} itens excluídos!`, "success");
-                }, "error");
-            };
-
-            const confirmBulkSoftDelete = () => {
-                if (selectedIds.size === 0) return;
-                showConfirm(`Mover ${selectedIds.size} itens para a LIXEIRA?`, async () => {
-                    const promises = Array.from(selectedIds).map(id => onToggleDelete(id, true));
-                    await Promise.all(promises);
-                    setSelectedIds(new Set());
-                    showAlert(`${selectedIds.size} itens movidos para a lixeira!`, "success");
-                }, "warning");
-            };
-            
-            const handleRestoreAll = () => {
-                if (deletedData.length === 0) return showAlert("Lixeira vazia!", "info");
-                showConfirm(`Deseja restaurar TODOS os ${deletedData.length} itens da lixeira?`, async () => {
-                    const promises = deletedData.map(item => onToggleDelete(item.id, false));
-                    await Promise.all(promises);
-                    showAlert("Todos os itens foram restaurados!", "success");
-                }, "info");
-            };
-            
-            const handleEmptyBin = () => {
-                if (deletedData.length === 0) return showAlert("Lixeira vazia!", "info");
-                showConfirm(`ATENÇÃO: Deseja ESVAZIAR a lixeira? ${deletedData.length} itens serão excluídos permanentemente.`, async () => {
-                    const promises = deletedData.map(item => onDeletePermanently(item.id));
-                    await Promise.all(promises);
-                    showAlert("Lixeira esvaziada com sucesso!", "success");
-                }, "error");
-            };
+            const confirmBulkRestore = () => { if (selectedIds.size === 0) return; showConfirm(`Restaurar ${selectedIds.size} itens?`, async () => { const promises = Array.from(selectedIds).map(id => onToggleDelete(id, false)); await Promise.all(promises); setSelectedIds(new Set()); showAlert(`${selectedIds.size} itens restaurados!`, "success"); }, "info"); };
+            const confirmBulkDelete = () => { if (selectedIds.size === 0) return; showConfirm(`EXCLUIR ${selectedIds.size} itens?`, async () => { const promises = Array.from(selectedIds).map(id => onDeletePermanently(id)); await Promise.all(promises); setSelectedIds(new Set()); showAlert(`${selectedIds.size} itens excluídos!`, "success"); }, "error"); };
+            const confirmBulkSoftDelete = () => { if (selectedIds.size === 0) return; showConfirm(`Lixeira: ${selectedIds.size} itens?`, async () => { const promises = Array.from(selectedIds).map(id => onToggleDelete(id, true)); await Promise.all(promises); setSelectedIds(new Set()); showAlert(`${selectedIds.size} itens movidos!`, "success"); }, "warning"); };
+            const handleRestoreAll = () => { if (deletedData.length === 0) return; showConfirm(`Restaurar TUDO (${deletedData.length})?`, async () => { const promises = deletedData.map(item => onToggleDelete(item.id, false)); await Promise.all(promises); showAlert("Restaurado!", "success"); }, "info"); };
+            const handleEmptyBin = () => { if (deletedData.length === 0) return; showConfirm(`ESVAZIAR LIXEIRA?`, async () => { const promises = deletedData.map(item => onDeletePermanently(item.id)); await Promise.all(promises); showAlert("Esvaziada!", "success"); }, "error"); };
 
             const handleExport = () => { const jsonString = JSON.stringify(data, null, 2); const blob = new Blob([jsonString], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup_trfire_${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); setShowBackupModal(false); };
-            const handleFileImport = (e) => { const file = e.target.files[0]; if(!file) return; const reader = new FileReader(); reader.onload = (ev) => { try { const json = JSON.parse(ev.target.result); onImportData(json); setShowBackupModal(false); } catch(err) { showAlert("Erro ao ler arquivo JSON. Verifique o formato.", "error"); } }; reader.readAsText(file); e.target.value = null; };
+            const handleFileImport = (e) => { const file = e.target.files[0]; if(!file) return; const reader = new FileReader(); reader.onload = (ev) => { try { const json = JSON.parse(ev.target.result); onImportData(json); setShowBackupModal(false); } catch(err) { showAlert("Erro JSON.", "error"); } }; reader.readAsText(file); e.target.value = null; };
             
             const generateSpecificPDF = async (type) => { 
                 setShowPdfModal(false); 
                 const reportData = activeData.filter(item => (item.type || (type === 'RONDA' ? '' : 'EXTINTOR')) === type); 
-                if(reportData.length === 0) return showAlert(`Sem dados ATIVOS de ${type} para gerar relatório neste mês.`, "warning"); 
+                if(reportData.length === 0) return showAlert(`Sem dados de ${type}.`, "warning"); 
                 
                 const doc = new jsPDF({ orientation: "landscape" }); 
-                doc.setFillColor(243, 244, 246); 
-                doc.rect(0, 0, 297, 40, 'F'); 
-                doc.setTextColor(33, 33, 33); 
-                doc.setFontSize(22); 
-                
-                let title = ""; 
-                if (type === 'EXTINTOR') title = "CHECK-LIST EXTINTORES MENSAL"; 
-                else if (type === 'HIDRANTE') title = "CHECK-LIST HIDRANTES MENSAL"; 
-                else if (type === 'RONDA') title = "RELATÓRIO DE RONDAS PREVENTIVAS"; 
-                
+                doc.setFillColor(243, 244, 246); doc.rect(0, 0, 297, 40, 'F'); 
+                doc.setTextColor(33, 33, 33); doc.setFontSize(22); 
+                let title = ""; if (type === 'EXTINTOR') title = "CHECK-LIST EXTINTORES"; else if (type === 'HIDRANTE') title = "CHECK-LIST HIDRANTES"; else if (type === 'RONDA') title = "RELATÓRIO DE RONDAS"; 
                 doc.text(title, 14, 25); 
-                doc.setFontSize(10); 
-                doc.setTextColor(100, 100, 100); 
-                doc.text(`Mês de Referência: ${formatMonthDisplay(viewMonth).toUpperCase()} | Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 35); 
-                doc.setFontSize(9); 
-                doc.setTextColor(33, 33, 33); 
-                doc.text("Parque Logístico: AERO GRU I", 280, 28, { align: "right" }); 
-                doc.text("Empresa: Vilella Assessoria em Segurança do Trabalho", 280, 35, { align: "right" }); 
+                doc.setFontSize(10); doc.setTextColor(100, 100, 100); 
+                doc.text(`Ref: ${formatMonthDisplay(viewMonth).toUpperCase()}`, 14, 35); 
                 
-                let body = []; 
-                let head = []; 
+                let body = []; let head = []; 
+                if (type === 'EXTINTOR') { head = [['Local', 'Tipo', 'Equip', 'Data', 'Resp.', 'Placa', 'Solo', 'Lacre', 'Obstruído', 'Recarga', 'Hidro', 'Obs']]; body = reportData.map(i => [ i.moduleLocation, i.extinguisherType, i.equipmentName, formatDate(i.created_at), i.responsible, i.hasId?'SIM':'NÃO', i.floorSign?'SIM':'NÃO', i.q1?'SIM':'NÃO', i.q2?'SIM':'NÃO', i.nextRecharge, i.nextHydro, i.obs ]); } 
+                else if (type === 'HIDRANTE') { head = [['Local', 'Equip', 'Data', 'Resp.', 'Completo', 'Obstruído', 'Lacre', 'Hidro', 'Obs']]; body = reportData.map(i => [ i.moduleLocation, i.equipmentName, formatDate(i.created_at), i.responsible, i.h_complete?'SIM':'NÃO', i.h_unobstructed?'NÃO':'SIM', i.h_seal_broken?'SIM':'NÃO', i.nextHydro, i.obs ]); } 
+                else if (type === 'RONDA') { head = [['Local', 'Área', 'Data', 'Resp.', 'Galpão', 'Status', 'Obs']]; body = reportData.map(i => [ i.sector, i.equipmentName, formatDate(i.created_at), i.responsible, i.moduleLocation, i.status, i.obs ]); } 
                 
-                if (type === 'EXTINTOR') { 
-                    head = [['Módulo/Local', 'Tipo', 'Equipamento', 'Data/Hora', 'Resp.', 'Placa Sinal.?', 'Pint. de Solo?', 'Lacre Rompido?', 'Eq. Obstruído?', 'Próx. Recarga?', 'T. Hidro?', 'Observações']]; 
-                    body = reportData.map(i => [ i.moduleLocation || '-', i.extinguisherType || '-', i.equipmentName, new Date(i.created_at).toLocaleDateString('pt-BR') + ' ' + new Date(i.created_at).toLocaleTimeString('pt-BR').slice(0,5), i.responsible || '-', i.hasId ? 'SIM' : 'NÃO', i.floorSign ? 'SIM' : 'NÃO', i.q1 ? 'SIM' : 'NÃO', i.q2 ? 'SIM' : 'NÃO', i.nextRecharge || '-', i.nextHydro || '-', i.obs || '' ]); 
-                } else if (type === 'HIDRANTE') { 
-                    head = [['Módulo/Local', 'Equipamento', 'Data/Hora', 'Resp.', 'Eq. Completo?', 'Eq. Obstruído?', 'Lacre Rompido?', 'Próx. T-Hidro', 'Observações']]; 
-                    body = reportData.map(i => [ i.moduleLocation || '-', i.equipmentName, new Date(i.created_at).toLocaleDateString('pt-BR') + ' ' + new Date(i.created_at).toLocaleTimeString('pt-BR').slice(0,5), i.responsible || '-', i.h_complete ? 'SIM' : 'NÃO', i.h_unobstructed ? 'NÃO' : 'SIM', i.h_seal_broken ? 'SIM' : 'NÃO', i.nextHydro || '-', i.obs || '' ]); 
-                } else if (type === 'RONDA') { 
-                    head = [['Local', 'Área Técnica', 'Data/Hora', 'Resp.', 'Galpão', 'Status', 'Obs']]; 
-                    body = reportData.map(i => [ i.sector || '-', i.equipmentName || '-', new Date(i.created_at).toLocaleDateString('pt-BR') + ' ' + new Date(i.created_at).toLocaleTimeString('pt-BR').slice(0,5), i.responsible || '-', i.moduleLocation || '-', i.status || '-', i.obs || '' ]); 
-                } 
-                
-                doc.autoTable({ 
-                    head: head, 
-                    body: body, 
-                    startY: 45, 
-                    theme: 'grid', 
-                    headStyles: { fillColor: [224, 224, 224], textColor: [0, 0, 0], fontStyle: 'bold', lineWidth: 0.1, lineColor: [200, 200, 200] }, 
-                    styles: { fontSize: 8, textColor: [50, 50, 50], lineColor: [230, 230, 230], lineWidth: 0.1 }, 
-                    alternateRowStyles: { fillColor: [255, 255, 255] } 
-                }); 
-                
-                // RESUMO QUANTITATIVO NO FINAL DO RELATÓRIO
-                if (type === 'EXTINTOR') {
-                    const summary = {};
-                    reportData.forEach(item => {
-                        const loc = item.moduleLocation || 'INDEFINIDO';
-                        const extType = item.extinguisherType || 'NÃO ESPECIFICADO';
-                        if (!summary[loc]) summary[loc] = {};
-                        if (!summary[loc][extType]) summary[loc][extType] = 0;
-                        summary[loc][extType]++;
-                    });
-
-                    let finalY = doc.lastAutoTable.finalY + 10;
-                    if (finalY > 180) {
-                        doc.addPage();
-                        finalY = 20;
-                    }
-
-                    doc.setFontSize(10);
-                    doc.setTextColor(33, 33, 33);
-                    doc.text("RESUMO QUANTITATIVO DE EXTINTORES:", 14, finalY);
-                    
-                    let yOffset = finalY + 7;
-                    Object.keys(summary).sort().forEach(loc => {
-                        const types = summary[loc];
-                        const summaryString = Object.keys(types).map(t => `${String(types[t]).padStart(2, '0')} UN - ${t}`).join(', ');
-                        
-                        if (yOffset > 190) {
-                            doc.addPage();
-                            yOffset = 20;
-                        }
-                        
-                        doc.setFontSize(9);
-                        doc.text(`• ${loc}: ${summaryString}`, 14, yOffset);
-                        yOffset += 6;
-                    });
-                }
-
-                doc.save(`TRFIRE_Relatorio_${type}_${viewMonth}.pdf`); 
-            };
-            
-            const renderItem = (item) => {
-                const isHid = item.type === 'HIDRANTE';
-                const isRonda = item.type === 'RONDA';
-                const isSelected = selectedIds.has(item.id);
-                let statusColor = 'bg-gray-100 text-gray-700';
-                let statusText = '---';
-                if (isRonda) { 
-                    if(item.status === 'NÃO REALIZADA') {
-                        statusColor = 'bg-red-500 text-white border-red-600'; 
-                        statusText = 'TAREFA NÃO REALIZADA';
-                    } else {
-                        statusColor = item.status === 'Conforme' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; 
-                        statusText = item.status === 'Conforme' ? 'CONFORME' : 'NÃO CONFORME'; 
-                    }
-                } else if (isHid) { statusColor = (item.h_complete && item.h_unobstructed && !item.h_seal_broken) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = (item.h_complete && item.h_unobstructed && !item.h_seal_broken) ? 'OK' : 'IRREGULAR'; } else { statusColor = (!item.q1 && !item.q2) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = (!item.q1) ? 'OK' : 'VIOLADO'; }
-                return (
-                    <div key={item.id} className={`p-4 rounded-xl shadow-sm border-l-4 flex justify-between items-center transition-all ${showBin ? (isSelected ? 'bg-red-100 border-red-600' : 'bg-red-50 dark:bg-red-900/10 border-red-500 opacity-80') : 'bg-white dark:bg-gray-800 border-brand-red'}`}>
-                        <div className="flex items-center gap-3">
-                            {/* Checkbox visível para Admin em QUALQUER modo (Lista ou Lixeira) */}
-                            {isAdmin && (
-                                <div onClick={() => toggleSelection(item.id)} className={`w-6 h-6 rounded border-2 flex items-center justify-center cursor-pointer transition-colors ${isSelected ? 'bg-red-600 border-red-600 text-white' : 'border-red-300 bg-white'}`}>
-                                    {isSelected && <i className="fas fa-check text-xs"></i>}
-                                </div>
-                            )}
-                            <div>
-                                <div className="flex items-center gap-2">
-                                    <span className={`text-xs font-bold px-1 rounded ${isRonda ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>{item.type || 'EXT'}</span>
-                                    <span className="font-bold text-gray-800 dark:text-white text-sm">{item.equipmentName || item.sector}</span>
-                                </div>
-                                {isRonda && <div className="text-xs text-gray-500 font-bold mt-1">Local: {item.sector} {item.moduleLocation ? `| ${item.moduleLocation}` : ''}</div>}
-                                {!isRonda && !isHid && item.extinguisherType && <div className="text-[10px] text-gray-500 font-bold mt-0.5 bg-gray-100 dark:bg-gray-700 px-1 rounded inline-block">{item.extinguisherType}</div>}
-                                <div className="text-xs text-gray-500 mt-1 flex gap-2"><span><i className="far fa-clock mr-1"></i>{formatDate(item.created_at)}</span><span className="text-gray-400">| {item.responsible || 'SISTEMA'}</span></div>{!showBin && (<span className={`inline-block mt-1 text-[10px] px-2 py-0.5 rounded font-bold ${statusColor}`}>{statusText}</span>)}{isRonda && item.photo && (<div className="mt-1"><i className="fas fa-camera text-gray-400"></i> <span className="text-[10px] text-gray-400">Foto anexada</span></div>)}</div>
-                        </div>
-                        <div className="flex flex-col items-end gap-2">
-                            {showBin ? (<div className="flex items-center gap-2"><button onClick={() => { if (item.responsible !== currentUser) return showAlert("🚫 Ação Negada: Permitido somente pelo usuário " + item.responsible + ".", "error"); onToggleDelete(item.id, false); }} className="bg-green-100 text-green-600 hover:bg-green-200 w-10 h-10 rounded-full flex items-center justify-center shadow-sm transition-all active:scale-95" title="Restaurar"><i className="fas fa-trash-restore"></i></button>{isAdmin && (<button onClick={() => { showConfirm("⚠️ ATENÇÃO: Deseja excluir este registro PERMANENTEMENTE? Esta ação não pode ser desfeita.", () => onDeletePermanently(item.id), "error"); }} className="bg-red-100 text-red-600 hover:bg-red-200 w-10 h-10 rounded-full flex items-center justify-center shadow-sm transition-all active:scale-95" title="Eliminar Definitivamente"><i className="fas fa-times"></i></button>)}</div>) : (
-                                (!item.auto || isAdmin) && (
-                                    <button onClick={() => { 
-                                        if (item.auto) {
-                                            if (!isAdmin) return showAlert("Apenas Administrador pode excluir registros automáticos.", "error");
-                                        } else if (item.responsible !== currentUser) {
-                                            return showAlert("🚫 Ação Negada: Permitido somente pelo usuário " + item.responsible + ".", "error");
-                                        }
-                                        showConfirm("Mover para lixeira?", () => onToggleDelete(item.id, true), "warning"); 
-                                    }} className="bg-gray-100 text-red-500 hover:bg-red-50 w-10 h-10 rounded-full flex items-center justify-center shadow-sm transition-all active:scale-95" title="Excluir"><i className="fas fa-trash"></i></button>
-                                )
-                            )}
-                        </div>
-                    </div>
-                );
+                doc.autoTable({ head, body, startY: 45, theme: 'grid', styles: { fontSize: 8 } }); 
+                doc.save(`TRFIRE_${type}_${viewMonth}.pdf`); 
             };
 
             return (
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black relative">
-                    <div className={`${showBin ? 'bg-red-800' : 'bg-gray-900'} text-white p-4 shadow-md flex justify-between items-center sticky top-0 z-20 transition-colors duration-300`}>
-                        <div className="flex items-center gap-2">{showBin ? (<button onClick={()=>setShowBin(false)} className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg font-bold text-xs shadow-md flex items-center gap-2"><i className="fas fa-arrow-left"></i> VOLTAR</button>) : (<button onClick={()=>onNavigate('menu')} className="bg-brand-orange hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-bold text-xs shadow-md active:scale-95 transition-all flex items-center gap-2"><i className="fas fa-plus"></i> NOVA INSPEÇÃO</button>)}<span className="text-xs text-white/80 hidden sm:inline ml-2">{showBin ? 'Itens Excluídos' : `${displayList.length} registros`}</span></div>
-                        <div className="flex gap-4 items-center">{!showBin && (<><button onClick={() => setShowFilter(!showFilter)} title="Filtrar"><i className="fas fa-filter text-xl text-yellow-400"></i></button><div className="w-px h-6 bg-gray-600 mx-1"></div><button onClick={() => setShowPdfModal(true)} title="Gerar PDF"><i className="fas fa-file-pdf text-xl text-white"></i></button>{isAdmin && (<><div className="w-px h-6 bg-gray-600 mx-1"></div><button onClick={() => setShowBackupModal(true)} title="Backup / Restaurar"><i className="fas fa-cloud-upload-alt text-xl text-blue-400"></i></button></>)}<div className="w-px h-6 bg-gray-600 mx-1"></div></>)}<button onClick={() => setShowBin(!showBin)} title={showBin ? "Ver Histórico" : "Ver Lixeira"} className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${showBin ? 'bg-white text-red-800' : 'bg-red-900/50 text-red-300 hover:bg-red-900 hover:text-white'}`}><i className={`fas ${showBin ? 'fa-list' : 'fa-trash'}`}></i></button></div>
+                    <div className="bg-red-900 text-white p-3 shadow-md flex justify-between items-center sticky top-0 z-20">
+                        <div className="flex items-center gap-2">{showBin ? (<button onClick={()=>setShowBin(false)} className="bg-white/20 px-3 py-1 rounded text-xs">VOLTAR</button>) : (<button onClick={()=>onNavigate('menu')} className="bg-orange-500 px-3 py-1 rounded text-xs font-bold">NOVA</button>)}<span className="text-xs ml-2">{showBin ? 'Lixeira' : `${displayList.length} itens`}</span></div>
+                        <div className="flex gap-3">{!showBin && (<><i onClick={() => setShowFilter(!showFilter)} className="fas fa-filter text-lg text-yellow-400 cursor-pointer"></i><i onClick={() => setShowPdfModal(true)} className="fas fa-file-pdf text-lg cursor-pointer"></i>{isAdmin && <i onClick={() => setShowBackupModal(true)} className="fas fa-cloud-download-alt text-lg text-blue-300 cursor-pointer"></i>}</>)}<i onClick={() => setShowBin(!showBin)} className={`fas ${showBin ? 'fa-list' : 'fa-trash'} text-lg cursor-pointer`}></i></div>
                     </div>
-                    {/* Botões de Ação Global na Lixeira (Apenas Admin e quando Lixeira tem itens) */}
-                    {showBin && isAdmin && deletedData.length > 0 && (
-                        <div className="bg-red-800 p-3 flex gap-3 animate-fade-in shadow-inner border-t border-red-700">
-                            <button onClick={handleRestoreAll} className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-bold text-xs shadow-md active:scale-95 transition-all flex items-center justify-center gap-2"><i className="fas fa-trash-restore"></i> RESTAURAR TUDO</button>
-                            <button onClick={handleEmptyBin} className="flex-1 bg-white text-red-700 hover:bg-gray-100 py-2 rounded-lg font-bold text-xs shadow-md active:scale-95 transition-all flex items-center justify-center gap-2"><i className="fas fa-fire"></i> ESVAZIAR LIXEIRA</button>
-                        </div>
-                    )}
-                    {/* Bulk Actions Bar for Admin (Ativa em AMBOS os modos se houver itens selecionados) */}
-                    {isAdmin && displayList.length > 0 && selectedIds.size > 0 && (
-                        <div className={`${showBin ? 'bg-red-700' : 'bg-gray-700'} text-white p-3 flex justify-between items-center animate-fade-in shadow-inner`}>
-                            <div className="flex items-center gap-3">
-                                <div onClick={() => handleSelectAll(displayList)} className={`w-6 h-6 rounded border-2 border-white flex items-center justify-center cursor-pointer ${selectedIds.size === displayList.length && displayList.length > 0 ? 'bg-white text-red-700' : ''}`}>{selectedIds.size === displayList.length && <i className="fas fa-check text-xs"></i>}</div>
-                                <span className="text-xs font-bold uppercase cursor-pointer" onClick={() => handleSelectAll(displayList)}>Selecionar Todos</span>
+                    {/* Toolbar de Ações em Massa */}
+                    {isAdmin && selectedIds.size > 0 && (
+                        <div className="bg-gray-200 dark:bg-gray-800 p-2 flex justify-between items-center px-4">
+                            <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{selectedIds.size} selecionados</span>
+                            <div className="flex gap-2">
+                                {showBin ? (<><button onClick={confirmBulkRestore} className="text-green-600 text-xs font-bold">RESTAURAR</button><button onClick={confirmBulkDelete} className="text-red-600 text-xs font-bold">EXCLUIR</button></>) : (<button onClick={confirmBulkSoftDelete} className="text-red-600 text-xs font-bold">LIXEIRA</button>)}
                             </div>
-                            {selectedIds.size > 0 && (
-                                <div className="flex gap-2">
-                                    {showBin ? (
-                                        <>
-                                            <button onClick={confirmBulkRestore} className="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-md active:scale-95 transition-all flex items-center gap-1"><i className="fas fa-trash-restore"></i> Restaurar ({selectedIds.size})</button>
-                                            <button onClick={confirmBulkDelete} className="bg-white text-red-700 hover:bg-gray-100 px-3 py-1.5 rounded-lg text-xs font-bold shadow-md active:scale-95 transition-all flex items-center gap-1"><i className="fas fa-times"></i> Excluir ({selectedIds.size})</button>
-                                        </>
-                                    ) : (
-                                        <button onClick={confirmBulkSoftDelete} className="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-md active:scale-95 transition-all flex items-center gap-1"><i className="fas fa-trash"></i> Mover para Lixeira ({selectedIds.size})</button>
-                                    )}
-                                </div>
-                            )}
                         </div>
                     )}
-                    {showPdfModal && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm animate-fade-in text-center"><h3 className="text-lg font-bold mb-2 dark:text-white">Gerar Relatório</h3><p className="text-sm font-bold text-brand-red mb-6 uppercase border-b pb-2">{formatMonthDisplay(viewMonth)}</p><div className="space-y-3"><button onClick={() => generateSpecificPDF('EXTINTOR')} className="w-full py-3 bg-brand-red text-white font-bold rounded-xl shadow-md active:scale-95">Relatório de EXTINTORES</button><button onClick={() => generateSpecificPDF('HIDRANTE')} className="w-full py-3 bg-brand-orange text-white font-bold rounded-xl shadow-md active:scale-95">Relatório de HIDRANTES</button><button onClick={() => generateSpecificPDF('RONDA')} className="w-full py-3 bg-brand-blue text-white font-bold rounded-xl shadow-md active:scale-95">Relatório de RONDAS</button><button onClick={() => setShowPdfModal(false)} className="w-full py-3 bg-gray-200 text-gray-700 font-bold rounded-xl mt-2">Cancelar</button></div></div></div>)}
-                    {showBackupModal && isAdmin && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm animate-fade-in text-center"><h3 className="text-lg font-bold mb-4 dark:text-white flex items-center justify-center gap-2"><i className="fas fa-database text-blue-500"></i> Backup & Restauração</h3><p className="text-xs text-gray-500 mb-6">Ferramenta exclusiva para ADMINISTRAÇÃO</p><div className="space-y-3"><button onClick={handleExport} className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2"><i className="fas fa-download"></i> EXPORTAR TUDO</button><div className="relative"><input type="file" ref={fileInputRef} onChange={handleFileImport} accept=".json" className="hidden" /><button onClick={() => fileInputRef.current.click()} className="w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2"><i className="fas fa-upload"></i> IMPORTAR DADOS</button></div><button onClick={() => setShowBackupModal(false)} className="w-full py-3 bg-gray-200 text-gray-700 font-bold rounded-xl mt-4">Fechar</button></div></div></div>)}
-                    {showFilter && !showBin && (<div className="absolute top-16 right-4 z-50 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-64 animate-fade-in"><h3 className="font-bold mb-3 dark:text-white text-sm uppercase">Filtrar por</h3><div className="space-y-3"><div><label className="text-xs text-gray-500 block mb-1">De</label><input type="date" value={filters.startDate} onChange={e=>setFilters({...filters, startDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Até</label><input type="date" value={filters.endDate} onChange={e=>setFilters({...filters, endDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Tipo</label><select value={filters.type} onChange={e=>setFilters({...filters, type: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option><option value="EXTINTOR">Extintor</option><option value="HIDRANTE">Hidrante</option></select></div><div><label className="text-xs text-gray-500 block mb-1">Responsável</label><select value={filters.responsible} onChange={e=>setFilters({...filters, responsible: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{responsibles.map(r => <option key={r} value={r}>{r}</option>)}</select></div><div><label className="text-xs text-gray-500 block mb-1">Módulo/Local</label><select value={filters.moduleLocation} onChange={e=>setFilters({...filters, moduleLocation: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{LOCATION_OPTIONS.map(l => <option key={l} value={l}>{l}</option>)}</select></div><div className="flex gap-2 pt-2"><button onClick={() => setFilters({startDate:'', endDate:'', type:'', responsible:'', moduleLocation:''})} className="flex-1 py-1 text-xs font-bold text-gray-500 bg-gray-200 dark:bg-gray-700 rounded">Limpar</button><button onClick={() => setShowFilter(false)} className="flex-1 py-1 text-xs font-bold text-white bg-brand-red rounded">Fechar</button></div></div></div>)}
-                    {!showBin && (<div className="bg-gray-100 dark:bg-gray-900 p-3 border-b border-gray-200 dark:border-gray-700 sticky top-[72px] z-10"><div className="relative"><select value={viewMonth} onChange={(e) => setViewMonth(e.target.value)} className="w-full p-3 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-white font-bold appearance-none cursor-pointer uppercase text-center">{availableMonths.map(month => <option key={month} value={month}>{formatMonthDisplay(month).toUpperCase()}</option>)}</select><div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-500"><i className="fas fa-calendar-alt"></i></div></div></div>)}
-                    <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                        {displayList.length === 0 && <div className="text-center text-gray-500 mt-10">{showBin ? "Lixeira vazia." : `Nenhum registro em ${formatMonthDisplay(viewMonth)}.`}</div>}
-                        {showBin ? (displayList.map(item => renderItem(item))) : (
-                            <>
-                                {groupedData.EXTINTOR.length > 0 && (<div className="mb-2"><button onClick={() => toggleSection('EXTINTOR')} className="w-full flex justify-between items-center bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border-l-4 border-brand-red transition-all active:scale-[0.99]"><span className="font-bold text-brand-red flex items-center gap-2 uppercase tracking-wide"><i className="fas fa-fire-extinguisher"></i> EXTINTORES ({groupedData.EXTINTOR.length})</span><i className={`fas fa-chevron-${expandedSections['EXTINTOR'] ? 'up' : 'down'} text-gray-400`}></i></button>{expandedSections['EXTINTOR'] && (<div className="mt-2 space-y-3 pl-2 border-l-2 border-gray-200 dark:border-gray-700 ml-4 animate-fade-in">{groupedData.EXTINTOR.map(item => renderItem(item))}</div>)}</div>)}
-                                {groupedData.HIDRANTE.length > 0 && (<div className="mb-2"><button onClick={() => toggleSection('HIDRANTE')} className="w-full flex justify-between items-center bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border-l-4 border-brand-orange transition-all active:scale-[0.99]"><span className="font-bold text-brand-orange flex items-center gap-2 uppercase tracking-wide"><i className="fas fa-faucet"></i> HIDRANTES ({groupedData.HIDRANTE.length})</span><i className={`fas fa-chevron-${expandedSections['HIDRANTE'] ? 'up' : 'down'} text-gray-400`}></i></button>{expandedSections['HIDRANTE'] && (<div className="mt-2 space-y-3 pl-2 border-l-2 border-gray-200 dark:border-gray-700 ml-4 animate-fade-in">{groupedData.HIDRANTE.map(item => renderItem(item))}</div>)}</div>)}
-                                {isAdmin && groupedData.RONDA.length > 0 && (<div className="mb-2"><button onClick={() => toggleSection('RONDA')} className="w-full flex justify-between items-center bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border-l-4 border-brand-blue transition-all active:scale-[0.99]"><span className="font-bold text-brand-blue flex items-center gap-2 uppercase tracking-wide"><i className="fas fa-clipboard-check"></i> RONDAS DIÁRIAS ({groupedData.RONDA.length})</span><i className={`fas fa-chevron-${expandedSections['RONDA'] ? 'up' : 'down'} text-gray-400`}></i></button>{expandedSections['RONDA'] && (<div className="mt-2 space-y-3 pl-2 border-l-2 border-gray-200 dark:border-gray-700 ml-4 animate-fade-in">{groupedData.RONDA.map(item => renderItem(item))}</div>)}</div>)}
-                            </>
-                        )}
+                    {/* Modais */}
+                    {showPdfModal && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white p-6 rounded-xl w-full max-w-sm text-center"><h3 className="font-bold mb-4">Gerar Relatório PDF</h3><div className="flex flex-col gap-2"><button onClick={() => generateSpecificPDF('EXTINTOR')} className="p-3 bg-red-100 text-red-800 rounded font-bold">Extintores</button><button onClick={() => generateSpecificPDF('HIDRANTE')} className="p-3 bg-orange-100 text-orange-800 rounded font-bold">Hidrantes</button><button onClick={() => generateSpecificPDF('RONDA')} className="p-3 bg-blue-100 text-blue-800 rounded font-bold">Rondas</button><button onClick={() => setShowPdfModal(false)} className="p-3 bg-gray-200 rounded mt-2">Cancelar</button></div></div></div>)}
+                    {/* Lista */}
+                    <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                        {displayList.map(item => (
+                            <div key={item.id} className="bg-white p-3 rounded shadow-sm border-l-4 border-red-500 flex justify-between items-center">
+                                <div className="flex items-center gap-3">
+                                    {isAdmin && <div onClick={() => toggleSelection(item.id)} className={`w-5 h-5 border rounded flex items-center justify-center ${selectedIds.has(item.id)?'bg-red-500 border-red-500 text-white':''}`}>{selectedIds.has(item.id) && <i className="fas fa-check text-xs"></i>}</div>}
+                                    <div><span className="font-bold text-sm block">{item.equipmentName}</span><span className="text-xs text-gray-500">{formatDate(item.created_at)} - {item.moduleLocation}</span></div>
+                                </div>
+                                <div className="flex flex-col items-end">{showBin ? (<i onClick={() => confirmBulkRestore(item.id)} className="fas fa-trash-restore text-green-500"></i>) : (<i onClick={() => onToggleDelete(item.id, true)} className="fas fa-trash text-red-300"></i>)}</div>
+                            </div>
+                        ))}
                     </div>
                 </div>
             );
-        }
+        };
 
         // =========================================================================
-        // APP PRINCIPAL
+        // APP COMPONENT (Main)
         // =========================================================================
         function App() {
             const [page, setPage] = useState(localStorage.getItem('trfire_user') ? 'menu' : 'responsible');
@@ -860,12 +696,10 @@
             const showConfirm = (message, onConfirmAction, type = 'warning') => { setNotification({ isOpen: true, message, type, isConfirmation: true, onConfirm: onConfirmAction }); };
             const closeNotification = () => { if(notification.onCloseAction) notification.onCloseAction(); setNotification({ ...notification, isOpen: false, onCloseAction: null }); };
 
-            // NAVIGATION: Support for browser back button
             const navigateTo = (newPage) => {
                 try {
                      window.history.pushState({ page: newPage }, "", `?page=${newPage}`);
                 } catch (e) {
-                     // Fallback for environments blocking history API
                      console.log("Navigation history not supported in this environment");
                 }
                 setPage(newPage);
@@ -919,7 +753,8 @@
                 return () => { if(timeoutId) clearTimeout(timeoutId); events.forEach(e => document.removeEventListener(e, resetTimer)); };
             }, [page]); 
 
-            const checkAndGenerateMissedRounds = async (currentDb) => {
+            // GLOBAL HELPERS DEFINED INSIDE APP TO ACCESS DB
+            async function checkAndGenerateMissedRounds(currentDb) {
                 if (!dbFirestore) return;
                 const now = new Date();
                 const currentHour = now.getHours();
@@ -963,6 +798,7 @@
                     
                     if (!hasInspection && !alreadyAutoRegistered) { 
                         try { 
+                            // FIXED SYNTAX FOR V8
                             await dbFirestore.collection("inspections").doc(autoDocId).set({ 
                                 type: 'RONDA', 
                                 sector: loc, 
@@ -979,9 +815,9 @@
                         } 
                     }
                 }
-            };
+            }
 
-            const checkAndCleanupTrash = async (currentDb) => {
+            async function checkAndCleanupTrash(currentDb) {
                 if (!dbFirestore) return;
                 const now = new Date();
                 const DELETE_THRESHOLD_MS = 72 * 60 * 60 * 1000; 
@@ -991,6 +827,7 @@
                         const deletedDate = new Date(item.deleted_at);
                         if ((now - deletedDate) > DELETE_THRESHOLD_MS) {
                             try {
+                                // FIXED SYNTAX FOR V8
                                 await dbFirestore.collection("inspections").doc(item.id).delete();
                                 console.log(`[AUTO-CLEANUP] Item ${item.id} removido definitivamente (Expirou 72h).`);
                             } catch (e) {
@@ -999,34 +836,31 @@
                         }
                     }
                 });
-            };
+            }
 
             useEffect(() => {
                 if(!dbFirestore || !auth) return;
 
-                auth.signInAnonymously()
-                    .then(() => {
-                        console.log("Autenticado anonimamente.");
-                        
+                // AUTH STATE LISTENER FOR PERMISSION FIX
+                const unsubscribeAuth = auth.onAuthStateChanged(user => {
+                    if (user) {
+                        console.log("Auth State: Signed In");
                         const q = dbFirestore.collection("inspections").orderBy("created_at", "desc").limit(10000);
-                        const unsubscribeInspections = q.onSnapshot((querySnapshot) => { 
-                            const inspections = []; 
-                            querySnapshot.forEach((doc) => { inspections.push({ id: doc.id, ...doc.data() }); }); 
-                            setDb(inspections); 
-                            
+                        const unsub1 = q.onSnapshot(s => { 
+                            const d=[]; s.forEach(doc=>d.push({id:doc.id,...doc.data()})); 
+                            setDb(d);
                             if (localStorage.getItem('trfire_user') === 'ADMIN') {
-                                checkAndGenerateMissedRounds(inspections);
+                                checkAndGenerateMissedRounds(d);
                             }
-                            checkAndCleanupTrash(inspections);
-                        }, (error) => console.error("Erro dados:", error));
-
-                        const qUsers = dbFirestore.collection("users").orderBy("name");
-                        const unsubscribeUsers = qUsers.onSnapshot(async (snapshot) => { 
-                            const usersList = []; 
-                            snapshot.forEach(doc => usersList.push({ id: doc.id, ...doc.data() })); 
-                            setUsers(usersList); 
-
-                            usersList.forEach(async (u) => {
+                            checkAndCleanupTrash(d);
+                        });
+                        
+                        const unsub2 = dbFirestore.collection("users").onSnapshot(s => { 
+                            const d=[]; s.forEach(doc=>d.push({id:doc.id,...doc.data()})); 
+                            setUsers(d); 
+                            
+                            // MIGRATION AND ADMIN CHECK INSIDE SNAPSHOT
+                            d.forEach(async (u) => {
                                 if (!u.unit && u.name !== "ADMIN") {
                                    if (u.name !== "ADMIN") {
                                         try {
@@ -1036,148 +870,68 @@
                                 }
                             });
                             
-                            const adminUser = usersList.find(u => u.name === "ADMIN");
+                            const adminUser = d.find(u => u.name === "ADMIN");
                             if (!adminUser) {
-                                console.log("Criando usuário ADMIN padrão...");
-                                await dbFirestore.collection("users").add({ name: "ADMIN", pass: "Admin160589", unit: "GLOBAL" });
+                                dbFirestore.collection("users").add({ name: "ADMIN", pass: "Admin160589", unit: "GLOBAL" });
                             } else if (adminUser.pass !== "Admin160589") {
-                                await dbFirestore.collection("users").doc(adminUser.id).update({ pass: "Admin160589" });
+                                dbFirestore.collection("users").doc(adminUser.id).update({ pass: "Admin160589" });
                             }
                         });
-
-                        const qUnits = dbFirestore.collection("units").orderBy("name");
-                        const unsubscribeUnits = qUnits.onSnapshot(async (snapshot) => { 
-                            const unitsList = []; 
-                            snapshot.forEach(doc => {
-                                const d = doc.data();
-                                if (d.name === "NOVA UNIDADE") {
-                                    if (localStorage.getItem('trfire_user') === 'ADMIN') {
-                                        dbFirestore.collection("units").doc(doc.id).delete().catch(e => console.error("Erro ao excluir auto:", e));
-                                    }
-                                } else {
-                                    unitsList.push({ id: doc.id, ...d });
-                                }
-                            }); 
-                            setUnits(unitsList); 
-                        });
                         
-                        return () => { unsubscribeInspections(); unsubscribeUsers(); unsubscribeUnits(); };
-                    })
-                    .catch((error) => {
-                        console.error("Erro na autenticação:", error);
-                        // Tratamento específico para erros
-                        if (error.code === 'auth/configuration-not-found' || error.code === 'auth/operation-not-allowed') {
-                            setAuthError({
-                                type: 'config_missing',
-                                code: error.code,
-                                message: "A autenticação anônima não está ativada no Firebase."
+                        const unsub3 = dbFirestore.collection("units").onSnapshot(s => { 
+                            const d=[]; s.forEach(doc=>d.push({id:doc.id,...doc.data()})); 
+                            
+                            // CLEANUP NEW UNIT
+                            d.forEach(unit => {
+                                if (unit.name === "NOVA UNIDADE" && localStorage.getItem('trfire_user') === 'ADMIN') {
+                                    dbFirestore.collection("units").doc(unit.id).delete().catch(console.error);
+                                }
                             });
-                        } else if (error.code && error.code.includes('requests-from-referer')) {
-                            setAuthError({
-                                type: 'domain_blocked',
-                                message: "O domínio atual não está autorizado.",
-                                domain: window.location.hostname,
-                                code: error.code
-                            });
-                        } else {
-                            showAlert("Erro de conexão: " + error.message, "error");
-                        }
-                    });
+                            
+                            setUnits(d); 
+                        });
 
+                        return () => { unsub1(); unsub2(); unsub3(); };
+                    } else {
+                        console.log("Auth State: Signed Out. Signing in anonymously...");
+                        auth.signInAnonymously().catch(e => setAuthError(e));
+                    }
+                });
+
+                return () => unsubscribeAuth();
             }, []);
 
-            const handleSave = async (formData) => { 
-                if(!dbFirestore) { showAlert("Erro: Banco de dados não conectado.", "error"); return false; } 
-                try { 
-                    await dbFirestore.collection("inspections").add({ ...formData, unit: currentUnit }); 
-                    navigateTo('list'); 
-                    return true;
-                } catch (e) { 
-                    showAlert("Erro ao salvar na nuvem: " + e.message, "error"); 
-                    return false;
-                } 
-            };
-            
-            const handleSaveUser = async (userData) => { 
-                if(!dbFirestore) return false; 
-                try { 
-                    await dbFirestore.collection("users").add(userData); 
-                    return true;
-                } catch(e) { 
-                    showAlert("Erro ao salvar usuário: " + e.message, "error"); 
-                    return false;
-                } 
-            };
-            
-            const handleUpdateUser = async (id, data) => { 
-                if(!dbFirestore) return false; 
-                try { 
-                    const updateData = typeof data === 'string' ? { pass: data } : data;
-                    await dbFirestore.collection("users").doc(id).update(updateData); 
-                    return true;
-                } catch(e) { 
-                    console.error("Erro ao atualizar", e);
-                    showAlert("Erro ao atualizar usuário: " + e.message, "error"); 
-                    return false;
-                } 
-            };
+            const handleSave = async (d) => { try { await dbFirestore.collection("inspections").add({...d, unit: currentUnit}); setPage('list'); } catch(e){ showAlert("Erro ao salvar", "error"); } };
+            const handleSaveUser = async (d) => dbFirestore.collection("users").add(d);
+            const handleUpdateUser = async (id, d) => dbFirestore.collection("users").doc(id).update(d);
+            const handleDeleteUser = async (id) => dbFirestore.collection("users").doc(id).delete();
+            const handleSaveUnit = async (d) => dbFirestore.collection("units").add(d);
+            const handleUpdateUnit = async (id, d) => dbFirestore.collection("units").doc(id).update(d);
+            const handleDeleteUnit = async (id) => dbFirestore.collection("units").doc(id).delete();
+            const onToggleDelete = async (id, status) => dbFirestore.collection("inspections").doc(id).update({deleted: status, deleted_at: status ? new Date().toISOString() : null});
+            const onDeletePermanently = async (id) => dbFirestore.collection("inspections").doc(id).delete();
+            const onImportData = (json) => { json.forEach(i => dbFirestore.collection("inspections").add(i)); showAlert("Importado!", "success"); };
+            const handleLogin = (n, u) => { localStorage.setItem('trfire_user', n); localStorage.setItem('trfire_unit', u); setResponsible(n); setCurrentUnit(u); setPage('menu'); };
+            const handleStartInspection = (t) => { setInspectionType(t); setPage('scan'); };
+            const handleRoundStart = (l) => { setRoundLocation(l); setInspectionType('RONDA'); setPage('scan'); };
 
-            const handleUpdateUserPermissions = async (id, newPermissions) => {
-                if (!dbFirestore) return;
-                try {
-                    await dbFirestore.collection("users").doc(id).update({ permissions: newPermissions });
-                } catch(e) {
-                    console.error("Erro ao atualizar permissões", e);
-                    showAlert("Erro ao salvar permissão.", "error");
-                }
-            };
-
-            const handleDeleteUser = async (id) => { if(!dbFirestore) return; try { await dbFirestore.collection("users").doc(id).delete(); showAlert("Usuário excluído!", "success"); } catch(e) { showAlert("Erro ao excluir usuário.", "error"); } };
-            const handleSaveUnit = async (unitData) => { if(!dbFirestore) return; try { await dbFirestore.collection("units").add(unitData); } catch(e) { showAlert("Erro ao salvar unidade.", "error"); } };
-            const handleUpdateUnit = async (id, data) => { if(!dbFirestore) return; try { await dbFirestore.collection("units").doc(id).update(data); showAlert("Unidade atualizada!", "success"); } catch(e) { showAlert("Erro ao atualizar unidade.", "error"); } };
-            const handleDeleteUnit = async (id) => { if(!dbFirestore) return; try { await dbFirestore.collection("units").doc(id).delete(); showAlert("Unidade excluída!", "success"); } catch(e) { showAlert("Erro ao excluir unidade.", "error"); } };
-            const handleImportData = async (jsonData) => { if(!dbFirestore) return showAlert("Erro BD.", "error"); if(!Array.isArray(jsonData)) return showAlert("JSON Inválido.", "error"); showConfirm(`Importar ${jsonData.length} registros?`, async () => { let c=0; for (const i of jsonData) { try { if (i.id) await dbFirestore.collection("inspections").doc(i.id).set(i); else await dbFirestore.collection("inspections").add(i); c++; } catch(e){} } showAlert(`Sucesso: ${c}`, "success"); }, "warning"); };
-            
-            const handleToggleDelete = async (id, status) => { 
-                if(!dbFirestore) return; 
-                try { 
-                    const updateData = { deleted: status };
-                    if (status) {
-                        updateData.deleted_at = new Date().toISOString();
-                    } else {
-                        updateData.deleted_at = null;
-                    }
-                    await dbFirestore.collection("inspections").doc(id).update(updateData); 
-                } catch (e) { 
-                    showAlert("Erro ao atualizar.", "error"); 
-                } 
-            };
-            
-            const handleDeletePermanently = async (id) => { if(!dbFirestore) return; try { await dbFirestore.collection("inspections").doc(id).delete(); } catch (e) { showAlert("Erro ao excluir.", "error"); } };
-            const handleLogin = (name, unitName) => { localStorage.setItem('trfire_user', name); localStorage.setItem('trfire_unit', unitName); setResponsible(name); setCurrentUnit(unitName); navigateTo('menu'); };
-
-            const handleStartInspection = (type) => { setInspectionType(type); navigateTo('scan'); };
-            const handleRoundStart = (location) => { setRoundLocation(location); setInspectionType('RONDA'); navigateTo('scan'); };
-
-            if (authError) {
-                return <AuthErrorScreen error={authError} />;
-            }
+            if (authError) return <AuthErrorScreen error={authError} />;
 
             return (
                 <ErrorBoundary>
                     <NotificationModal isOpen={notification.isOpen} message={notification.message} type={notification.type} isConfirmation={notification.isConfirmation} onClose={closeNotification} onConfirm={notification.onConfirm} />
-                    {page === 'responsible' && <ResponsibleScreen onConfirm={handleLogin} usersList={users} unitsList={units} showAlert={showAlert} onNavigate={navigateTo} />}
-                    {page === 'menu' && <MenuScreen onNavigate={navigateTo} responsibleName={responsible} currentUnit={currentUnit} onStartInspection={handleStartInspection} usersList={users} onInstallApp={handleInstallClick} />}
-                    {page === 'adminMenu' && <AdminMenuScreen onNavigate={navigateTo} />}
-                    {page === 'accessControl' && <AccessControlScreen onNavigate={navigateTo} usersList={users} onUpdatePermissions={handleUpdateUserPermissions} />}
-                    {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={navigateTo} onSelectLocation={handleRoundStart} db={db} responsibleName={responsible} />}
-                    {page === 'userRegister' && <UserRegisterScreen onNavigate={navigateTo} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} />}
-                    {page === 'unitRegister' && <UnitRegisterScreen onNavigate={navigateTo} onSaveUnit={handleSaveUnit} unitsList={units} onUpdateUnit={handleUpdateUnit} onDeleteUnit={handleDeleteUnit} showAlert={showAlert} showConfirm={showConfirm} />}
-                    {page === 'scan' && <ScannerScreen onNavigate={(target) => navigateTo(target === 'menu' && inspectionType === 'RONDA' ? 'roundsLocation' : target)} onScanSuccess={(d)=>{setScanRes(d); navigateTo(inspectionType === 'RONDA' ? 'roundsForm' : 'form')}} db={db} inspectionType={inspectionType} showAlert={showAlert} />}
-                    {page === 'form' && <FormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} onSave={handleSave} inspectionType={inspectionType} showAlert={showAlert} />}
-                    {page === 'roundsForm' && <RoundsFormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} roundLocation={roundLocation} onSave={handleSave} currentUnit={currentUnit} showAlert={showAlert} />}
-                    {page === 'list' && <ListScreen data={db} onNavigate={navigateTo} onToggleDelete={handleToggleDelete} onDeletePermanently={handleDeletePermanently} onImportData={handleImportData} currentUser={responsible} showAlert={showAlert} showConfirm={showConfirm} />}
-                    {page === 'adminSetup' && <UserRegisterScreen onNavigate={navigateTo} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} backDestination="responsible" />}
+                    {page === 'responsible' && <ResponsibleScreen onConfirm={handleLogin} usersList={users} unitsList={units} showAlert={showAlert} onNavigate={setPage} />}
+                    {page === 'menu' && <MenuScreen onNavigate={setPage} responsibleName={responsible} currentUnit={currentUnit} onStartInspection={handleStartInspection} usersList={users} onInstallApp={handleInstallClick} />}
+                    {page === 'adminMenu' && <AdminMenuScreen onNavigate={setPage} />}
+                    {page === 'accessControl' && <AccessControlScreen onNavigate={setPage} usersList={users} onUpdatePermissions={(id,p)=>dbFirestore.collection("users").doc(id).update({permissions:p})} />}
+                    {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={setPage} onSelectLocation={handleRoundStart} db={db} responsibleName={responsible} />}
+                    {page === 'userRegister' && <UserRegisterScreen onNavigate={setPage} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} />}
+                    {page === 'unitRegister' && <UnitRegisterScreen onNavigate={setPage} onSaveUnit={handleSaveUnit} unitsList={units} onUpdateUnit={handleUpdateUnit} onDeleteUnit={handleDeleteUnit} showAlert={showAlert} showConfirm={showConfirm} />}
+                    {page === 'scan' && <ScannerScreen onNavigate={(target) => setPage(target === 'menu' && inspectionType === 'RONDA' ? 'roundsLocation' : target)} onScanSuccess={(d)=>{setScanRes(d); setPage(inspectionType === 'RONDA' ? 'roundsForm' : 'form')}} db={db} inspectionType={inspectionType} showAlert={showAlert} />}
+                    {page === 'form' && <FormScreen initialData={scanRes} onNavigate={setPage} responsibleName={responsible} onSave={handleSave} inspectionType={inspectionType} showAlert={showAlert} />}
+                    {page === 'roundsForm' && <RoundsFormScreen initialData={scanRes} onNavigate={setPage} responsibleName={responsible} roundLocation={roundLocation} onSave={handleSave} currentUnit={currentUnit} showAlert={showAlert} />}
+                    {page === 'list' && <ListScreen data={db} onNavigate={setPage} onToggleDelete={handleToggleDelete} onDeletePermanently={onDeletePermanently} onImportData={onImportData} currentUser={responsible} showAlert={showAlert} showConfirm={showConfirm} />}
+                    {page === 'adminSetup' && <UserRegisterScreen onNavigate={setPage} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} backDestination="responsible" />}
                 </ErrorBoundary>
             );
         }

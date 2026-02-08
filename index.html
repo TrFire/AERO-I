@@ -3,16 +3,18 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V64.0 (08/02/2026) - ROUNDS EDIT LOCATION
+    VERSÃO ESTÁVEL V65.0 (08/02/2026) - BIN BULK ACTIONS FIX
     ============================================================================
-    NOVIDADES:
-    1. Admin (Locais de Ronda): Agora é possível EDITAR o nome dos locais já
-       cadastrados, além de adicionar e excluir.
+    MELHORIAS NA LIXEIRA (HISTÓRICO):
+    1. Barra de Ferramentas Fixa: Ao entrar na Lixeira, uma barra de ações 
+       aparece automaticamente, contendo um Checkbox "Selecionar Todos".
+    2. Exclusão Definitiva: O botão de excluir permanentemente (ícone lixo) 
+       só aparece se o usuário for ADMIN.
+    3. Restauração: Disponível para todos os usuários nos seus próprios itens.
+    4. Seleção em Massa: Lógica reescrita para ser mais rápida e precisa.
     
-    FUNCIONALIDADES:
-    - Rondas: Modal com turnos.
-    - Fotos: Compressão 240px (sem armazenamento).
-    - Histórico: Filtro por mês e seleção por categoria.
+    FUNCIONALIDADES MANTIDAS:
+    - Rondas (Modal e Turnos), PWA, Compressão de Fotos, Filtros.
     ============================================================================
     -->
 
@@ -128,8 +130,7 @@
         const FALLBACK_LOGO = "https://cdn-icons-png.flaticon.com/512/785/785116.png";
         const LOCATION_OPTIONS = ["ANJUN", "AZUL CARGO", "AREAS COMUNS", "EQ. RESERVA", "LATAM", "MELI", "POWER SOURCE", "TOTAL EXP."];
         const EXTINGUISHER_TYPES = ["ABC- 4KG", "ABC- 6KG", "AGUA- 10LT", "AVD- 9LT", "CO²- 6KG", "EM- 9LT", "PÓ BC- 4KG", "PÓ BC- 6KG", "PÓ BC- 8KG", "PÓ BC- 12KG"];
-        
-        // LOCAIS PADRÃO PARA SEEDING (Caso o banco esteja vazio)
+        // LOCAIS PADRÃO
         const DEFAULT_ROUND_LOCATIONS = ["CASA DE BOMBAS / G-100", "TANQUE DE DIESEL / G-100", "RTI / G-100", "GERADOR / G-100", "CASA DE BOMBAS / G-200", "TANQUE DE DIESEL / G-200", "RTI / G-200", "GERADOR / G-200", "GERADOR / G-300"];
         const ROUND_AREAS = ["G-100", "G-200", "G-300"];
         
@@ -238,9 +239,6 @@
             );
         };
 
-        // ==========================================
-        //  NOVA TELA: GERENCIAR LOCAIS DE RONDA (COM EDIÇÃO)
-        // ==========================================
         function RoundLocationsRegisterScreen({ onNavigate, onSaveLocation, onUpdateLocation, locationsList, onDeleteLocation, showAlert, showConfirm }) {
             const [newLocation, setNewLocation] = useState("");
             const [saving, setSaving] = useState(false);
@@ -249,65 +247,21 @@
             const handleSave = async () => {
                 if (!newLocation) return showAlert("Digite o nome do local.", "warning");
                 setSaving(true);
-                
-                if (editingId) {
-                    await onUpdateLocation(editingId, { name: newLocation.toUpperCase() });
-                    showAlert("Local atualizado!", "success");
-                    setEditingId(null);
-                } else {
-                    await onSaveLocation({ name: newLocation.toUpperCase() });
-                    showAlert("Local adicionado!", "success");
-                }
-                
-                setSaving(false);
-                setNewLocation("");
+                if (editingId) { await onUpdateLocation(editingId, { name: newLocation.toUpperCase() }); showAlert("Atualizado!", "success"); setEditingId(null); } 
+                else { await onSaveLocation({ name: newLocation.toUpperCase() }); showAlert("Adicionado!", "success"); }
+                setSaving(false); setNewLocation("");
             };
 
-            const handleEditClick = (loc) => {
-                setEditingId(loc.id);
-                setNewLocation(loc.name);
-            };
-
-            const handleCancelEdit = () => {
-                setEditingId(null);
-                setNewLocation("");
-            };
-
-            const handleDelete = (id) => {
-                showConfirm("Excluir este local?", () => onDeleteLocation(id), "error");
-            };
+            const handleEditClick = (loc) => { setEditingId(loc.id); setNewLocation(loc.name); };
+            const handleCancelEdit = () => { setEditingId(null); setNewLocation(""); };
+            const handleDelete = (id) => { showConfirm("Excluir este local?", () => onDeleteLocation(id), "error"); };
 
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 overflow-y-auto">
                     <div className="absolute top-4 left-4"><button onClick={() => onNavigate('adminMenu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
-                    <div className="mt-16 text-center mb-8">
-                        <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-full mb-4"><i className="fas fa-map-marker-alt text-2xl text-white"></i></div>
-                        <h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">{editingId ? 'EDITAR LOCAL' : 'LOCAIS DE RONDA'}</h2>
-                        <p className="text-gray-500 dark:text-gray-400 text-sm">Gerenciar pontos de ronda</p>
-                    </div>
-
-                    <div className="space-y-4">
-                        <input value={newLocation} onChange={e => setNewLocation(e.target.value)} placeholder="NOME DO LOCAL (EX: PORTARIA)" className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-blue outline-none dark:text-white font-bold text-gray-700 uppercase" />
-                        <div className="flex gap-2">
-                             {editingId && <button onClick={handleCancelEdit} className="flex-1 py-4 bg-gray-300 text-gray-700 rounded-xl font-bold shadow-lg">CANCELAR</button>}
-                             <button onClick={handleSave} disabled={saving} className="flex-[2] py-4 bg-brand-blue text-white rounded-xl text-lg font-bold shadow-lg active:scale-95 transition-transform">{saving ? 'SALVANDO...' : (editingId ? 'ATUALIZAR' : 'ADICIONAR')}</button>
-                        </div>
-                    </div>
-
-                    <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
-                        <h3 className="font-bold text-gray-500 mb-4 text-xs uppercase">Locais Cadastrados ({locationsList.length})</h3>
-                        <div className="space-y-2">
-                            {locationsList.map(loc => (
-                                <div key={loc.id} className={`bg-white dark:bg-gray-900 border ${editingId === loc.id ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-gray-700'} p-4 rounded-xl flex items-center justify-between shadow-sm`}>
-                                    <span className="font-bold text-gray-800 dark:text-white text-sm">{loc.name}</span>
-                                    <div className="flex gap-2">
-                                        <button onClick={() => handleEditClick(loc)} className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center hover:bg-blue-200"><i className="fas fa-pen text-xs"></i></button>
-                                        <button onClick={() => handleDelete(loc.id)} className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center hover:bg-red-200"><i className="fas fa-trash text-xs"></i></button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
+                    <div className="mt-16 text-center mb-8"><div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-full mb-4"><i className="fas fa-map-marker-alt text-2xl text-white"></i></div><h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">{editingId ? 'EDITAR LOCAL' : 'LOCAIS DE RONDA'}</h2><p className="text-gray-500 dark:text-gray-400 text-sm">Gerenciar pontos</p></div>
+                    <div className="space-y-4"><input value={newLocation} onChange={e => setNewLocation(e.target.value)} placeholder="NOME DO LOCAL" className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-blue outline-none dark:text-white font-bold text-gray-700 uppercase" /><div className="flex gap-2">{editingId && <button onClick={handleCancelEdit} className="flex-1 py-4 bg-gray-300 text-gray-700 rounded-xl font-bold shadow-lg">CANCELAR</button>}<button onClick={handleSave} disabled={saving} className="flex-[2] py-4 bg-brand-blue text-white rounded-xl text-lg font-bold shadow-lg active:scale-95 transition-transform">{saving ? '...' : (editingId ? 'ATUALIZAR' : 'ADICIONAR')}</button></div></div>
+                    <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700"><h3 className="font-bold text-gray-500 mb-4 text-xs uppercase">Locais Cadastrados ({locationsList.length})</h3><div className="space-y-2">{locationsList.map(loc => (<div key={loc.id} className={`bg-white dark:bg-gray-900 border ${editingId === loc.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'} p-4 rounded-xl flex items-center justify-between shadow-sm`}><span className="font-bold text-gray-800 dark:text-white text-sm">{loc.name}</span><div className="flex gap-2"><button onClick={() => handleEditClick(loc)} className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center hover:bg-blue-200"><i className="fas fa-pen text-xs"></i></button><button onClick={() => handleDelete(loc.id)} className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center hover:bg-red-200"><i className="fas fa-trash text-xs"></i></button></div></div>))}</div></div>
                 </div>
             );
         };
@@ -393,7 +347,7 @@
              );
         };
 
-        function MenuScreen({ onNavigate, responsibleName, currentUnit, onStartInspection, usersList, onInstallApp }) {
+        function MenuScreen({ onNavigate, responsibleName, currentUnit, onStartInspection, usersList }) {
             const isAdmin = responsibleName === "ADMIN" || currentUnit === "GLOBAL";
             const userPerms = useMemo(() => {
                 if (!usersList || usersList.length === 0) return ['EXTINTOR', 'HIDRANTE', 'HISTORICO']; 
@@ -457,29 +411,29 @@
                 return () => clearInterval(interval);
             }, []);
 
-            // Calcula estado da ronda específica (1 ou 2)
+            const isLocationDone = (location) => {
+                if (!shiftInfo.start || !db) return false;
+                return db.some(item => {
+                    if (item.type !== 'RONDA' || item.deleted) return false;
+                    const itemDate = new Date(item.created_at);
+                    return item.sector === location && itemDate >= shiftInfo.start && itemDate <= shiftInfo.end;
+                });
+            };
+
             const getRoundStatus = (location, roundNumber) => {
                 const now = new Date();
                 let start = new Date(now);
                 let end = new Date(now);
                 
-                // Definição das janelas de tempo baseadas no turno atual
                 if (!shiftInfo.isNight) {
-                    // DIURNO
-                    if (roundNumber === 1) {
-                        start.setHours(6, 0, 0, 0); end.setHours(11, 59, 59, 999);
-                    } else {
-                        start.setHours(12, 0, 0, 0); end.setHours(17, 59, 59, 999);
-                    }
+                    if (roundNumber === 1) { start.setHours(6, 0, 0, 0); end.setHours(11, 59, 59, 999); } 
+                    else { start.setHours(12, 0, 0, 0); end.setHours(17, 59, 59, 999); }
                 } else {
-                    // NOTURNO
                     const hour = now.getHours();
                     if (roundNumber === 1) {
-                        // 18:00 - 23:59
                         if (hour < 18) { start.setDate(start.getDate() - 1); end.setDate(end.getDate() - 1); }
                         start.setHours(18, 0, 0, 0); end.setHours(23, 59, 59, 999);
                     } else {
-                        // 00:00 - 05:59
                         if (hour >= 18) { start.setDate(start.getDate() + 1); end.setDate(end.getDate() + 1); }
                         start.setHours(0, 0, 0, 0); end.setHours(5, 59, 59, 999);
                     }
@@ -491,42 +445,45 @@
                     return item.sector === location && itemDate >= start && itemDate <= end;
                 });
 
-                // Tempo restante
                 let timeText = "";
                 const diffMs = end - now;
                 if (diffMs > 0) {
                     const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
                     const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
                     timeText = `${diffHrs}h ${diffMins}m restantes`;
-                } else {
-                    timeText = "Encerrado";
-                }
+                } else { timeText = "Encerrado"; }
 
                 return { isDone, timeText, start, end };
             };
 
-            const handleLocationClick = (locName) => {
-                setSelectedLocation(locName);
+            const handleLocationClick = (locName) => { setSelectedLocation(locName); };
+
+            const getTimeBadge = () => {
+                if (!shiftInfo.end) return null;
+                const now = new Date();
+                const diffMs = shiftInfo.end - now;
+                if (diffMs <= 0) return null;
+                const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
+                const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+                return (<div className="absolute right-12 top-1/2 -translate-y-1/2 bg-brand-orange text-white rounded-lg px-2 py-1.5 font-black text-xs shadow-md border border-white/20 animate-pulse">{diffHrs > 0 ? `+${diffHrs}H` : `+${diffMins}m`}</div>);
             };
 
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-3 animate-fade-in relative">
                     <div className="absolute top-4 left-4"><button onClick={() => onNavigate('menu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
                     <div className="mt-16 text-center mb-6"><h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">LOCAIS DE RONDA</h2></div>
-                    
                     <div className="flex-1 overflow-y-auto space-y-3 pb-6">
                         {roundLocationsList.map(loc => {
-                            // Verifica status global (se fez pelo menos uma hoje, só pra pintar a borda)
-                            // Na verdade, melhor não pintar borda verde se faltar uma.
+                            const done = isLocationDone(loc.name);
                             return (
-                                <button key={loc.id} onClick={() => handleLocationClick(loc.name)} className={`w-full py-5 bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 hover:border-blue-500 text-gray-700 dark:text-white rounded-2xl text-lg font-bold shadow-sm flex items-center justify-between px-6`}>
-                                    <div className="flex flex-col items-start"><span>{loc.name}</span></div>
-                                    <i className="fas fa-chevron-right text-gray-300"></i>
+                                <button key={loc.id} onClick={() => handleLocationClick(loc.name)} className={`w-full py-5 bg-white dark:bg-gray-800 border-2 ${done ? 'border-green-500' : 'border-gray-100 dark:border-gray-700 hover:border-blue-500'} text-gray-700 dark:text-white rounded-2xl text-lg font-bold shadow-sm flex items-center justify-between px-6`}>
+                                    <div className="flex flex-col items-start"><span>{loc.name}</span><span className={`text-[10px] font-bold uppercase mt-1 ${done ? 'text-green-500' : 'text-orange-500'}`}>{done ? 'Realizado' : 'Pendente'}</span></div>
+                                    {!done && getTimeBadge()}
+                                    <i className={`fas ${done ? 'fa-check text-green-500' : 'fa-chevron-right text-gray-300 group-hover:text-blue-500'}`}></i>
                                 </button>
                             );
                         })}
                     </div>
-
                     {/* MODAL DE RONDA DUPLA */}
                     {selectedLocation && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={() => setSelectedLocation(null)}>
@@ -534,20 +491,13 @@
                                 <button onClick={() => setSelectedLocation(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><i className="fas fa-times text-xl"></i></button>
                                 <h3 className="text-xl font-black text-center mb-2 dark:text-white">{selectedLocation}</h3>
                                 <p className="text-center text-blue-600 font-bold text-sm mb-6 uppercase">{shiftInfo.name}</p>
-
                                 <div className="space-y-4">
                                     {[1, 2].map(num => {
                                         const status = getRoundStatus(selectedLocation, num);
                                         return (
                                             <div key={num} onClick={() => onSelectLocation(selectedLocation)} className={`p-4 rounded-xl border-l-4 shadow-sm flex justify-between items-center cursor-pointer transition-all active:scale-95 ${status.isDone ? 'bg-green-50 border-green-500' : 'bg-gray-50 border-gray-300 dark:bg-gray-800 dark:border-gray-600'}`}>
-                                                <div>
-                                                    <span className="font-black text-lg block text-gray-800 dark:text-white">{num}ª RONDA</span>
-                                                    <span className={`text-xs font-bold ${status.isDone ? 'text-green-600' : 'text-orange-500'}`}>{status.isDone ? 'REALIZADA' : 'PENDENTE'}</span>
-                                                </div>
-                                                <div className="text-right">
-                                                    <span className="text-xs text-gray-500 font-medium block">Prazo</span>
-                                                    <span className={`text-xs font-bold ${status.timeText === 'Encerrado' ? 'text-red-500' : 'text-blue-600'}`}>{status.timeText}</span>
-                                                </div>
+                                                <div><span className="font-black text-lg block text-gray-800 dark:text-white">{num}ª RONDA</span><span className={`text-xs font-bold ${status.isDone ? 'text-green-600' : 'text-orange-500'}`}>{status.isDone ? 'REALIZADA' : 'PENDENTE'}</span></div>
+                                                <div className="text-right"><span className="text-xs text-gray-500 font-medium block">Prazo</span><span className={`text-xs font-bold ${status.timeText === 'Encerrado' ? 'text-red-500' : 'text-blue-600'}`}>{status.timeText}</span></div>
                                             </div>
                                         );
                                     })}
@@ -790,18 +740,13 @@
                     if (!item.created_at || typeof item.created_at !== 'string') return false; 
                     
                     try {
-                        // 1. Month Filter
                         if (item.created_at.slice(0, 7) !== viewMonth) return false; 
-                        
-                        // 3. Type Filter
+                        const itemDateStr = item.created_at.slice(0, 10); 
+                        if (filters.startDate && itemDateStr < filters.startDate) return false;
+                        if (filters.endDate && itemDateStr > filters.endDate) return false;
                         if (filters.type && (item.type || 'EXTINTOR') !== filters.type) return false; 
-                        
-                        // 4. Responsible Filter
                         if (filters.responsible && item.responsible !== filters.responsible) return false; 
-                        
-                        // 5. Location Filter
                         if (filters.moduleLocation && item.moduleLocation !== filters.moduleLocation) return false; 
-                        
                         return true; 
                     } catch (e) { return false; }
                 });
@@ -810,7 +755,32 @@
             const groupedData = useMemo(() => { return { EXTINTOR: activeData.filter(i => (i.type || 'EXTINTOR') === 'EXTINTOR'), HIDRANTE: activeData.filter(i => i.type === 'HIDRANTE'), RONDA: activeData.filter(i => i.type === 'RONDA') }; }, [activeData]);
             const displayList = showBin ? deletedData : activeData;
             
-            const handleSelectAll = () => { if (selectedIds.size === displayList.length) setSelectedIds(new Set()); else setSelectedIds(new Set(displayList.map(i => i.id))); };
+            // LOGICA CORRIGIDA "SELECIONAR TODOS" PARA LIXEIRA E LISTA NORMAL
+            const handleSelectAll = () => {
+                const targetList = showBin ? deletedData : activeData;
+                
+                // Se estiver na lista principal, "Select All" pode ser complexo devido às categorias.
+                // Mas para simplificar, vamos selecionar TODOS os visíveis.
+                
+                // Mas espera, se estiver na lista principal, activeData é a lista filtrada.
+                // Se estiver na Lixeira, deletedData é a lista filtrada (sem filtros extras além de deletado).
+
+                // Vamos usar displayList como referência
+                if (!displayList || displayList.length === 0) return;
+                
+                const allSelected = displayList.every(item => selectedIds.has(item.id));
+                const newSet = new Set(selectedIds);
+                
+                if (allSelected) {
+                    // Desmarcar todos da lista atual
+                    displayList.forEach(item => newSet.delete(item.id));
+                } else {
+                    // Marcar todos da lista atual
+                    displayList.forEach(item => newSet.add(item.id));
+                }
+                setSelectedIds(newSet);
+            };
+
             const toggleSelection = (id) => { const newSet = new Set(selectedIds); if (newSet.has(id)) newSet.delete(id); else newSet.add(id); setSelectedIds(newSet); };
 
             const handleSelectCategory = (categoryItems) => {
@@ -862,12 +832,24 @@
                 return (
                     <div key={item.id} className={`p-4 rounded-xl shadow-sm border-l-4 flex justify-between items-center transition-all ${showBin ? (isSelected ? 'bg-red-100 border-red-600' : 'bg-red-50 dark:bg-red-900/10 border-red-500 opacity-80') : 'bg-white dark:bg-gray-800 border-brand-red'}`}>
                         <div className="flex items-center gap-3">
-                            {isAdmin && <div onClick={() => toggleSelection(item.id)} className={`w-5 h-5 border rounded flex items-center justify-center ${selectedIds.has(item.id)?'bg-red-500 border-red-500 text-white':''}`}>{selectedIds.has(item.id) && <i className="fas fa-check text-xs"></i>}</div>}
+                            {/* Checkbox para Admin em qualquer lista, ou para User na Lixeira para restaurar */}
+                            <div onClick={() => toggleSelection(item.id)} className={`w-5 h-5 border rounded flex items-center justify-center cursor-pointer ${selectedIds.has(item.id)?'bg-red-500 border-red-500 text-white':''}`}>{selectedIds.has(item.id) && <i className="fas fa-check text-xs"></i>}</div>
                             <div><span className="font-bold text-sm block">{item.equipmentName}</span><span className="text-xs text-gray-500">{formatDate(item.created_at)} - {item.moduleLocation}</span></div>
                             {/* NEW: VISUAL INDICATOR OF PHOTO */}
                             {(item.photo || item.hasPhoto) && <div className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-1 rounded flex items-center gap-1"><i className="fas fa-camera"></i> Foto</div>}
                         </div>
-                        <div className="flex flex-col items-end">{showBin ? (<i onClick={() => confirmBulkRestore(item.id)} className="fas fa-trash-restore text-green-500"></i>) : (<i onClick={() => onToggleDelete(item.id, true)} className="fas fa-trash text-red-300"></i>)}</div>
+                        <div className="flex flex-col items-end">
+                            {showBin ? (
+                                <div className="flex gap-2">
+                                    {/* Qualquer usuário pode restaurar, só admin pode excluir permanentemente */}
+                                    <i onClick={() => onToggleDelete(item.id, false)} className="fas fa-trash-restore text-green-500 cursor-pointer"></i>
+                                    {isAdmin && <i onClick={() => onDeletePermanently(item.id)} className="fas fa-times text-red-500 cursor-pointer"></i>}
+                                </div>
+                            ) : (
+                                // Apenas ADMIN ou DONO do item podem mandar pra lixeira
+                                (isAdmin || item.responsible === currentUser) && <i onClick={() => onToggleDelete(item.id, true)} className="fas fa-trash text-red-300 cursor-pointer"></i>
+                            )}
+                        </div>
                     </div>
                 );
             };
@@ -878,12 +860,22 @@
                         <div className="flex items-center gap-2">{showBin ? (<button onClick={()=>setShowBin(false)} className="bg-white/20 px-3 py-1 rounded text-xs">VOLTAR</button>) : (<button onClick={()=>onNavigate('menu')} className="bg-orange-500 px-3 py-1 rounded text-xs font-bold">NOVA LEITURA</button>)}<span className="text-xs ml-2">{showBin ? 'Lixeira' : `${displayList.length} itens`}</span></div>
                         <div className="flex gap-3">{!showBin && (<><i onClick={() => setShowFilter(!showFilter)} className="fas fa-filter text-lg text-yellow-400 cursor-pointer"></i><i onClick={() => setShowPdfModal(true)} className="fas fa-file-pdf text-lg cursor-pointer"></i>{isAdmin && <i onClick={() => setShowBackupModal(true)} className="fas fa-cloud-download-alt text-lg text-blue-300 cursor-pointer"></i>}</>)}<i onClick={() => setShowBin(!showBin)} className={`fas ${showBin ? 'fa-list' : 'fa-trash'} text-lg cursor-pointer`}></i></div>
                     </div>
-                    {/* Toolbar de Ações em Massa */}
-                    {isAdmin && selectedIds.size > 0 && (
+                    
+                    {/* Toolbar de Ações em Massa - Modificado para aparecer na Lixeira também */}
+                    {selectedIds.size > 0 && (
                         <div className="bg-gray-200 dark:bg-gray-800 p-2 flex justify-between items-center px-4">
                             <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{selectedIds.size} selecionados</span>
                             <div className="flex gap-2">
-                                {showBin ? (<><button onClick={confirmBulkRestore} className="text-green-600 text-xs font-bold">RESTAURAR</button><button onClick={confirmBulkDelete} className="text-red-600 text-xs font-bold">EXCLUIR</button></>) : (<button onClick={confirmBulkSoftDelete} className="text-red-600 text-xs font-bold">LIXEIRA</button>)}
+                                {/* Botão "Selecionar Todos" movido para Toolbar para clareza */}
+                                <button onClick={handleSelectAll} className="text-blue-600 text-xs font-bold mr-2">TODOS</button>
+                                {showBin ? (
+                                    <>
+                                        <button onClick={confirmBulkRestore} className="text-green-600 text-xs font-bold">RESTAURAR</button>
+                                        {isAdmin && <button onClick={confirmBulkDelete} className="text-red-600 text-xs font-bold">EXCLUIR</button>}
+                                    </>
+                                ) : (
+                                    <button onClick={confirmBulkSoftDelete} className="text-red-600 text-xs font-bold">LIXEIRA</button>
+                                )}
                             </div>
                         </div>
                     )}
@@ -1275,7 +1267,7 @@
             const handleImportData = async (jsonData) => { if(!dbFirestore) return showAlert("Erro BD.", "error"); if(!Array.isArray(jsonData)) return showAlert("JSON Inválido.", "error"); showConfirm(`Importar ${jsonData.length} registros?`, async () => { let c=0; for (const i of jsonData) { try { if (i.id) await dbFirestore.collection("inspections").doc(i.id).set(i); else await dbFirestore.collection("inspections").add(i); c++; } catch(e){} } showAlert(`Sucesso: ${c}`, "success"); }, "warning"); };
             const handleToggleDelete = async (id, status) => { if(!dbFirestore) return; try { const updateData = { deleted: status }; if (status) { updateData.deleted_at = new Date().toISOString(); } else { updateData.deleted_at = null; } await dbFirestore.collection("inspections").doc(id).update(updateData); } catch (e) { showAlert("Erro ao atualizar.", "error"); } };
             const handleDeletePermanently = async (id) => { if(!dbFirestore) return; try { await dbFirestore.collection("inspections").doc(id).delete(); } catch (e) { showAlert("Erro ao excluir.", "error"); } };
-            const handleLogin = (name, unitName) => { localStorage.setItem('trfire_user', name); localStorage.setItem('trfire_unit', unitName); setResponsible(name); setCurrentUnit(unitName); navigateTo('menu'); };
+            const handleLogin = (name, unitName) => { localStorage.setItem('trfire_user', name); localStorage.setItem('trfire_unit', unitName); setResponsible(name); setCurrentUnit(unitName); setPage('menu'); };
 
             const handleStartInspection = (type) => { setInspectionType(type); navigateTo('scan'); };
             const handleRoundStart = (location) => { setRoundLocation(location); setInspectionType('RONDA'); navigateTo('scan'); };

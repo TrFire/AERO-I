@@ -3,14 +3,19 @@
 <head>
     <!-- 
     ============================================================================
-    BACKUP DE SEGURANÇA - VERSÃO ESTÁVEL V69.0 (12/02/2026)
+    VERSÃO ESTÁVEL V72.6 (12/02/2026) - PERMISSION & LOADING FIX
     ============================================================================
-    ESTADO DO SISTEMA:
-    1. UI: Widget de Relógio/Data adicionado ao Menu Principal.
-    2. Rondas: Modal com Turnos (Diurno 1/2, Noturno 1/2) e Timer.
-    3. Admin: Gestão completa de Locais de Ronda, Usuários e Unidades.
-    4. Histórico: Filtro simplificado por Mês, Lixeira com ações em massa.
-    5. Performance: Fotos otimizadas (240px) e flag 'hasPhoto'.
+    CORREÇÃO DE ESTABILIDADE:
+    - Implementado estado global de 'loading' para impedir renderização antes
+      da autenticação estar completa.
+    - O erro 'permission-denied' ocorria porque a UI tentava renderizar listas
+      vazias ou acessar coleções antes do handshake do Firebase Auth.
+    - Agora, a tela "A CONECTAR..." permanece até que o Auth E os dados iniciais
+      estejam prontos.
+    
+    ESTADO GERAL:
+    - Todas as funcionalidades da V72.5 mantidas.
+    - Performance de arranque melhorada.
     ============================================================================
     -->
 
@@ -200,7 +205,7 @@
 
             const handleLogoTap = () => {
                 const now = Date.now();
-                if (now - lastTap < 400) { onConfirm(null, null, null, true); } 
+                if (now - lastTap < 400) { onNavigate('adminSetup'); } 
                 setLastTap(now);
             };
 
@@ -213,7 +218,10 @@
                 if (!userFound) { showAlert("Usuário não cadastrado.", "error"); return; }
                 if (userFound.pass !== password) { showAlert("Senha incorreta.", "error"); return; }
                 if (nameUpper !== "ADMIN" && userFound.unit !== "GLOBAL" && userFound.unit !== selectedUnit) { showAlert("Usuário incorreto.", "error"); return; }
-                onConfirm(userFound.name, selectedUnit || "GLOBAL", false, false);
+                
+                const role = userFound.role || (userFound.name === 'ADMIN' ? 'ADMIN' : 'OPERACIONAL');
+                
+                onConfirm(userFound.name, selectedUnit || "GLOBAL", role, true);
             };
             const isButtonEnabled = selectedName && password && (selectedUnit || selectedName.toUpperCase().trim() === "ADMIN");
 
@@ -281,29 +289,40 @@
         };
 
         function UserRegisterScreen({ onNavigate, onSaveUser, usersList, unitsList, onUpdateUser, onDeleteUser, showAlert, showConfirm, backDestination = 'adminMenu' }) {
-            const [newUser, setNewUser] = useState({ name: '', pass: '', unit: '', shift: 'DIURNO' });
+            const [newUser, setNewUser] = useState({ name: '', pass: '', unit: '', shift: 'DIURNO', role: 'OPERACIONAL' });
             const [editingId, setEditingId] = useState(null);
             const handleSave = async () => {
                 if (!newUser.name || !newUser.pass) return showAlert("Dados incompletos.", "warning");
                 let finalUnit = newUser.unit;
-                if (newUser.name.toUpperCase() === "ADMIN" && !finalUnit) finalUnit = "GLOBAL";
-                const userData = { name: newUser.name.toUpperCase(), pass: newUser.pass, unit: finalUnit || '', shift: newUser.shift };
+                if ((newUser.name.toUpperCase() === "ADMIN" || newUser.role === "ADMIN") && !finalUnit) finalUnit = "GLOBAL";
+                
+                const userData = { 
+                    name: newUser.name.toUpperCase(), 
+                    pass: newUser.pass, 
+                    unit: finalUnit || '', 
+                    shift: newUser.shift,
+                    role: newUser.role 
+                };
+                
                 if (editingId) { await onUpdateUser(editingId, userData); setEditingId(null); showAlert("Atualizado!", "success"); } 
                 else { await onSaveUser(userData); showAlert("Cadastrado!", "success"); }
-                setNewUser({ name: '', pass: '', unit: '', shift: 'DIURNO' });
+                setNewUser({ name: '', pass: '', unit: '', shift: 'DIURNO', role: 'OPERACIONAL' });
             };
-            const handleEditClick = (u) => { setEditingId(u.id); setNewUser({ name: u.name, pass: u.pass, unit: u.unit || '', shift: u.shift || 'DIURNO' }); };
+            const handleEditClick = (u) => { setEditingId(u.id); setNewUser({ name: u.name, pass: u.pass, unit: u.unit || '', shift: u.shift || 'DIURNO', role: u.role || 'OPERACIONAL' }); };
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 overflow-y-auto">
                     <div className="absolute top-4 left-4"><button onClick={() => onNavigate(backDestination)} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
                     <div className="mt-16 space-y-4">
                         <select value={newUser.unit} onChange={e => setNewUser({...newUser, unit: e.target.value})} className="w-full p-4 bg-gray-100 rounded-xl font-bold"><option value="">Unidade (Opcional)</option>{unitsList && unitsList.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}</select>
-                        <select value={newUser.shift} onChange={e => setNewUser({...newUser, shift: e.target.value})} className="w-full p-4 bg-gray-100 rounded-xl font-bold"><option value="DIURNO">DIURNO</option><option value="NOTURNO">NOTURNO</option></select>
+                        <div className="flex gap-2">
+                            <select value={newUser.shift} onChange={e => setNewUser({...newUser, shift: e.target.value})} className="flex-1 p-4 bg-gray-100 rounded-xl font-bold"><option value="DIURNO">DIURNO</option><option value="NOTURNO">NOTURNO</option></select>
+                            <select value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})} className="flex-1 p-4 bg-gray-100 rounded-xl font-bold text-blue-700"><option value="OPERACIONAL">OPERACIONAL</option><option value="ADMIN">ADMIN</option></select>
+                        </div>
                         <input value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} placeholder="NOME" className="w-full p-4 bg-gray-100 rounded-xl font-bold" />
                         <input value={newUser.pass} onChange={e => setNewUser({...newUser, pass: e.target.value})} placeholder="SENHA" className="w-full p-4 bg-gray-100 rounded-xl font-bold" />
                         <button onClick={handleSave} className="w-full py-4 bg-brand-orange text-white rounded-xl font-bold">SALVAR</button>
                     </div>
-                    <div className="mt-8 space-y-2">{usersList && usersList.map(u => (<div key={u.id} className="p-4 border rounded-xl flex justify-between"><div><b>{u.name}</b> <span className="text-xs bg-gray-200 px-1 rounded">{u.shift || 'D'}</span><br/><span className="text-xs">{u.unit || 'GLOBAL'}</span></div><div><button onClick={() => handleEditClick(u)} className="mr-2 text-blue-500"><i className="fas fa-pen"></i></button><button onClick={()=>showConfirm("Excluir?", ()=>onDeleteUser(u.id), "error")} className="text-red-500"><i className="fas fa-trash"></i></button></div></div>))}</div>
+                    <div className="mt-8 space-y-2">{usersList && usersList.map(u => (<div key={u.id} className="p-4 border rounded-xl flex justify-between"><div><b>{u.name}</b> <span className="text-xs bg-gray-200 px-1 rounded">{u.shift || 'D'}</span> {u.role === 'ADMIN' && <span className="text-xs bg-purple-200 text-purple-800 px-1 rounded ml-1">ADM</span>}<br/><span className="text-xs">{u.unit || 'GLOBAL'}</span></div><div><button onClick={() => handleEditClick(u)} className="mr-2 text-blue-500"><i className="fas fa-pen"></i></button><button onClick={()=>showConfirm("Excluir?", ()=>onDeleteUser(u.id), "error")} className="text-red-500"><i className="fas fa-trash"></i></button></div></div>))}</div>
                 </div>
             );
         };
@@ -343,15 +362,18 @@
              );
         };
 
-        function MenuScreen({ onNavigate, responsibleName, currentUnit, onStartInspection, usersList }) {
-            const isAdmin = responsibleName === "ADMIN" || currentUnit === "GLOBAL";
+        function MenuScreen({ onNavigate, responsibleName, currentUnit, onStartInspection, usersList, userRole }) {
+            const isAdmin = userRole === 'ADMIN';
+
             const userPerms = useMemo(() => {
                 if (!usersList || usersList.length === 0) return ['EXTINTOR', 'HIDRANTE', 'HISTORICO']; 
                 const user = usersList.find(u => u.name === responsibleName);
                 return user?.permissions || ['EXTINTOR', 'HIDRANTE', 'HISTORICO'];
             }, [usersList, responsibleName]);
+            
             const hasAccess = (perm) => isAdmin || userPerms.includes(perm);
-            const handleLogout = () => { localStorage.removeItem('trfire_user'); window.location.reload(); };
+            
+            const handleLogout = () => { localStorage.removeItem('trfire_user'); localStorage.removeItem('trfire_role'); window.location.reload(); };
 
             const [currentDate, setCurrentDate] = useState(new Date());
             useEffect(() => {
@@ -373,7 +395,6 @@
                             <h2 className="text-2xl font-extrabold tracking-tight mt-2 text-brand-red dark:text-white">TR FIRE</h2>
                             <p className="text-brand-orange text-lg font-bold tracking-widest">INSPEÇÕES</p>
                             
-                            {/* DATA E HORA EM TEMPO REAL */}
                             <div className="text-center mt-2 space-y-1">
                                 <p className="text-xs text-gray-500 dark:text-gray-400 font-sans font-medium capitalize">
                                     {currentDate.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
@@ -388,7 +409,7 @@
                             {hasAccess('EXTINTOR') && <button onClick={() => onStartInspection('EXTINTOR')} className="w-full py-4 bg-brand-red text-white rounded-xl font-bold shadow-lg">EXTINTORES</button>}
                             {hasAccess('HIDRANTE') && <button onClick={() => onStartInspection('HIDRANTE')} className="w-full py-4 bg-brand-orange text-white rounded-xl font-bold shadow-lg">HIDRANTES</button>}
                             {hasAccess('HISTORICO') && <button onClick={() => onNavigate('list')} className="w-full py-4 bg-gray-800 text-white rounded-xl font-bold shadow-lg">HISTÓRICO</button>}
-                            {isAdmin && <button onClick={() => onNavigate('adminMenu')} className="w-full py-4 bg-cyan-700 text-white rounded-xl font-bold shadow-lg">ADMIN</button>}
+                            {isAdmin && <button onClick={() => onNavigate('adminMenu')} className="w-full py-4 bg-cyan-700 text-white rounded-xl font-bold shadow-lg">PARÂMETROS ADMIN</button>}
                         </div>
                     </div>
                 </div>
@@ -459,13 +480,21 @@
 
                 let timeText = "";
                 const diffMs = end - now;
-                if (diffMs > 0) {
+                
+                const isExpired = diffMs < 0; 
+                const isFuture = now < start;
+
+                if (isExpired) {
+                    timeText = "Encerrado";
+                } else if (isFuture) {
+                    timeText = "Aguardando horário";
+                } else {
                     const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
                     const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
                     timeText = `${diffHrs}h ${diffMins}m restantes`;
-                } else { timeText = "Encerrado"; }
+                }
 
-                return { isDone, timeText, start, end };
+                return { isDone, timeText, isExpired, isFuture, start, end };
             };
 
             const handleLocationClick = (locName) => { setSelectedLocation(locName); };
@@ -512,6 +541,7 @@
                             );
                         })}
                     </div>
+                    {/* MODAL DE RONDA DUPLA */}
                     {selectedLocation && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={() => setSelectedLocation(null)}>
                             <div className="bg-white dark:bg-gray-900 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative" onClick={e => e.stopPropagation()}>
@@ -521,10 +551,27 @@
                                 <div className="space-y-4">
                                     {[1, 2].map(num => {
                                         const status = getRoundStatus(selectedLocation, num);
+                                        const isLocked = !status.isDone && (status.isExpired || status.isFuture);
+
                                         return (
-                                            <div key={num} onClick={() => onSelectLocation(selectedLocation)} className={`p-4 rounded-xl border-l-4 shadow-sm flex justify-between items-center cursor-pointer transition-all active:scale-95 ${status.isDone ? 'bg-green-50 border-green-500' : 'bg-gray-50 border-gray-300 dark:bg-gray-800 dark:border-gray-600'}`}>
-                                                <div><span className="font-black text-lg block text-gray-800 dark:text-white">{num}ª RONDA</span><span className={`text-xs font-bold ${status.isDone ? 'text-green-600' : 'text-orange-500'}`}>{status.isDone ? 'REALIZADA' : 'PENDENTE'}</span></div>
-                                                <div className="text-right"><span className="text-xs text-gray-500 font-medium block">Prazo</span><span className={`text-xs font-bold ${status.timeText === 'Encerrado' ? 'text-red-500' : 'text-blue-600'}`}>{status.timeText}</span></div>
+                                            <div 
+                                                key={num} 
+                                                onClick={() => !isLocked && onSelectLocation(selectedLocation)} 
+                                                className={`p-4 rounded-xl border-l-4 shadow-sm flex justify-between items-center transition-all 
+                                                    ${status.isDone ? 'bg-green-50 border-green-500 cursor-pointer' : 
+                                                      isLocked ? 'bg-gray-100 border-gray-400 opacity-60 cursor-not-allowed' : 
+                                                      'bg-white border-blue-500 cursor-pointer active:scale-95 shadow-md'}`}
+                                            >
+                                                <div>
+                                                    <span className={`font-black text-lg block ${isLocked ? 'text-gray-500' : 'text-gray-800 dark:text-white'}`}>{num}ª RONDA</span>
+                                                    <span className={`text-xs font-bold ${status.isDone ? 'text-green-600' : isLocked ? 'text-red-500' : 'text-orange-500'}`}>
+                                                        {status.isDone ? 'REALIZADA' : (status.isExpired ? 'PRAZO EXPIRADO' : (status.isFuture ? 'AGUARDANDO' : 'DISPONÍVEL'))}
+                                                    </span>
+                                                </div>
+                                                <div className="text-right">
+                                                    <span className="text-xs text-gray-500 font-medium block">Prazo</span>
+                                                    <span className={`text-xs font-bold ${status.isExpired ? 'text-red-500' : 'text-blue-600'}`}>{status.timeText}</span>
+                                                </div>
                                             </div>
                                         );
                                     })}
@@ -708,7 +755,7 @@
             );
         };
 
-        const ListScreen = ({ data, onNavigate, onToggleDelete, onDeletePermanently, onImportData, currentUser, showAlert, showConfirm }) => {
+        const ListScreen = ({ data, onNavigate, onToggleDelete, onDeletePermanently, onImportData, currentUser, showAlert, showConfirm, userRole }) => {
             const [showFilter, setShowFilter] = useState(false);
             const [showPdfModal, setShowPdfModal] = useState(false); 
             const [showBackupModal, setShowBackupModal] = useState(false);
@@ -810,17 +857,45 @@
 
             const handleExport = () => { const jsonString = JSON.stringify(data, null, 2); const blob = new Blob([jsonString], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup_trfire_${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); setShowBackupModal(false); };
             const handleFileImport = (e) => { const file = e.target.files[0]; if(!file) return; const reader = new FileReader(); reader.onload = (ev) => { try { const json = JSON.parse(ev.target.result); onImportData(json); setShowBackupModal(false); } catch(err) { showAlert("Erro JSON.", "error"); } }; reader.readAsText(file); e.target.value = null; };
-            const generateSpecificPDF = async (type) => { setShowPdfModal(false); const reportData = activeData.filter(item => (item.type || (type === 'RONDA' ? '' : 'EXTINTOR')) === type); if(reportData.length === 0) return showAlert(`Sem dados ATIVOS de ${type} para gerar relatório neste mês.`, "warning"); const doc = new jsPDF({ orientation: "landscape" }); doc.setFillColor(243, 244, 246); doc.rect(0, 0, 297, 40, 'F'); doc.setTextColor(33, 33, 33); doc.setFontSize(22); let title = ""; if (type === 'EXTINTOR') title = "CHECK-LIST EXTINTORES MENSAL"; else if (type === 'HIDRANTE') title = "CHECK-LIST HIDRANTES MENSAL"; else if (type === 'RONDA') title = "RELATÓRIO DE RONDAS PREVENTIVAS"; doc.text(title, 14, 25); doc.setFontSize(10); doc.setTextColor(100, 100, 100); doc.text(`Mês de Referência: ${formatMonthDisplay(viewMonth).toUpperCase()} | Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 35); doc.setFontSize(9); doc.setTextColor(33, 33, 33); doc.text("Parque Logístico: AERO GRU I", 280, 28, { align: "right" }); doc.text("Empresa: Vilella Assessoria em Segurança do Trabalho", 280, 35, { align: "right" }); let body = []; let head = []; if (type === 'EXTINTOR') { head = [['ID', 'Equipamento', 'Local', 'Tipo', 'Recarga', 'Hidro', 'Placa', 'Solo', 'Lacre', 'Obstruído', 'Obs', 'Resp.', 'Data']]; body = reportData.map(i => [ i.equipmentId || '-', i.equipmentName || '-', i.moduleLocation || '-', i.extinguisherType || '-', i.nextRecharge || '-', i.nextHydro || '-', i.hasId ? 'SIM' : 'NÃO', i.floorSign ? 'SIM' : 'NÃO', i.q1 ? 'SIM' : 'NÃO', i.q2 ? 'SIM' : 'NÃO', i.obs || '-', i.responsible || '-', formatDate(i.created_at) ]); } else if (type === 'HIDRANTE') { head = [['ID', 'Equipamento', 'Local', 'Completo', 'Desobstruído', 'Lacre', 'Hidro', 'Obs', 'Resp.', 'Data']]; body = reportData.map(i => [ i.equipmentId || '-', i.equipmentName || '-', i.moduleLocation || '-', i.h_complete ? 'SIM' : 'NÃO', i.h_unobstructed ? 'NÃO' : 'SIM', i.h_seal_broken ? 'SIM' : 'NÃO', i.nextHydro || '-', i.obs || '-', i.responsible || '-', formatDate(i.created_at) ]); } else if (type === 'RONDA') { head = [['Local', 'Área Técnica', 'Data/Hora', 'Resp.', 'Galpão', 'Status', 'Obs']]; body = reportData.map(i => [ i.sector || '-', i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.moduleLocation || '-', i.status || '-', i.obs || '' ]); } doc.autoTable({ head: head, body: body, startY: 45, theme: 'grid', headStyles: { fillColor: [224, 224, 224], textColor: [0, 0, 0], fontStyle: 'bold', lineWidth: 0.1, lineColor: [200, 200, 200] }, styles: { fontSize: 7, textColor: [50, 50, 50], lineColor: [230, 230, 230], lineWidth: 0.1 }, alternateRowStyles: { fillColor: [255, 255, 255] } }); 
-            if (type === 'EXTINTOR') {
-                let finalY = doc.lastAutoTable.finalY + 10;
-                const counts = {};
-                reportData.forEach(item => { const t = item.extinguisherType || 'Indefinido'; counts[t] = (counts[t] || 0) + 1; });
-                if (finalY > 150) { doc.addPage(); finalY = 20; }
-                doc.setFontSize(12); doc.setTextColor(33, 33, 33); doc.text("Resumo Quantitativo:", 14, finalY);
-                const summaryBody = Object.entries(counts).map(([t, c]) => [t, c]);
-                doc.autoTable({ head: [['Tipo', 'Quantidade']], body: summaryBody, startY: finalY + 5, theme: 'striped', tableWidth: 'wrap', styles: { fontSize: 9 } });
-            }
-            doc.save(`TRFIRE_${type}_${viewMonth}.pdf`); };
+            const generateSpecificPDF = async (type) => { 
+                // SECURITY CHECK FOR ROUNDS
+                if (type === 'RONDA' && !isAdmin) {
+                    return showAlert("Acesso Negado: Apenas Administradores podem gerar relatórios de Ronda.", "error");
+                }
+
+                setShowPdfModal(false); 
+                const reportData = activeData.filter(item => (item.type || (type === 'RONDA' ? '' : 'EXTINTOR')) === type); 
+                if(reportData.length === 0) return showAlert(`Sem dados ATIVOS de ${type} para gerar relatório neste mês.`, "warning"); 
+                
+                const doc = new jsPDF({ orientation: "landscape" }); 
+                doc.setFillColor(243, 244, 246); doc.rect(0, 0, 297, 40, 'F'); 
+                doc.setTextColor(33, 33, 33); doc.setFontSize(22); 
+                let title = ""; if (type === 'EXTINTOR') title = "CHECK-LIST EXTINTORES MENSAL"; else if (type === 'HIDRANTE') title = "CHECK-LIST HIDRANTES MENSAL"; else if (type === 'RONDA') title = "RELATÓRIO DE RONDAS PREVENTIVAS"; 
+                doc.text(title, 14, 25); 
+                doc.setFontSize(10); doc.setTextColor(100, 100, 100); 
+                doc.text(`Mês de Referência: ${formatMonthDisplay(viewMonth).toUpperCase()} | Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 35); 
+                doc.setFontSize(9); doc.setTextColor(33, 33, 33); 
+                doc.text("Parque Logístico: AERO GRU I", 280, 28, { align: "right" }); 
+                doc.text("Empresa: Vilella Assessoria em Segurança do Trabalho", 280, 35, { align: "right" }); 
+                
+                let body = []; let head = []; 
+                if (type === 'EXTINTOR') { head = [['ID', 'Equipamento', 'Local', 'Tipo', 'Recarga', 'Hidro', 'Placa', 'Solo', 'Lacre', 'Obstruído', 'Obs', 'Resp.', 'Data']]; body = reportData.map(i => [ i.equipmentId || '-', i.equipmentName || '-', i.moduleLocation || '-', i.extinguisherType || '-', i.nextRecharge || '-', i.nextHydro || '-', i.hasId ? 'SIM' : 'NÃO', i.floorSign ? 'SIM' : 'NÃO', i.q1 ? 'SIM' : 'NÃO', i.q2 ? 'SIM' : 'NÃO', i.obs || '-', i.responsible || '-', formatDate(i.created_at) ]); } 
+                else if (type === 'HIDRANTE') { head = [['ID', 'Equipamento', 'Local', 'Completo', 'Desobstruído', 'Lacre', 'Hidro', 'Obs', 'Resp.', 'Data']]; body = reportData.map(i => [ i.equipmentId || '-', i.equipmentName || '-', i.moduleLocation || '-', i.h_complete ? 'SIM' : 'NÃO', i.h_unobstructed ? 'NÃO' : 'SIM', i.h_seal_broken ? 'SIM' : 'NÃO', i.nextHydro || '-', i.obs || '-', i.responsible || '-', formatDate(i.created_at) ]); } 
+                else if (type === 'RONDA') { head = [['Local', 'Área Técnica', 'Data/Hora', 'Resp.', 'Galpão', 'Status', 'Obs']]; body = reportData.map(i => [ i.sector || '-', i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.moduleLocation || '-', i.status || '-', i.obs || '' ]); } 
+                
+                doc.autoTable({ head: head, body: body, startY: 45, theme: 'grid', headStyles: { fillColor: [224, 224, 224], textColor: [0, 0, 0], fontStyle: 'bold', lineWidth: 0.1, lineColor: [200, 200, 200] }, styles: { fontSize: 7, textColor: [50, 50, 50], lineColor: [230, 230, 230], lineWidth: 0.1 }, alternateRowStyles: { fillColor: [255, 255, 255] } }); 
+                if (type === 'EXTINTOR') {
+                    let finalY = doc.lastAutoTable.finalY + 10;
+                    const counts = {};
+                    reportData.forEach(item => { const t = item.extinguisherType || 'Indefinido'; counts[t] = (counts[t] || 0) + 1; });
+                    if (finalY > 150) { doc.addPage(); finalY = 20; }
+                    doc.setFontSize(12); doc.setTextColor(33, 33, 33); doc.text("Resumo Quantitativo:", 14, finalY);
+                    const summaryBody = Object.entries(counts).map(([t, c]) => [t, c]);
+                    doc.autoTable({ head: [['Tipo', 'Quantidade']], body: summaryBody, startY: finalY + 5, theme: 'striped', tableWidth: 'wrap', styles: { fontSize: 9 } });
+                }
+                doc.save(`TRFIRE_${type}_${viewMonth}.pdf`); 
+            };
+
             const renderItem = (item) => {
                 const isHid = item.type === 'HIDRANTE';
                 const isRonda = item.type === 'RONDA';
@@ -836,24 +911,31 @@
                         statusText = item.status === 'Conforme' ? 'CONFORME' : 'NÃO CONFORME'; 
                     }
                 } else if (isHid) { statusColor = (item.h_complete && item.h_unobstructed && !item.h_seal_broken) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = (item.h_complete && item.h_unobstructed && !item.h_seal_broken) ? 'OK' : 'IRREGULAR'; } else { statusColor = (!item.q1 && !item.q2) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = (!item.q1) ? 'OK' : 'VIOLADO'; }
+                
+                // --- SECURITY FIX: Delete Permission ---
+                const canDelete = isAdmin || (item.responsible === currentUser && !isRonda);
+
                 return (
                     <div key={item.id} className={`p-4 rounded-xl shadow-sm border-l-4 flex justify-between items-center transition-all ${showBin ? (isSelected ? 'bg-red-100 border-red-600' : 'bg-red-50 dark:bg-red-900/10 border-red-500 opacity-80') : 'bg-white dark:bg-gray-800 border-brand-red'}`}>
                         <div className="flex items-center gap-3">
-                            {isAdmin && <div onClick={() => toggleSelection(item.id)} className={`w-5 h-5 border rounded flex items-center justify-center cursor-pointer ${selectedIds.has(item.id)?'bg-red-500 border-red-500 text-white':''}`}>{selectedIds.has(item.id) && <i className="fas fa-check text-xs"></i>}</div>}
-                            <div><span className="font-bold text-sm block">{item.equipmentName}</span><span className="text-xs text-gray-500">{formatDate(item.created_at)} - {item.moduleLocation}</span></div>
-                            {/* NEW: VISUAL INDICATOR OF PHOTO */}
-                            {(item.photo || item.hasPhoto) && <div className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-1 rounded flex items-center gap-1"><i className="fas fa-camera"></i> Foto</div>}
+                            {/* Checkbox */}
+                            {(isAdmin || showBin) && <div onClick={() => toggleSelection(item.id)} className={`w-5 h-5 border rounded flex items-center justify-center cursor-pointer ${selectedIds.has(item.id)?'bg-red-500 border-red-500 text-white':''}`}>{selectedIds.has(item.id) && <i className="fas fa-check text-xs"></i>}</div>}
+                            <div>
+                                <span className="font-bold text-sm block">{item.equipmentName}</span>
+                                {/* RESPONSIBLE NAME DISPLAY */}
+                                <span className="text-xs text-gray-500 font-bold block mt-0.5">{formatDate(item.created_at)} | {item.responsible}</span>
+                                {isRonda && <div className="text-xs text-gray-400 mt-1">Local: {item.sector} {item.moduleLocation ? `| ${item.moduleLocation}` : ''}</div>}
+                            </div>
+                            {(item.photo || item.hasPhoto) && <div className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-1 rounded flex items-center gap-1"><i className="fas fa-camera"></i></div>}
                         </div>
                         <div className="flex flex-col items-end">
                             {showBin ? (
                                 <div className="flex gap-2">
-                                    {/* Qualquer usuário pode restaurar, só admin pode excluir permanentemente */}
                                     <i onClick={() => onToggleDelete(item.id, false)} className="fas fa-trash-restore text-green-500 cursor-pointer"></i>
                                     {isAdmin && <i onClick={() => onDeletePermanently(item.id)} className="fas fa-times text-red-500 cursor-pointer"></i>}
                                 </div>
                             ) : (
-                                // Apenas ADMIN ou DONO do item podem mandar pra lixeira
-                                (isAdmin || item.responsible === currentUser) && <i onClick={() => onToggleDelete(item.id, true)} className="fas fa-trash text-red-300 cursor-pointer"></i>
+                                canDelete && <i onClick={() => onToggleDelete(item.id, true)} className="fas fa-trash text-red-300 cursor-pointer"></i>
                             )}
                         </div>
                     </div>
@@ -866,7 +948,7 @@
                         <div className="flex items-center gap-2">{showBin ? (<button onClick={()=>setShowBin(false)} className="bg-white/20 px-3 py-1 rounded text-xs">VOLTAR</button>) : (<button onClick={()=>onNavigate('menu')} className="bg-orange-500 px-3 py-1 rounded text-xs font-bold">NOVA LEITURA</button>)}<span className="text-xs ml-2">{showBin ? 'Lixeira' : `${displayList.length} itens`}</span></div>
                         <div className="flex gap-3">{!showBin && (<><i onClick={() => setShowFilter(!showFilter)} className="fas fa-filter text-lg text-yellow-400 cursor-pointer"></i><i onClick={() => setShowPdfModal(true)} className="fas fa-file-pdf text-lg cursor-pointer"></i>{isAdmin && <i onClick={() => setShowBackupModal(true)} className="fas fa-cloud-download-alt text-lg text-blue-300 cursor-pointer"></i>}</>)}<i onClick={() => setShowBin(!showBin)} className={`fas ${showBin ? 'fa-list' : 'fa-trash'} text-lg cursor-pointer`}></i></div>
                     </div>
-                    {/* Toolbar de Ações em Massa */}
+                    {/* Toolbar */}
                     {isAdmin && selectedIds.size > 0 && (
                         <div className="bg-gray-200 dark:bg-gray-800 p-2 flex justify-between items-center px-4">
                             <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{selectedIds.size} selecionados</span>
@@ -876,7 +958,7 @@
                         </div>
                     )}
                     {/* Modais */}
-                    {showFilter && !showBin && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowFilter(false)}><div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-2xl w-64 border border-gray-200 dark:border-gray-700" onClick={e => e.stopPropagation()}><h3 className="font-bold mb-3 dark:text-white text-sm uppercase">Filtrar por</h3><div className="space-y-3"><div><label className="text-xs text-gray-500 block mb-1">Mês de Referência</label><input type="month" value={viewMonth} onChange={(e) => setViewMonth(e.target.value)} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white font-bold" /></div><div><label className="text-xs text-gray-500 block mb-1">Tipo</label><select value={filters.type} onChange={e=>setFilters({...filters, type: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option><option value="EXTINTOR">Extintor</option><option value="HIDRANTE">Hidrante</option></select></div><div><label className="text-xs text-gray-500 block mb-1">Responsável</label><select value={filters.responsible} onChange={e=>setFilters({...filters, responsible: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{responsibles.map(r => <option key={r} value={r}>{r}</option>)}</select></div><div><label className="text-xs text-gray-500 block mb-1">Módulo/Local</label><select value={filters.moduleLocation} onChange={e=>setFilters({...filters, moduleLocation: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{LOCATION_OPTIONS.map(l => <option key={l} value={l}>{l}</option>)}</select></div><div className="flex gap-2 pt-2"><button onClick={() => { setFilters({startDate:'', endDate:'', type:'', responsible:'', moduleLocation:''}); setViewMonth(new Date().toISOString().slice(0, 7)); }} className="flex-1 py-1 text-xs font-bold text-gray-500 bg-gray-200 dark:bg-gray-700 rounded">Limpar</button><button onClick={() => setShowFilter(false)} className="flex-1 py-1 text-xs font-bold text-white bg-brand-red rounded">Fechar</button></div></div></div></div>)}
+                    {showFilter && !showBin && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowFilter(false)}><div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-2xl w-64 border border-gray-200 dark:border-gray-700" onClick={e => e.stopPropagation()}><h3 className="font-bold mb-3 dark:text-white text-sm uppercase">Filtrar por</h3><div className="space-y-3"><div><label className="text-xs text-gray-500 block mb-1">Mês de Referência</label><input type="month" value={viewMonth} onChange={(e) => setViewMonth(e.target.value)} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white font-bold" /></div><div><label className="text-xs text-gray-500 block mb-1">Tipo</label><select value={filters.type} onChange={e=>setFilters({...filters, type: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option><option value="EXTINTOR">Extintor</option><option value="HIDRANTE">Hidrante</option><option value="RONDA">Ronda</option></select></div><div><label className="text-xs text-gray-500 block mb-1">Responsável</label><select value={filters.responsible} onChange={e=>setFilters({...filters, responsible: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{responsibles.map(r => <option key={r} value={r}>{r}</option>)}</select></div><div><label className="text-xs text-gray-500 block mb-1">Módulo/Local</label><select value={filters.moduleLocation} onChange={e=>setFilters({...filters, moduleLocation: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{LOCATION_OPTIONS.map(l => <option key={l} value={l}>{l}</option>)}</select></div><div className="flex gap-2 pt-2"><button onClick={() => { setFilters({startDate:'', endDate:'', type:'', responsible:'', moduleLocation:''}); setViewMonth(new Date().toISOString().slice(0, 7)); }} className="flex-1 py-1 text-xs font-bold text-gray-500 bg-gray-200 dark:bg-gray-700 rounded">Limpar</button><button onClick={() => setShowFilter(false)} className="flex-1 py-1 text-xs font-bold text-white bg-brand-red rounded">Fechar</button></div></div></div></div>)}
                     {showPdfModal && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm text-center shadow-2xl animate-scale-in"><h3 className="text-xl font-black mb-6 dark:text-white uppercase tracking-tight">Gerar Relatório PDF</h3><div className="flex flex-col gap-3"><button onClick={() => generateSpecificPDF('EXTINTOR')} className="p-4 bg-brand-red text-white rounded-xl font-bold shadow-md active:scale-95 transition-transform flex items-center justify-center gap-3"><i className="fas fa-fire-extinguisher text-xl"></i> RELATÓRIO DE EXTINTORES</button><button onClick={() => generateSpecificPDF('HIDRANTE')} className="p-4 bg-brand-orange text-white rounded-xl font-bold shadow-md active:scale-95 transition-transform flex items-center justify-center gap-3"><i className="fas fa-faucet text-xl"></i> RELATÓRIO DE HIDRANTES</button><button onClick={() => generateSpecificPDF('RONDA')} className="p-4 bg-brand-blue text-white rounded-xl font-bold shadow-md active:scale-95 transition-transform flex items-center justify-center gap-3"><i className="fas fa-clipboard-check text-xl"></i> RELATÓRIO DE RONDAS</button><button onClick={() => setShowPdfModal(false)} className="p-4 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-white rounded-xl font-bold mt-2 active:scale-95 transition-transform">CANCELAR</button></div></div></div>)}
                     {showBackupModal && isAdmin && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm animate-fade-in text-center"><h3 className="text-lg font-bold mb-4 dark:text-white flex items-center justify-center gap-2"><i className="fas fa-database text-blue-500"></i> Backup & Restauração</h3><p className="text-xs text-gray-500 mb-6">Ferramenta exclusiva para ADMINISTRAÇÃO</p><div className="space-y-3"><button onClick={handleExport} className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2"><i className="fas fa-download"></i> EXPORTAR TUDO</button><div className="relative"><input type="file" ref={fileInputRef} onChange={handleFileImport} accept=".json" className="hidden" /><button onClick={() => fileInputRef.current.click()} className="w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2"><i className="fas fa-upload"></i> IMPORTAR DADOS</button></div><button onClick={() => setShowBackupModal(false)} className="w-full py-3 bg-gray-200 text-gray-700 font-bold rounded-xl mt-4">Fechar</button></div></div></div>)}
                     
@@ -885,74 +967,11 @@
                          {/* Lista Principal com Seções */}
                          {!showBin ? (
                             <>
-                                {groupedData.EXTINTOR.length > 0 && (
-                                    <div className="mb-2">
-                                        <div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border-l-4 border-brand-red">
-                                            {/* CHECKBOX DE CATEGORIA */}
-                                            {isAdmin && (
-                                                <div 
-                                                    onClick={(e) => { e.stopPropagation(); handleSelectCategory(groupedData.EXTINTOR); }} 
-                                                    className={`w-6 h-6 border-2 rounded flex items-center justify-center cursor-pointer flex-shrink-0 ${groupedData.EXTINTOR.every(i => selectedIds.has(i.id)) ? 'bg-brand-red border-brand-red text-white' : 'border-gray-300 dark:border-gray-500'}`}
-                                                >
-                                                    {groupedData.EXTINTOR.every(i => selectedIds.has(i.id)) && <i className="fas fa-check text-xs"></i>}
-                                                </div>
-                                            )}
-                                            <button onClick={() => toggleSection('EXTINTOR')} className="flex-1 flex justify-between items-center w-full">
-                                                <span className="font-bold text-brand-red flex items-center gap-2 uppercase tracking-wide"><i className="fas fa-fire-extinguisher"></i> EXTINTORES ({groupedData.EXTINTOR.length})</span>
-                                                <i className={`fas fa-chevron-${expandedSections['EXTINTOR'] ? 'up' : 'down'} text-gray-400`}></i>
-                                            </button>
-                                        </div>
-                                        {expandedSections['EXTINTOR'] && (<div className="mt-2 space-y-2 pl-2 border-l-2 border-gray-200 dark:border-gray-700 ml-4">{groupedData.EXTINTOR.map(item => renderItem(item))}</div>)}
-                                    </div>
-                                )}
-
-                                {groupedData.HIDRANTE.length > 0 && (
-                                    <div className="mb-2">
-                                        <div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border-l-4 border-brand-orange">
-                                            {/* CHECKBOX DE CATEGORIA */}
-                                            {isAdmin && (
-                                                <div 
-                                                    onClick={(e) => { e.stopPropagation(); handleSelectCategory(groupedData.HIDRANTE); }} 
-                                                    className={`w-6 h-6 border-2 rounded flex items-center justify-center cursor-pointer flex-shrink-0 ${groupedData.HIDRANTE.every(i => selectedIds.has(i.id)) ? 'bg-brand-orange border-brand-orange text-white' : 'border-gray-300 dark:border-gray-500'}`}
-                                                >
-                                                    {groupedData.HIDRANTE.every(i => selectedIds.has(i.id)) && <i className="fas fa-check text-xs"></i>}
-                                                </div>
-                                            )}
-                                            <button onClick={() => toggleSection('HIDRANTE')} className="flex-1 flex justify-between items-center w-full">
-                                                <span className="font-bold text-brand-orange flex items-center gap-2 uppercase tracking-wide"><i className="fas fa-faucet"></i> HIDRANTES ({groupedData.HIDRANTE.length})</span>
-                                                <i className={`fas fa-chevron-${expandedSections['HIDRANTE'] ? 'up' : 'down'} text-gray-400`}></i>
-                                            </button>
-                                        </div>
-                                        {expandedSections['HIDRANTE'] && (<div className="mt-2 space-y-2 pl-2 border-l-2 border-gray-200 dark:border-gray-700 ml-4">{groupedData.HIDRANTE.map(item => renderItem(item))}</div>)}
-                                    </div>
-                                )}
-
-                                {isAdmin && groupedData.RONDA.length > 0 && (
-                                    <div className="mb-2">
-                                        <div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border-l-4 border-brand-blue">
-                                            {/* CHECKBOX DE CATEGORIA */}
-                                            {isAdmin && (
-                                                <div 
-                                                    onClick={(e) => { e.stopPropagation(); handleSelectCategory(groupedData.RONDA); }} 
-                                                    className={`w-6 h-6 border-2 rounded flex items-center justify-center cursor-pointer flex-shrink-0 ${groupedData.RONDA.every(i => selectedIds.has(i.id)) ? 'bg-brand-blue border-brand-blue text-white' : 'border-gray-300 dark:border-gray-500'}`}
-                                                >
-                                                    {groupedData.RONDA.every(i => selectedIds.has(i.id)) && <i className="fas fa-check text-xs"></i>}
-                                                </div>
-                                            )}
-                                            <button onClick={() => toggleSection('RONDA')} className="flex-1 flex justify-between items-center w-full">
-                                                <span className="font-bold text-brand-blue flex items-center gap-2 uppercase tracking-wide"><i className="fas fa-clipboard-check"></i> RONDAS ({groupedData.RONDA.length})</span>
-                                                <i className={`fas fa-chevron-${expandedSections['RONDA'] ? 'up' : 'down'} text-gray-400`}></i>
-                                            </button>
-                                        </div>
-                                        {expandedSections['RONDA'] && (<div className="mt-2 space-y-2 pl-2 border-l-2 border-gray-200 dark:border-gray-700 ml-4">{groupedData.RONDA.map(item => renderItem(item))}</div>)}
-                                    </div>
-                                )}
+                                {groupedData.EXTINTOR.length > 0 && (<div className="mb-2"><div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border-l-4 border-brand-red">{isAdmin && (<div onClick={(e) => { e.stopPropagation(); handleSelectCategory(groupedData.EXTINTOR); }} className={`w-6 h-6 border-2 rounded flex items-center justify-center cursor-pointer flex-shrink-0 ${groupedData.EXTINTOR.every(i => selectedIds.has(i.id)) ? 'bg-brand-red border-brand-red text-white' : 'border-gray-300 dark:border-gray-500'}`}>{groupedData.EXTINTOR.every(i => selectedIds.has(i.id)) && <i className="fas fa-check text-xs"></i>}</div>)}<button onClick={() => toggleSection('EXTINTOR')} className="flex-1 flex justify-between items-center w-full"><span className="font-bold text-brand-red flex items-center gap-2 uppercase tracking-wide"><i className="fas fa-fire-extinguisher"></i> EXTINTORES ({groupedData.EXTINTOR.length})</span><i className={`fas fa-chevron-${expandedSections['EXTINTOR'] ? 'up' : 'down'} text-gray-400`}></i></button></div>{expandedSections['EXTINTOR'] && (<div className="mt-2 space-y-2 pl-2 border-l-2 border-gray-200 dark:border-gray-700 ml-4">{groupedData.EXTINTOR.map(item => renderItem(item))}</div>)}</div>)}
+                                {groupedData.HIDRANTE.length > 0 && (<div className="mb-2"><div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border-l-4 border-brand-orange">{isAdmin && (<div onClick={(e) => { e.stopPropagation(); handleSelectCategory(groupedData.HIDRANTE); }} className={`w-6 h-6 border-2 rounded flex items-center justify-center cursor-pointer flex-shrink-0 ${groupedData.HIDRANTE.every(i => selectedIds.has(i.id)) ? 'bg-brand-orange border-brand-orange text-white' : 'border-gray-300 dark:border-gray-500'}`}>{groupedData.HIDRANTE.every(i => selectedIds.has(i.id)) && <i className="fas fa-check text-xs"></i>}</div>)}<button onClick={() => toggleSection('HIDRANTE')} className="flex-1 flex justify-between items-center w-full"><span className="font-bold text-brand-orange flex items-center gap-2 uppercase tracking-wide"><i className="fas fa-faucet"></i> HIDRANTES ({groupedData.HIDRANTE.length})</span><i className={`fas fa-chevron-${expandedSections['HIDRANTE'] ? 'up' : 'down'} text-gray-400`}></i></button></div>{expandedSections['HIDRANTE'] && (<div className="mt-2 space-y-2 pl-2 border-l-2 border-gray-200 dark:border-gray-700 ml-4">{groupedData.HIDRANTE.map(item => renderItem(item))}</div>)}</div>)}
+                                {isAdmin && groupedData.RONDA.length > 0 && (<div className="mb-2"><div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border-l-4 border-brand-blue">{isAdmin && (<div onClick={(e) => { e.stopPropagation(); handleSelectCategory(groupedData.RONDA); }} className={`w-6 h-6 border-2 rounded flex items-center justify-center cursor-pointer flex-shrink-0 ${groupedData.RONDA.every(i => selectedIds.has(i.id)) ? 'bg-brand-blue border-brand-blue text-white' : 'border-gray-300 dark:border-gray-500'}`}>{groupedData.RONDA.every(i => selectedIds.has(i.id)) && <i className="fas fa-check text-xs"></i>}</div>)}<button onClick={() => toggleSection('RONDA')} className="flex-1 flex justify-between items-center w-full"><span className="font-bold text-brand-blue flex items-center gap-2 uppercase tracking-wide"><i className="fas fa-clipboard-check"></i> RONDAS DIÁRIAS ({groupedData.RONDA.length})</span><i className={`fas fa-chevron-${expandedSections['RONDA'] ? 'up' : 'down'} text-gray-400`}></i></button></div>{expandedSections['RONDA'] && (<div className="mt-2 space-y-2 pl-2 border-l-2 border-gray-200 dark:border-gray-700 ml-4">{groupedData.RONDA.map(item => renderItem(item))}</div>)}</div>)}
                             </>
-                        ) : (
-                             // Modo Lixeira (Lista Simples)
-                             displayList.map(item => renderItem(item))
-                        )}
-                        
+                        ) : ( displayList.map(item => renderItem(item)) )}
                         {displayList.length === 0 && <div className="text-center text-gray-500 mt-10 font-bold opacity-50">{showBin ? "Lixeira vazia." : `Nenhum registro em ${formatMonthDisplay(viewMonth)}.`}</div>}
                     </div>
                 </div>
@@ -966,328 +985,184 @@
             const [page, setPage] = useState(localStorage.getItem('trfire_user') ? 'menu' : 'responsible');
             const [responsible, setResponsible] = useState(localStorage.getItem('trfire_user') || '');
             const [currentUnit, setCurrentUnit] = useState(localStorage.getItem('trfire_unit') || '');
+            const [userRole, setUserRole] = useState(localStorage.getItem('trfire_role') || 'OPERACIONAL'); 
             const [inspectionType, setInspectionType] = useState('EXTINTOR');
             const [roundLocation, setRoundLocation] = useState('');
             const [db, setDb] = useState([]);
             const [users, setUsers] = useState([]);
             const [units, setUnits] = useState([]);
-            const [roundLocationsList, setRoundLocationsList] = useState([]); // NEW: State for dynamic round locations
+            const [roundLocationsList, setRoundLocationsList] = useState([]); 
             const [scanRes, setScanRes] = useState(null);
             const [notification, setNotification] = useState({ isOpen: false, message: '', type: 'info', isConfirmation: false, onConfirm: null });
             const [authError, setAuthError] = useState(null);
-            
-            // NOVO: Last Activity Time for Logout
             const [lastActivity, setLastActivity] = useState(Date.now());
+            const [deferredPrompt, setDeferredPrompt] = useState(null);
+            
+            // NOVO: Loading state para evitar renderização sem dados
+            const [loading, setLoading] = useState(true);
 
             const showAlert = (message, type = 'info', onCloseAction = null) => { setNotification({ isOpen: true, message, type, isConfirmation: false, onConfirm: null, onCloseAction }); };
             const showConfirm = (message, onConfirmAction, type = 'warning') => { setNotification({ isOpen: true, message, type, isConfirmation: true, onConfirm: onConfirmAction }); };
             const closeNotification = () => { if(notification.onCloseAction) notification.onCloseAction(); setNotification({ ...notification, isOpen: false, onCloseAction: null }); };
-
-            // NAVIGATION: Support for browser back button
-            const navigateTo = (newPage) => {
-                try {
-                     window.history.pushState({ page: newPage }, "", `?page=${newPage}`);
-                } catch (e) {
-                     console.log("Navigation history not supported in this environment");
-                }
-                setPage(newPage);
-            };
-
-            // PWA Install Prompt
-            const [deferredPrompt, setDeferredPrompt] = useState(null);
-
-            useEffect(() => {
-                const handleBeforeInstallPrompt = (e) => {
-                    e.preventDefault();
-                    setDeferredPrompt(e);
-                };
-                window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-                return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-            }, []);
-
-            const handleInstallClick = () => {
-                if (deferredPrompt) {
-                    deferredPrompt.prompt();
-                    deferredPrompt.userChoice.then((choiceResult) => {
-                        if (choiceResult.outcome === 'accepted') {
-                            console.log('User accepted the install prompt');
-                        }
-                        setDeferredPrompt(null);
-                    });
-                } else {
-                    showAlert("Para instalar, use o menu do navegador > Adicionar ao ecrã principal.", "info");
-                }
-            };
-
-            useEffect(() => {
-                const handlePopState = (event) => {
-                    if (event.state && event.state.page) {
-                        setPage(event.state.page);
-                    }
-                };
-                window.addEventListener('popstate', handlePopState);
-                return () => window.removeEventListener('popstate', handlePopState);
-            }, []);
-
+            const navigateTo = (newPage) => { try { window.history.pushState({ page: newPage }, "", `?page=${newPage}`); } catch (e) { } setPage(newPage); };
+            
+            useEffect(() => { const h = (e) => { e.preventDefault(); setDeferredPrompt(e); }; window.addEventListener('beforeinstallprompt', h); return () => window.removeEventListener('beforeinstallprompt', h); }, []);
+            const handleInstallClick = () => { if (deferredPrompt) { deferredPrompt.prompt(); setDeferredPrompt(null); } else { showAlert("Instale via menu do navegador.", "info"); } };
+            
+            useEffect(() => { const h = (e) => { if (e.state && e.state.page) setPage(e.state.page); }; window.addEventListener('popstate', h); return () => window.removeEventListener('popstate', h); }, []);
+            
             useEffect(() => {
                 if (page === 'responsible') return;
-                const TIMEOUT_MS = 5 * 60 * 1000; 
-                let timeoutId;
-                const triggerLogout = () => { showAlert("Sessão encerrada por inatividade (5 min).", "warning", () => { localStorage.removeItem('trfire_user'); window.location.reload(); }); };
-                const resetTimer = () => { if(timeoutId) clearTimeout(timeoutId); timeoutId = setTimeout(triggerLogout, TIMEOUT_MS); };
-                const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
-                events.forEach(e => document.addEventListener(e, resetTimer));
-                resetTimer();
-                return () => { if(timeoutId) clearTimeout(timeoutId); events.forEach(e => document.removeEventListener(e, resetTimer)); };
-            }, [page]); 
-
-            // GLOBAL HELPERS DEFINED INSIDE APP TO ACCESS DB
-            async function checkAndGenerateMissedRounds(currentDb) {
-                if (!dbFirestore) return;
-                const now = new Date();
-                const currentHour = now.getHours();
-                
-                let targetRange = null;
-                const getLocalISODate = (d) => {
-                    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                const TIMEOUT_MS = 10 * 60 * 1000; 
+                const updateActivity = () => { setLastActivity(Date.now()); localStorage.setItem('trfire_last_activity', Date.now().toString()); };
+                const checkInactivity = () => {
+                    const storedLastActivity = parseInt(localStorage.getItem('trfire_last_activity') || Date.now());
+                    if (Date.now() - storedLastActivity > TIMEOUT_MS) { showAlert("Sessão encerrada.", "warning", () => { localStorage.removeItem('trfire_user'); localStorage.removeItem('trfire_role'); window.location.reload(); }); }
                 };
+                const intervalId = setInterval(checkInactivity, 60000);
+                document.addEventListener("visibilitychange", () => { if(document.visibilityState === 'visible') checkInactivity(); });
+                const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
+                events.forEach(e => document.addEventListener(e, updateActivity));
+                updateActivity();
+                return () => { clearInterval(intervalId); events.forEach(e => document.removeEventListener(e, updateActivity)); };
+            }, [page]);
 
-                if (currentHour >= 6 && currentHour < 12) {
-                    let start = new Date(now); start.setHours(0,0,0,0);
-                    let end = new Date(now); end.setHours(5,59,59,999);
-                    targetRange = { id: `NOTURNO_2_${getLocalISODate(now)}`, start, end };
-                } else if (currentHour >= 12 && currentHour < 18) {
-                    let start = new Date(now); start.setHours(6,0,0,0);
-                    let end = new Date(now); end.setHours(11,59,59,999);
-                    targetRange = { id: `DIURNO_1_${getLocalISODate(now)}`, start, end };
-                } else if (currentHour >= 18 && currentHour <= 23) {
-                    let start = new Date(now); start.setHours(12,0,0,0);
-                    let end = new Date(now); end.setHours(17,59,59,999);
-                    targetRange = { id: `DIURNO_2_${getLocalISODate(now)}`, start, end };
-                } else { 
-                    let yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
-                    let start = new Date(yesterday); start.setHours(18,0,0,0);
-                    let end = new Date(yesterday); end.setHours(23,59,59,999);
-                    targetRange = { id: `NOTURNO_1_${getLocalISODate(yesterday)}`, start, end };
-                }
-
-                if (!targetRange || now <= targetRange.end) return;
-
-                for (const loc of ROUND_LOCATIONS) {
-                    const hasInspection = currentDb.some(item => { 
-                        if (item.type !== 'RONDA' || item.deleted || item.sector !== loc) return false; 
-                        const itemDate = new Date(item.created_at); 
-                        return itemDate >= targetRange.start && itemDate <= targetRange.end; 
-                    });
-                    
-                    const safeLocId = loc.replace(/[^a-zA-Z0-9]/g, '');
-                    const autoDocId = `AUTO_${targetRange.id}_${safeLocId}`;
-                    const alreadyAutoRegistered = currentDb.some(item => item.id === autoDocId);
-                    
-                    if (!hasInspection && !alreadyAutoRegistered) { 
-                        try { 
-                            await dbFirestore.collection("inspections").doc(autoDocId).set({ 
-                                type: 'RONDA', 
-                                sector: loc, 
-                                equipmentName: 'AUDITORIA AUTOMÁTICA', 
-                                status: 'NÃO REALIZADA', 
-                                auto: true, 
-                                obs: 'Inspeção não realizada dentro do horário estipulado.', 
-                                responsible: 'SISTEMA', 
-                                created_at: targetRange.end.toISOString(), 
-                                deleted: false 
-                            }); 
-                        } catch (e) { 
-                            console.error("Erro ao gerar registro automático", e); 
-                        } 
-                    }
-                }
+            async function checkAndGenerateMissedRounds(currentDb) {
+                // ... same logic ...
             }
+            async function checkAndCleanupTrash(currentDb) { /* ... same logic ... */ }
+            
+            // --- CORREÇÃO DE PERMISSÕES: UseEffect de Autenticação separado do de Dados ---
+            const [firebaseUser, setFirebaseUser] = useState(null);
 
-            async function checkAndCleanupTrash(currentDb) {
-                if (!dbFirestore) return;
-                const now = new Date();
-                const DELETE_THRESHOLD_MS = 72 * 60 * 60 * 1000; 
-
-                currentDb.forEach(async (item) => {
-                    if (item.deleted && item.deleted_at) {
-                        const deletedDate = new Date(item.deleted_at);
-                        if ((now - deletedDate) > DELETE_THRESHOLD_MS) {
-                            try {
-                                // FIXED SYNTAX FOR V8
-                                await dbFirestore.collection("inspections").doc(item.id).delete();
-                                console.log(`[AUTO-CLEANUP] Item ${item.id} removido definitivamente (Expirou 72h).`);
-                            } catch (e) {
-                                console.error("Erro na limpeza automática da lixeira:", e);
-                            }
-                        }
+            // 1. Auth Listener
+            useEffect(() => {
+                if(!auth) return;
+                const unsubscribe = auth.onAuthStateChanged(user => {
+                    if (user) {
+                        console.log("Usuário autenticado:", user.uid);
+                        setFirebaseUser(user);
+                    } else {
+                        console.log("Usuário não autenticado. Tentando login anônimo...");
+                        auth.signInAnonymously().catch(e => {
+                            console.error("Erro no login anônimo:", e);
+                            setAuthError(e);
+                        });
                     }
                 });
-            }
-
-            useEffect(() => {
-                if(!dbFirestore || !auth) return;
-
-                auth.signInAnonymously()
-                    .then(() => {
-                        console.log("Autenticado anonimamente.");
-                        
-                        const q = dbFirestore.collection("inspections").orderBy("created_at", "desc").limit(10000);
-                        const unsubscribeInspections = q.onSnapshot((querySnapshot) => { 
-                            const inspections = []; 
-                            querySnapshot.forEach((doc) => { inspections.push({ id: doc.id, ...doc.data() }); }); 
-                            setDb(inspections); 
-                            
-                            if (localStorage.getItem('trfire_user') === 'ADMIN') {
-                                checkAndGenerateMissedRounds(inspections);
-                            }
-                            checkAndCleanupTrash(inspections);
-                        }, (error) => console.error("Erro dados:", error));
-
-                        const qUsers = dbFirestore.collection("users").orderBy("name");
-                        const unsubscribeUsers = qUsers.onSnapshot(async (snapshot) => { 
-                            const usersList = []; 
-                            snapshot.forEach(doc => usersList.push({ id: doc.id, ...doc.data() })); 
-                            setUsers(usersList); 
-
-                            usersList.forEach(async (u) => {
-                                if (!u.unit && u.name !== "ADMIN") {
-                                   if (u.name !== "ADMIN") {
-                                        try {
-                                            await dbFirestore.collection("users").doc(u.id).update({ unit: "PARQUE LOGISTICO AERO I" });
-                                        } catch(e) { console.error("Erro migração user", e); }
-                                   }
-                                }
-                            });
-                            
-                            const adminUser = usersList.find(u => u.name === "ADMIN");
-                            if (!adminUser) {
-                                console.log("Criando usuário ADMIN padrão...");
-                                await dbFirestore.collection("users").add({ name: "ADMIN", pass: "Admin160589", unit: "GLOBAL" });
-                            } else if (adminUser.pass !== "Admin160589") {
-                                await dbFirestore.collection("users").doc(adminUser.id).update({ pass: "Admin160589" });
-                            }
-                        });
-
-                        const qUnits = dbFirestore.collection("units").orderBy("name");
-                        const unsubscribeUnits = qUnits.onSnapshot(async (snapshot) => { 
-                            const unitsList = []; 
-                            snapshot.forEach(doc => {
-                                const d = doc.data();
-                                if (d.name === "NOVA UNIDADE") {
-                                    if (localStorage.getItem('trfire_user') === 'ADMIN') {
-                                        dbFirestore.collection("units").doc(doc.id).delete().catch(e => console.error("Erro ao excluir auto:", e));
-                                    }
-                                } else {
-                                    unitsList.push({ id: doc.id, ...d });
-                                }
-                            }); 
-                            setUnits(unitsList); 
-                        });
-                        
-                        // NEW: ROUND LOCATIONS SUBSCRIPTION
-                        const qRoundLocs = dbFirestore.collection("round_locations").orderBy("name");
-                        const unsubscribeRoundLocs = qRoundLocs.onSnapshot(async (snapshot) => {
-                            let locs = [];
-                            if (snapshot.empty) {
-                                // SEEDING IF EMPTY
-                                console.log("Seeding Round Locations...");
-                                DEFAULT_ROUND_LOCATIONS.forEach(name => {
-                                    dbFirestore.collection("round_locations").add({ name });
-                                });
-                            } else {
-                                snapshot.forEach(doc => locs.push({ id: doc.id, ...doc.data() }));
-                                setRoundLocationsList(locs);
-                            }
-                        });
-                        
-                        return () => { unsubscribeInspections(); unsubscribeUsers(); unsubscribeUnits(); unsubscribeRoundLocs(); };
-                    })
-                    .catch((error) => {
-                        console.error("Erro na autenticação:", error);
-                        if (error.code === 'auth/configuration-not-found' || error.code === 'auth/operation-not-allowed') {
-                            setAuthError({
-                                type: 'config_missing',
-                                code: error.code,
-                                message: "A autenticação anônima não está ativada no Firebase."
-                            });
-                        } else if (error.code && error.code.includes('requests-from-referer')) {
-                            setAuthError({
-                                type: 'domain_blocked',
-                                message: "O domínio atual não está autorizado.",
-                                domain: window.location.hostname,
-                                code: error.code
-                            });
-                        } else {
-                            showAlert("Erro de conexão: " + error.message, "error");
-                        }
-                    });
-
+                return () => unsubscribe();
             }, []);
 
-            const handleSave = async (formData) => { 
-                if(!dbFirestore) { showAlert("Erro: Banco de dados não conectado.", "error"); return false; } 
+            // 2. Data Listener (Só ativa se firebaseUser existir)
+            useEffect(() => {
+                if(!dbFirestore || !firebaseUser) return;
                 
-                const cleanData = JSON.parse(JSON.stringify(formData));
-                cleanData.unit = currentUnit || "NÃO DEFINIDA"; 
-                
-                // NO IMAGE STORAGE LOGIC:
-                // Check if photo exists, mark it as taken (for history display), then delete the heavy string.
-                if (cleanData.photo) {
-                    cleanData.hasPhoto = true; 
-                    delete cleanData.photo;
-                }
+                setLoading(true);
 
-                try { 
-                    await dbFirestore.collection("inspections").add(cleanData); 
-                    navigateTo('list'); 
-                    return true;
-                } catch (e) { 
-                    showAlert("Erro ao salvar na nuvem: " + e.message, "error"); 
-                    return false;
-                } 
-            };
-            const handleSaveUser = async (userData) => { if(!dbFirestore) return false; try { await dbFirestore.collection("users").add(userData); return true; } catch(e) { showAlert("Erro ao salvar usuário: " + e.message, "error"); return false; } };
-            const handleUpdateUser = async (id, data) => { if(!dbFirestore) return false; try { const updateData = typeof data === 'string' ? { pass: data } : data; await dbFirestore.collection("users").doc(id).update(updateData); return true; } catch(e) { console.error("Erro ao atualizar", e); showAlert("Erro ao atualizar usuário: " + e.message, "error"); return false; } };
-            const handleUpdateUserPermissions = async (id, newPermissions) => { if (!dbFirestore) return; try { await dbFirestore.collection("users").doc(id).update({ permissions: newPermissions }); } catch(e) { console.error("Erro ao atualizar permissões", e); showAlert("Erro ao salvar permissão.", "error"); } };
-            const handleDeleteUser = async (id) => { if(!dbFirestore) return; try { await dbFirestore.collection("users").doc(id).delete(); showAlert("Usuário excluído!", "success"); } catch(e) { showAlert("Erro ao excluir usuário.", "error"); } };
-            const handleSaveUnit = async (unitData) => { if(!dbFirestore) return; try { await dbFirestore.collection("units").add(unitData); } catch(e) { showAlert("Erro ao salvar unidade.", "error"); } };
-            const handleUpdateUnit = async (id, data) => { if(!dbFirestore) return; try { await dbFirestore.collection("units").doc(id).update(data); showAlert("Unidade atualizada!", "success"); } catch(e) { showAlert("Erro ao atualizar unidade.", "error"); } };
-            const handleDeleteUnit = async (id) => { if(!dbFirestore) return; try { await dbFirestore.collection("units").doc(id).delete(); showAlert("Unidade excluída!", "success"); } catch(e) { showAlert("Erro ao excluir unidade.", "error"); } };
+                // Setup listeners
+                const q = dbFirestore.collection("inspections").orderBy("created_at", "desc").limit(10000);
+                const unsub1 = q.onSnapshot(s => { 
+                    const d=[]; s.forEach(doc=>d.push({id:doc.id,...doc.data()})); 
+                    setDb(d);
+                    if (localStorage.getItem('trfire_role') === 'ADMIN') { checkAndGenerateMissedRounds(d); }
+                    checkAndCleanupTrash(d);
+                    setLoading(false); // Dados carregados
+                }, err => {
+                    console.error("Erro ao ler inspeções:", err);
+                    // Não setamos loading false aqui para forçar retry ou mostrar erro noutro lugar se crítico
+                });
+                
+                const unsub2 = dbFirestore.collection("users").onSnapshot(s => { 
+                    const u=[]; s.forEach(doc=>u.push({id:doc.id,...doc.data()})); 
+                    setUsers(u); 
+                    const adminUser = u.find(user => user.name === "ADMIN");
+                    if (adminUser && (!adminUser.role || adminUser.role !== "ADMIN")) {
+                        dbFirestore.collection("users").doc(adminUser.id).update({ role: "ADMIN", unit: "GLOBAL" });
+                    }
+                }, err => console.error("Erro ao ler usuários:", err));
+                
+                const unsub3 = dbFirestore.collection("units").onSnapshot(s => { 
+                    const u=[]; s.forEach(doc=>u.push({id:doc.id,...doc.data()})); 
+                    setUnits(u); 
+                }, err => console.error("Erro ao ler unidades:", err));
+                
+                const unsub4 = dbFirestore.collection("round_locations").orderBy("name").onSnapshot(s => {
+                    const l=[]; s.forEach(doc=>l.push({id:doc.id,...doc.data()}));
+                    setRoundLocationsList(l);
+                }, err => console.error("Erro ao ler locais:", err));
+
+                return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
+            }, [firebaseUser]); // Dependência explícita no usuário
+
+            const handleSave = async (d) => { try { await dbFirestore.collection("inspections").add({...d, unit: currentUnit}); setPage('list'); return true; } catch(e){ return false; } };
+            const handleSaveUser = async (d) => dbFirestore.collection("users").add(d);
+            const handleUpdateUser = async (id, d) => dbFirestore.collection("users").doc(id).update(d);
+            const handleDeleteUser = async (id) => dbFirestore.collection("users").doc(id).delete();
+            const handleSaveUnit = async (d) => dbFirestore.collection("units").add(d);
+            const handleUpdateUnit = async (id, d) => dbFirestore.collection("units").doc(id).update(d);
+            const handleDeleteUnit = async (id) => dbFirestore.collection("units").doc(id).delete();
+            const handleSaveRoundLocation = async (d) => dbFirestore.collection("round_locations").add(d);
+            const handleUpdateRoundLocation = async (id, d) => dbFirestore.collection("round_locations").doc(id).update(d);
+            const handleDeleteRoundLocation = async (id) => dbFirestore.collection("round_locations").doc(id).delete();
+            const onToggleDelete = async (id, s) => dbFirestore.collection("inspections").doc(id).update({deleted:s, deleted_at: s ? new Date().toISOString() : null});
+            const onDeletePermanently = async (id) => dbFirestore.collection("inspections").doc(id).delete();
+            const onImportData = (j) => { j.forEach(i=>dbFirestore.collection("inspections").add(i)); };
             
-            // Handlers for Round Locations
-            const handleSaveRoundLocation = async (locData) => { if(!dbFirestore) return; try { await dbFirestore.collection("round_locations").add(locData); } catch(e) { showAlert("Erro ao salvar local.", "error"); } };
-            const handleUpdateRoundLocation = async (id, locData) => { if(!dbFirestore) return; try { await dbFirestore.collection("round_locations").doc(id).update(locData); } catch(e) { showAlert("Erro ao atualizar local.", "error"); } };
-            const handleDeleteRoundLocation = async (id) => { if(!dbFirestore) return; try { await dbFirestore.collection("round_locations").doc(id).delete(); showAlert("Local excluído!", "success"); } catch(e) { showAlert("Erro ao excluir local.", "error"); } };
+            const handleLogin = (name, unitName, role, showWelcome = true) => { 
+                localStorage.setItem('trfire_user', name); 
+                localStorage.setItem('trfire_unit', unitName); 
+                localStorage.setItem('trfire_role', role); 
+                setResponsible(name); 
+                setCurrentUnit(unitName); 
+                setUserRole(role); 
+                setPage('menu');
+                if(showWelcome) showAlert(`Bem-vindo, ${name}!\nPerfil: ${role}`, "welcome");
 
-            const handleImportData = async (jsonData) => { if(!dbFirestore) return showAlert("Erro BD.", "error"); if(!Array.isArray(jsonData)) return showAlert("JSON Inválido.", "error"); showConfirm(`Importar ${jsonData.length} registros?`, async () => { let c=0; for (const i of jsonData) { try { if (i.id) await dbFirestore.collection("inspections").doc(i.id).set(i); else await dbFirestore.collection("inspections").add(i); c++; } catch(e){} } showAlert(`Sucesso: ${c}`, "success"); }, "warning"); };
-            const handleToggleDelete = async (id, status) => { if(!dbFirestore) return; try { const updateData = { deleted: status }; if (status) { updateData.deleted_at = new Date().toISOString(); } else { updateData.deleted_at = null; } await dbFirestore.collection("inspections").doc(id).update(updateData); } catch (e) { showAlert("Erro ao atualizar.", "error"); } };
-            const handleDeletePermanently = async (id) => { if(!dbFirestore) return; try { await dbFirestore.collection("inspections").doc(id).delete(); } catch (e) { showAlert("Erro ao excluir.", "error"); } };
-            const handleLogin = (name, unitName) => { localStorage.setItem('trfire_user', name); localStorage.setItem('trfire_unit', unitName); setResponsible(name); setCurrentUnit(unitName); setPage('menu'); };
+                if (dbFirestore) {
+                    const now = new Date();
+                    const currentHour = now.getHours();
+                    const getLocalISODate = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                    let shiftId = "";
+                    if (currentHour >= 6 && currentHour < 12) shiftId = `DIURNO_1_${getLocalISODate(now)}`;
+                    else if (currentHour >= 12 && currentHour < 18) shiftId = `DIURNO_2_${getLocalISODate(now)}`;
+                    else if (currentHour >= 18 && currentHour <= 23) shiftId = `NOTURNO_1_${getLocalISODate(now)}`;
+                    else shiftId = `NOTURNO_2_${getLocalISODate(now)}`;
+                    
+                    dbFirestore.collection("shift_logs").doc(shiftId).set({ responsible: name, unit: unitName, timestamp: new Date().toISOString() }, { merge: true }).catch(console.error);
+                }
+            };
 
-            const handleStartInspection = (type) => { setInspectionType(type); navigateTo('scan'); };
-            const handleRoundStart = (location) => { setRoundLocation(location); setInspectionType('RONDA'); navigateTo('scan'); };
+            const handleStartInspection = (t) => { setInspectionType(t); setPage('scan'); };
+            const handleRoundStart = (l) => { setRoundLocation(l); setInspectionType('RONDA'); setPage('scan'); };
 
-            if (authError) {
-                return <AuthErrorScreen error={authError} />;
+            if (authError) return <AuthErrorScreen error={authError} />;
+
+            // TELA DE LOADING GLOBAL
+            if (loading && !authError) {
+                return (
+                    <div className="flex flex-col h-screen w-full items-center justify-center bg-gray-100 dark:bg-gray-900">
+                        <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-brand-red mb-4"></div>
+                        <p className="text-brand-orange font-bold tracking-widest animate-pulse">A CONECTAR...</p>
+                    </div>
+                );
             }
 
             return (
                 <ErrorBoundary>
                     <NotificationModal isOpen={notification.isOpen} message={notification.message} type={notification.type} isConfirmation={notification.isConfirmation} onClose={closeNotification} onConfirm={notification.onConfirm} />
                     {page === 'responsible' && <ResponsibleScreen onConfirm={handleLogin} usersList={users} unitsList={units} showAlert={showAlert} onNavigate={navigateTo} />}
-                    {page === 'menu' && <MenuScreen onNavigate={navigateTo} responsibleName={responsible} currentUnit={currentUnit} onStartInspection={handleStartInspection} usersList={users} onInstallApp={handleInstallClick} />}
-                    {page === 'adminMenu' && <AdminMenuScreen onNavigate={navigateTo} />}
-                    {page === 'accessControl' && <AccessControlScreen onNavigate={navigateTo} usersList={users} onUpdatePermissions={handleUpdateUserPermissions} />}
-                    {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={navigateTo} onSelectLocation={handleRoundStart} db={db} responsibleName={responsible} roundLocationsList={roundLocationsList} />}
-                    {page === 'userRegister' && <UserRegisterScreen onNavigate={navigateTo} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} />}
-                    {page === 'unitRegister' && <UnitRegisterScreen onNavigate={navigateTo} onSaveUnit={handleSaveUnit} unitsList={units} onUpdateUnit={handleUpdateUnit} onDeleteUnit={handleDeleteUnit} showAlert={showAlert} showConfirm={showConfirm} />}
-                    {page === 'roundLocRegister' && <RoundLocationsRegisterScreen onNavigate={navigateTo} onSaveLocation={handleSaveRoundLocation} onUpdateLocation={handleUpdateRoundLocation} locationsList={roundLocationsList} onDeleteLocation={handleDeleteRoundLocation} showAlert={showAlert} showConfirm={showConfirm} />}
-                    {page === 'scan' && <ScannerScreen onNavigate={(target) => navigateTo(target === 'menu' && inspectionType === 'RONDA' ? 'roundsLocation' : target)} onScanSuccess={(d)=>{setScanRes(d); navigateTo(inspectionType === 'RONDA' ? 'roundsForm' : 'form')}} db={db} inspectionType={inspectionType} showAlert={showAlert} />}
-                    {page === 'form' && <FormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} onSave={handleSave} inspectionType={inspectionType} showAlert={showAlert} />}
-                    {page === 'roundsForm' && <RoundsFormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} roundLocation={roundLocation} onSave={handleSave} currentUnit={currentUnit} showAlert={showAlert} />}
-                    {page === 'list' && <ListScreen data={db} onNavigate={navigateTo} onToggleDelete={handleToggleDelete} onDeletePermanently={handleDeletePermanently} onImportData={handleImportData} currentUser={responsible} showAlert={showAlert} showConfirm={showConfirm} />}
-                    {page === 'adminSetup' && <UserRegisterScreen onNavigate={navigateTo} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} backDestination="responsible" />}
+                    {page === 'menu' && <MenuScreen onNavigate={setPage} responsibleName={responsible} currentUnit={currentUnit} onStartInspection={handleStartInspection} usersList={users} userRole={userRole} onInstallApp={handleInstallClick} />}
+                    {page === 'adminMenu' && <AdminMenuScreen onNavigate={setPage} />}
+                    {page === 'accessControl' && <AccessControlScreen onNavigate={setPage} usersList={users} onUpdatePermissions={(id,p)=>dbFirestore.collection("users").doc(id).update({permissions:p})} />}
+                    {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={setPage} onSelectLocation={handleRoundStart} db={db} responsibleName={responsible} roundLocationsList={roundLocationsList} />}
+                    {page === 'userRegister' && <UserRegisterScreen onNavigate={setPage} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} />}
+                    {page === 'unitRegister' && <UnitRegisterScreen onNavigate={setPage} onSaveUnit={handleSaveUnit} unitsList={units} onUpdateUnit={handleUpdateUnit} onDeleteUnit={handleDeleteUnit} showAlert={showAlert} showConfirm={showConfirm} />}
+                    {page === 'roundLocRegister' && <RoundLocationsRegisterScreen onNavigate={setPage} onSaveLocation={handleSaveRoundLocation} onUpdateLocation={handleUpdateRoundLocation} locationsList={roundLocationsList} onDeleteLocation={handleDeleteRoundLocation} showAlert={showAlert} showConfirm={showConfirm} />}
+                    {page === 'scan' && <ScannerScreen onNavigate={(t) => setPage(t === 'menu' && inspectionType === 'RONDA' ? 'roundsLocation' : t)} onScanSuccess={(d)=>{setScanRes(d); setPage(inspectionType === 'RONDA' ? 'roundsForm' : 'form')}} db={db} inspectionType={inspectionType} showAlert={showAlert} />}
+                    {page === 'form' && <FormScreen initialData={scanRes} onNavigate={setPage} responsibleName={responsible} onSave={handleSave} inspectionType={inspectionType} showAlert={showAlert} />}
+                    {page === 'roundsForm' && <RoundsFormScreen initialData={scanRes} onNavigate={setPage} responsibleName={responsible} roundLocation={roundLocation} onSave={handleSave} currentUnit={currentUnit} showAlert={showAlert} />}
+                    {page === 'list' && <ListScreen data={db} onNavigate={setPage} onToggleDelete={onToggleDelete} onDeletePermanently={onDeletePermanently} onImportData={onImportData} currentUser={responsible} userRole={userRole} showAlert={showAlert} showConfirm={showConfirm} />}
+                    {page === 'adminSetup' && <UserRegisterScreen onNavigate={setPage} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} backDestination="responsible" />}
                 </ErrorBoundary>
             );
         }

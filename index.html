@@ -3,18 +3,14 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V65.0 (08/02/2026) - BIN BULK ACTIONS FIX
+    BACKUP DE SEGURANÇA - VERSÃO ESTÁVEL V69.0 (12/02/2026)
     ============================================================================
-    MELHORIAS NA LIXEIRA (HISTÓRICO):
-    1. Barra de Ferramentas Fixa: Ao entrar na Lixeira, uma barra de ações 
-       aparece automaticamente, contendo um Checkbox "Selecionar Todos".
-    2. Exclusão Definitiva: O botão de excluir permanentemente (ícone lixo) 
-       só aparece se o usuário for ADMIN.
-    3. Restauração: Disponível para todos os usuários nos seus próprios itens.
-    4. Seleção em Massa: Lógica reescrita para ser mais rápida e precisa.
-    
-    FUNCIONALIDADES MANTIDAS:
-    - Rondas (Modal e Turnos), PWA, Compressão de Fotos, Filtros.
+    ESTADO DO SISTEMA:
+    1. UI: Widget de Relógio/Data adicionado ao Menu Principal.
+    2. Rondas: Modal com Turnos (Diurno 1/2, Noturno 1/2) e Timer.
+    3. Admin: Gestão completa de Locais de Ronda, Usuários e Unidades.
+    4. Histórico: Filtro simplificado por Mês, Lixeira com ações em massa.
+    5. Performance: Fotos otimizadas (240px) e flag 'hasPhoto'.
     ============================================================================
     -->
 
@@ -130,7 +126,6 @@
         const FALLBACK_LOGO = "https://cdn-icons-png.flaticon.com/512/785/785116.png";
         const LOCATION_OPTIONS = ["ANJUN", "AZUL CARGO", "AREAS COMUNS", "EQ. RESERVA", "LATAM", "MELI", "POWER SOURCE", "TOTAL EXP."];
         const EXTINGUISHER_TYPES = ["ABC- 4KG", "ABC- 6KG", "AGUA- 10LT", "AVD- 9LT", "CO²- 6KG", "EM- 9LT", "PÓ BC- 4KG", "PÓ BC- 6KG", "PÓ BC- 8KG", "PÓ BC- 12KG"];
-        // LOCAIS PADRÃO
         const DEFAULT_ROUND_LOCATIONS = ["CASA DE BOMBAS / G-100", "TANQUE DE DIESEL / G-100", "RTI / G-100", "GERADOR / G-100", "CASA DE BOMBAS / G-200", "TANQUE DE DIESEL / G-200", "RTI / G-200", "GERADOR / G-200", "GERADOR / G-300"];
         const ROUND_AREAS = ["G-100", "G-200", "G-300"];
         
@@ -154,13 +149,13 @@
 
         function NotificationModal({ isOpen, message, type, isConfirmation, onClose, onConfirm }) {
             if (!isOpen) return null;
-            const colors = { error: 'bg-red-500', success: 'bg-green-500', warning: 'bg-yellow-500', info: 'bg-blue-500' };
-            const icon = { error: 'fa-times', success: 'fa-check', warning: 'fa-exclamation', info: 'fa-info' };
+            const colors = { error: 'bg-red-500', success: 'bg-green-500', warning: 'bg-yellow-500', info: 'bg-blue-500', welcome: 'bg-brand-orange' };
+            const icon = { error: 'fa-times', success: 'fa-check', warning: 'fa-exclamation', info: 'fa-info', welcome: 'fa-user-check' };
             return (
                 <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 animate-fade-in">
                     <div className="bg-white dark:bg-gray-800 p-6 rounded-3xl w-full max-w-sm text-center shadow-2xl border border-gray-100 dark:border-gray-700">
                         <div className={`w-16 h-16 rounded-full ${colors[type] || colors.info} flex items-center justify-center mx-auto mb-4 shadow-lg`}><i className={`fas ${icon[type] || icon.info} text-3xl text-white`}></i></div>
-                        <h3 className="text-xl font-black text-gray-800 dark:text-white mb-2 uppercase">{isConfirmation ? 'Confirmação' : (type === 'error' ? 'Atenção' : 'Sucesso')}</h3>
+                        <h3 className="text-xl font-black text-gray-800 dark:text-white mb-2 uppercase">{isConfirmation ? 'Confirmação' : (type === 'welcome' ? 'Bem-vindo!' : (type === 'error' ? 'Atenção' : 'Sucesso'))}</h3>
                         <p className="text-gray-600 dark:text-gray-300 mb-6 text-sm font-medium leading-relaxed whitespace-pre-line">{message}</p>
                         <div className="flex gap-3 justify-center">
                             {isConfirmation && <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-bold active:scale-95">Cancelar</button>}
@@ -205,7 +200,7 @@
 
             const handleLogoTap = () => {
                 const now = Date.now();
-                if (now - lastTap < 400) { onNavigate('adminSetup'); }
+                if (now - lastTap < 400) { onConfirm(null, null, null, true); } 
                 setLastTap(now);
             };
 
@@ -218,7 +213,7 @@
                 if (!userFound) { showAlert("Usuário não cadastrado.", "error"); return; }
                 if (userFound.pass !== password) { showAlert("Senha incorreta.", "error"); return; }
                 if (nameUpper !== "ADMIN" && userFound.unit !== "GLOBAL" && userFound.unit !== selectedUnit) { showAlert("Usuário incorreto.", "error"); return; }
-                onConfirm(userFound.name, selectedUnit || "GLOBAL");
+                onConfirm(userFound.name, selectedUnit || "GLOBAL", false, false);
             };
             const isButtonEnabled = selectedName && password && (selectedUnit || selectedName.toUpperCase().trim() === "ADMIN");
 
@@ -286,28 +281,29 @@
         };
 
         function UserRegisterScreen({ onNavigate, onSaveUser, usersList, unitsList, onUpdateUser, onDeleteUser, showAlert, showConfirm, backDestination = 'adminMenu' }) {
-            const [newUser, setNewUser] = useState({ name: '', pass: '', unit: '' });
+            const [newUser, setNewUser] = useState({ name: '', pass: '', unit: '', shift: 'DIURNO' });
             const [editingId, setEditingId] = useState(null);
             const handleSave = async () => {
                 if (!newUser.name || !newUser.pass) return showAlert("Dados incompletos.", "warning");
                 let finalUnit = newUser.unit;
                 if (newUser.name.toUpperCase() === "ADMIN" && !finalUnit) finalUnit = "GLOBAL";
-                const userData = { name: newUser.name.toUpperCase(), pass: newUser.pass, unit: finalUnit || '' };
+                const userData = { name: newUser.name.toUpperCase(), pass: newUser.pass, unit: finalUnit || '', shift: newUser.shift };
                 if (editingId) { await onUpdateUser(editingId, userData); setEditingId(null); showAlert("Atualizado!", "success"); } 
                 else { await onSaveUser(userData); showAlert("Cadastrado!", "success"); }
-                setNewUser({ name: '', pass: '', unit: '' });
+                setNewUser({ name: '', pass: '', unit: '', shift: 'DIURNO' });
             };
-            const handleEditClick = (u) => { setEditingId(u.id); setNewUser({ name: u.name, pass: u.pass, unit: u.unit || '' }); };
+            const handleEditClick = (u) => { setEditingId(u.id); setNewUser({ name: u.name, pass: u.pass, unit: u.unit || '', shift: u.shift || 'DIURNO' }); };
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 overflow-y-auto">
                     <div className="absolute top-4 left-4"><button onClick={() => onNavigate(backDestination)} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
                     <div className="mt-16 space-y-4">
                         <select value={newUser.unit} onChange={e => setNewUser({...newUser, unit: e.target.value})} className="w-full p-4 bg-gray-100 rounded-xl font-bold"><option value="">Unidade (Opcional)</option>{unitsList && unitsList.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}</select>
+                        <select value={newUser.shift} onChange={e => setNewUser({...newUser, shift: e.target.value})} className="w-full p-4 bg-gray-100 rounded-xl font-bold"><option value="DIURNO">DIURNO</option><option value="NOTURNO">NOTURNO</option></select>
                         <input value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} placeholder="NOME" className="w-full p-4 bg-gray-100 rounded-xl font-bold" />
                         <input value={newUser.pass} onChange={e => setNewUser({...newUser, pass: e.target.value})} placeholder="SENHA" className="w-full p-4 bg-gray-100 rounded-xl font-bold" />
                         <button onClick={handleSave} className="w-full py-4 bg-brand-orange text-white rounded-xl font-bold">SALVAR</button>
                     </div>
-                    <div className="mt-8 space-y-2">{usersList && usersList.map(u => (<div key={u.id} className="p-4 border rounded-xl flex justify-between"><div><b>{u.name}</b><br/><span className="text-xs">{u.unit || 'GLOBAL'}</span></div><div><button onClick={() => handleEditClick(u)} className="mr-2 text-blue-500"><i className="fas fa-pen"></i></button><button onClick={()=>showConfirm("Excluir?", ()=>onDeleteUser(u.id), "error")} className="text-red-500"><i className="fas fa-trash"></i></button></div></div>))}</div>
+                    <div className="mt-8 space-y-2">{usersList && usersList.map(u => (<div key={u.id} className="p-4 border rounded-xl flex justify-between"><div><b>{u.name}</b> <span className="text-xs bg-gray-200 px-1 rounded">{u.shift || 'D'}</span><br/><span className="text-xs">{u.unit || 'GLOBAL'}</span></div><div><button onClick={() => handleEditClick(u)} className="mr-2 text-blue-500"><i className="fas fa-pen"></i></button><button onClick={()=>showConfirm("Excluir?", ()=>onDeleteUser(u.id), "error")} className="text-red-500"><i className="fas fa-trash"></i></button></div></div>))}</div>
                 </div>
             );
         };
@@ -357,6 +353,12 @@
             const hasAccess = (perm) => isAdmin || userPerms.includes(perm);
             const handleLogout = () => { localStorage.removeItem('trfire_user'); window.location.reload(); };
 
+            const [currentDate, setCurrentDate] = useState(new Date());
+            useEffect(() => {
+                const timer = setInterval(() => setCurrentDate(new Date()), 1000);
+                return () => clearInterval(timer);
+            }, []);
+
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 animate-fade-in relative">
                     <div className="absolute top-0 left-0 w-full bg-gray-100 dark:bg-gray-800 p-2 px-4 flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
@@ -370,6 +372,16 @@
                             <div className="w-32 h-32"><LogoImage className="w-full h-full object-contain filter drop-shadow-xl" /></div>
                             <h2 className="text-2xl font-extrabold tracking-tight mt-2 text-brand-red dark:text-white">TR FIRE</h2>
                             <p className="text-brand-orange text-lg font-bold tracking-widest">INSPEÇÕES</p>
+                            
+                            {/* DATA E HORA EM TEMPO REAL */}
+                            <div className="text-center mt-2 space-y-1">
+                                <p className="text-xs text-gray-500 dark:text-gray-400 font-sans font-medium capitalize">
+                                    {currentDate.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                                </p>
+                                <p className="text-sm text-gray-600 dark:text-gray-300 font-sans font-bold tracking-wide">
+                                    {currentDate.toLocaleTimeString('pt-BR')}
+                                </p>
+                            </div>
                         </div>
                         <div className="w-full space-y-3 pb-4">
                             {hasAccess('RONDA') && <button onClick={() => onNavigate('roundsLocation')} className="w-full py-4 bg-brand-blue text-white rounded-xl font-bold shadow-lg">RONDA DIÁRIA</button>}
@@ -386,7 +398,7 @@
         function RoundsLocationScreen({ onNavigate, onSelectLocation, db, responsibleName, roundLocationsList }) {
             const [shiftInfo, setShiftInfo] = useState({ name: '', start: null, end: null, isNight: false });
             const [tick, setTick] = useState(0); 
-            const [selectedLocation, setSelectedLocation] = useState(null); // Para o Modal
+            const [selectedLocation, setSelectedLocation] = useState(null); 
 
             useEffect(() => {
                 const updateShift = () => {
@@ -458,14 +470,17 @@
 
             const handleLocationClick = (locName) => { setSelectedLocation(locName); };
 
-            const getTimeBadge = () => {
-                if (!shiftInfo.end) return null;
+            const getActiveRoundInfo = (location) => {
                 const now = new Date();
-                const diffMs = shiftInfo.end - now;
-                if (diffMs <= 0) return null;
-                const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
-                const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-                return (<div className="absolute right-12 top-1/2 -translate-y-1/2 bg-brand-orange text-white rounded-lg px-2 py-1.5 font-black text-xs shadow-md border border-white/20 animate-pulse">{diffHrs > 0 ? `+${diffHrs}H` : `+${diffMins}m`}</div>);
+                const hour = now.getHours();
+                let activeRound = 1;
+                if (!shiftInfo.isNight) {
+                    if (hour >= 12) activeRound = 2;
+                } else {
+                    if (hour >= 0 && hour < 6) activeRound = 2;
+                }
+                const status = getRoundStatus(location, activeRound);
+                return { num: activeRound, ...status };
             };
 
             return (
@@ -475,16 +490,28 @@
                     <div className="flex-1 overflow-y-auto space-y-3 pb-6">
                         {roundLocationsList.map(loc => {
                             const done = isLocationDone(loc.name);
+                            const activeInfo = getActiveRoundInfo(loc.name);
                             return (
-                                <button key={loc.id} onClick={() => handleLocationClick(loc.name)} className={`w-full py-5 bg-white dark:bg-gray-800 border-2 ${done ? 'border-green-500' : 'border-gray-100 dark:border-gray-700 hover:border-blue-500'} text-gray-700 dark:text-white rounded-2xl text-lg font-bold shadow-sm flex items-center justify-between px-6`}>
-                                    <div className="flex flex-col items-start"><span>{loc.name}</span><span className={`text-[10px] font-bold uppercase mt-1 ${done ? 'text-green-500' : 'text-orange-500'}`}>{done ? 'Realizado' : 'Pendente'}</span></div>
-                                    {!done && getTimeBadge()}
-                                    <i className={`fas ${done ? 'fa-check text-green-500' : 'fa-chevron-right text-gray-300 group-hover:text-blue-500'}`}></i>
+                                <button key={loc.id} onClick={() => handleLocationClick(loc.name)} className={`w-full py-4 bg-white dark:bg-gray-800 border-2 ${done ? 'border-green-500' : 'border-gray-100 dark:border-gray-700 hover:border-blue-500'} text-gray-700 dark:text-white rounded-2xl text-lg font-bold shadow-sm flex items-center justify-between px-4`}>
+                                    <div className="flex flex-col items-start">
+                                        <span>{loc.name}</span>
+                                        <span className={`text-[10px] font-bold uppercase mt-1 ${done ? 'text-green-500' : 'text-orange-500'}`}>{done ? 'Realizado' : 'Pendente'}</span>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <div className="flex flex-col items-end">
+                                            <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase ${activeInfo.isDone ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                                                {activeInfo.num}ª RONDA
+                                            </span>
+                                            <span className={`text-xs font-mono font-bold mt-0.5 ${activeInfo.timeText === 'Encerrado' ? 'text-red-500' : 'text-brand-blue'}`}>
+                                                {activeInfo.timeText}
+                                            </span>
+                                        </div>
+                                        <i className={`fas ${done ? 'fa-check text-green-500' : 'fa-chevron-right text-gray-300'}`}></i>
+                                    </div>
                                 </button>
                             );
                         })}
                     </div>
-                    {/* MODAL DE RONDA DUPLA */}
                     {selectedLocation && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={() => setSelectedLocation(null)}>
                             <div className="bg-white dark:bg-gray-900 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative" onClick={e => e.stopPropagation()}>
@@ -740,13 +767,18 @@
                     if (!item.created_at || typeof item.created_at !== 'string') return false; 
                     
                     try {
+                        // 1. Month Filter
                         if (item.created_at.slice(0, 7) !== viewMonth) return false; 
-                        const itemDateStr = item.created_at.slice(0, 10); 
-                        if (filters.startDate && itemDateStr < filters.startDate) return false;
-                        if (filters.endDate && itemDateStr > filters.endDate) return false;
+                        
+                        // 3. Type Filter
                         if (filters.type && (item.type || 'EXTINTOR') !== filters.type) return false; 
+                        
+                        // 4. Responsible Filter
                         if (filters.responsible && item.responsible !== filters.responsible) return false; 
+                        
+                        // 5. Location Filter
                         if (filters.moduleLocation && item.moduleLocation !== filters.moduleLocation) return false; 
+                        
                         return true; 
                     } catch (e) { return false; }
                 });
@@ -755,32 +787,7 @@
             const groupedData = useMemo(() => { return { EXTINTOR: activeData.filter(i => (i.type || 'EXTINTOR') === 'EXTINTOR'), HIDRANTE: activeData.filter(i => i.type === 'HIDRANTE'), RONDA: activeData.filter(i => i.type === 'RONDA') }; }, [activeData]);
             const displayList = showBin ? deletedData : activeData;
             
-            // LOGICA CORRIGIDA "SELECIONAR TODOS" PARA LIXEIRA E LISTA NORMAL
-            const handleSelectAll = () => {
-                const targetList = showBin ? deletedData : activeData;
-                
-                // Se estiver na lista principal, "Select All" pode ser complexo devido às categorias.
-                // Mas para simplificar, vamos selecionar TODOS os visíveis.
-                
-                // Mas espera, se estiver na lista principal, activeData é a lista filtrada.
-                // Se estiver na Lixeira, deletedData é a lista filtrada (sem filtros extras além de deletado).
-
-                // Vamos usar displayList como referência
-                if (!displayList || displayList.length === 0) return;
-                
-                const allSelected = displayList.every(item => selectedIds.has(item.id));
-                const newSet = new Set(selectedIds);
-                
-                if (allSelected) {
-                    // Desmarcar todos da lista atual
-                    displayList.forEach(item => newSet.delete(item.id));
-                } else {
-                    // Marcar todos da lista atual
-                    displayList.forEach(item => newSet.add(item.id));
-                }
-                setSelectedIds(newSet);
-            };
-
+            const handleSelectAll = () => { if (selectedIds.size === displayList.length) setSelectedIds(new Set()); else setSelectedIds(new Set(displayList.map(i => i.id))); };
             const toggleSelection = (id) => { const newSet = new Set(selectedIds); if (newSet.has(id)) newSet.delete(id); else newSet.add(id); setSelectedIds(newSet); };
 
             const handleSelectCategory = (categoryItems) => {
@@ -832,8 +839,7 @@
                 return (
                     <div key={item.id} className={`p-4 rounded-xl shadow-sm border-l-4 flex justify-between items-center transition-all ${showBin ? (isSelected ? 'bg-red-100 border-red-600' : 'bg-red-50 dark:bg-red-900/10 border-red-500 opacity-80') : 'bg-white dark:bg-gray-800 border-brand-red'}`}>
                         <div className="flex items-center gap-3">
-                            {/* Checkbox para Admin em qualquer lista, ou para User na Lixeira para restaurar */}
-                            <div onClick={() => toggleSelection(item.id)} className={`w-5 h-5 border rounded flex items-center justify-center cursor-pointer ${selectedIds.has(item.id)?'bg-red-500 border-red-500 text-white':''}`}>{selectedIds.has(item.id) && <i className="fas fa-check text-xs"></i>}</div>
+                            {isAdmin && <div onClick={() => toggleSelection(item.id)} className={`w-5 h-5 border rounded flex items-center justify-center cursor-pointer ${selectedIds.has(item.id)?'bg-red-500 border-red-500 text-white':''}`}>{selectedIds.has(item.id) && <i className="fas fa-check text-xs"></i>}</div>}
                             <div><span className="font-bold text-sm block">{item.equipmentName}</span><span className="text-xs text-gray-500">{formatDate(item.created_at)} - {item.moduleLocation}</span></div>
                             {/* NEW: VISUAL INDICATOR OF PHOTO */}
                             {(item.photo || item.hasPhoto) && <div className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-1 rounded flex items-center gap-1"><i className="fas fa-camera"></i> Foto</div>}
@@ -860,22 +866,12 @@
                         <div className="flex items-center gap-2">{showBin ? (<button onClick={()=>setShowBin(false)} className="bg-white/20 px-3 py-1 rounded text-xs">VOLTAR</button>) : (<button onClick={()=>onNavigate('menu')} className="bg-orange-500 px-3 py-1 rounded text-xs font-bold">NOVA LEITURA</button>)}<span className="text-xs ml-2">{showBin ? 'Lixeira' : `${displayList.length} itens`}</span></div>
                         <div className="flex gap-3">{!showBin && (<><i onClick={() => setShowFilter(!showFilter)} className="fas fa-filter text-lg text-yellow-400 cursor-pointer"></i><i onClick={() => setShowPdfModal(true)} className="fas fa-file-pdf text-lg cursor-pointer"></i>{isAdmin && <i onClick={() => setShowBackupModal(true)} className="fas fa-cloud-download-alt text-lg text-blue-300 cursor-pointer"></i>}</>)}<i onClick={() => setShowBin(!showBin)} className={`fas ${showBin ? 'fa-list' : 'fa-trash'} text-lg cursor-pointer`}></i></div>
                     </div>
-                    
-                    {/* Toolbar de Ações em Massa - Modificado para aparecer na Lixeira também */}
-                    {selectedIds.size > 0 && (
+                    {/* Toolbar de Ações em Massa */}
+                    {isAdmin && selectedIds.size > 0 && (
                         <div className="bg-gray-200 dark:bg-gray-800 p-2 flex justify-between items-center px-4">
                             <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{selectedIds.size} selecionados</span>
                             <div className="flex gap-2">
-                                {/* Botão "Selecionar Todos" movido para Toolbar para clareza */}
-                                <button onClick={handleSelectAll} className="text-blue-600 text-xs font-bold mr-2">TODOS</button>
-                                {showBin ? (
-                                    <>
-                                        <button onClick={confirmBulkRestore} className="text-green-600 text-xs font-bold">RESTAURAR</button>
-                                        {isAdmin && <button onClick={confirmBulkDelete} className="text-red-600 text-xs font-bold">EXCLUIR</button>}
-                                    </>
-                                ) : (
-                                    <button onClick={confirmBulkSoftDelete} className="text-red-600 text-xs font-bold">LIXEIRA</button>
-                                )}
+                                {showBin ? (<><button onClick={confirmBulkRestore} className="text-green-600 text-xs font-bold">RESTAURAR</button><button onClick={confirmBulkDelete} className="text-red-600 text-xs font-bold">EXCLUIR</button></>) : (<button onClick={confirmBulkSoftDelete} className="text-red-600 text-xs font-bold">LIXEIRA</button>)}
                             </div>
                         </div>
                     )}
@@ -979,6 +975,9 @@
             const [scanRes, setScanRes] = useState(null);
             const [notification, setNotification] = useState({ isOpen: false, message: '', type: 'info', isConfirmation: false, onConfirm: null });
             const [authError, setAuthError] = useState(null);
+            
+            // NOVO: Last Activity Time for Logout
+            const [lastActivity, setLastActivity] = useState(Date.now());
 
             const showAlert = (message, type = 'info', onCloseAction = null) => { setNotification({ isOpen: true, message, type, isConfirmation: false, onConfirm: null, onCloseAction }); };
             const showConfirm = (message, onConfirmAction, type = 'warning') => { setNotification({ isOpen: true, message, type, isConfirmation: true, onConfirm: onConfirmAction }); };
@@ -1074,10 +1073,7 @@
 
                 if (!targetRange || now <= targetRange.end) return;
 
-                // USE THE DYNAMIC LIST IF AVAILABLE, ELSE FALLBACK
-                const locationsToCheck = roundLocationsList.length > 0 ? roundLocationsList.map(l => l.name) : ROUND_LOCATIONS;
-
-                for (const loc of locationsToCheck) {
+                for (const loc of ROUND_LOCATIONS) {
                     const hasInspection = currentDb.some(item => { 
                         if (item.type !== 'RONDA' || item.deleted || item.sector !== loc) return false; 
                         const itemDate = new Date(item.created_at); 

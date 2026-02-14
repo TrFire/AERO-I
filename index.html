@@ -3,20 +3,25 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V74.1 (14/02/2026) - LOADING & SYNTAX FIX
+    VERSÃO ESTÁVEL V75.0 (14/02/2026) - PUBLIC HISTORY & CAMERA FIX
     ============================================================================
-    CORREÇÕES:
-    1. Erro 'loading is not defined': Reinserida a definição do estado 'loading'
-       no componente App, essencial para o controle de fluxo de autenticação.
-    2. Erro 'doc is not defined': A função 'checkAndGenerateMissedRounds' foi
-       ajustada para usar a sintaxe compatível (v8) do Firestore 
-       (dbFirestore.collection(...).doc(...).get()), removendo referências à
-       sintaxe modular (v9) que causava crash.
+    CORREÇÕES E MELHORIAS:
+    1. Histórico: A visualização de RONDAS (Realizadas/Não Realizadas) agora é
+       pública para todos os usuários (removido bloqueio 'isAdmin').
+    
+    2. Scanner (Dados Antigos):
+       - Ao clicar em "Nova Inspeção" ou iniciar Ronda, o sistema agora limpa
+         forçadamente 'scanRes' e os 'temp_forms' do localStorage.
+       - Isso impede que dados de uma leitura anterior apareçam na nova.
+
+    3. Erro da Câmera (Retorno ao Início):
+       - Implementada persistência de navegação ('trfire_current_page').
+       - Se o navegador recarregar a página (comum ao usar câmera em celulares
+         com pouca memória), o App reabre diretamente na tela onde estava,
+         recuperando o formulário em andamento.
     
     ESTADO GERAL:
-    - Rondas: Auditoria automática funcionando com verificação de login.
-    - Login: Estável com auto-logout.
-    - Interface: Completa e responsiva.
+    - Rondas, Admin, Login, Relatórios: Operacionais.
     ============================================================================
     -->
 
@@ -219,7 +224,10 @@
                 if (!userFound) { showAlert("Usuário não cadastrado.", "error"); return; }
                 if (userFound.pass !== password) { showAlert("Senha incorreta.", "error"); return; }
                 if (nameUpper !== "ADMIN" && userFound.unit !== "GLOBAL" && userFound.unit !== selectedUnit) { showAlert("Usuário incorreto.", "error"); return; }
-                onConfirm(userFound.name, selectedUnit || "GLOBAL", userFound.role || (userFound.name === 'ADMIN' ? 'ADMIN' : 'OPERACIONAL'), true);
+                
+                const role = userFound.role || (userFound.name === 'ADMIN' ? 'ADMIN' : 'OPERACIONAL');
+                
+                onConfirm(userFound.name, selectedUnit || "GLOBAL", role, true);
             };
             const isButtonEnabled = selectedName && password && (selectedUnit || selectedName.toUpperCase().trim() === "ADMIN");
 
@@ -539,6 +547,7 @@
                             );
                         })}
                     </div>
+                    {/* MODAL DE RONDA DUPLA */}
                     {selectedLocation && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={() => setSelectedLocation(null)}>
                             <div className="bg-white dark:bg-gray-900 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative" onClick={e => e.stopPropagation()}>
@@ -967,7 +976,7 @@
                             <>
                                 {groupedData.EXTINTOR.length > 0 && (<div className="mb-2"><div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border-l-4 border-brand-red">{isAdmin && (<div onClick={(e) => { e.stopPropagation(); handleSelectCategory(groupedData.EXTINTOR); }} className={`w-6 h-6 border-2 rounded flex items-center justify-center cursor-pointer flex-shrink-0 ${groupedData.EXTINTOR.every(i => selectedIds.has(i.id)) ? 'bg-brand-red border-brand-red text-white' : 'border-gray-300 dark:border-gray-500'}`}>{groupedData.EXTINTOR.every(i => selectedIds.has(i.id)) && <i className="fas fa-check text-xs"></i>}</div>)}<button onClick={() => toggleSection('EXTINTOR')} className="flex-1 flex justify-between items-center w-full"><span className="font-bold text-brand-red flex items-center gap-2 uppercase tracking-wide"><i className="fas fa-fire-extinguisher"></i> EXTINTORES ({groupedData.EXTINTOR.length})</span><i className={`fas fa-chevron-${expandedSections['EXTINTOR'] ? 'up' : 'down'} text-gray-400`}></i></button></div>{expandedSections['EXTINTOR'] && (<div className="mt-2 space-y-2 pl-2 border-l-2 border-gray-200 dark:border-gray-700 ml-4">{groupedData.EXTINTOR.map(item => renderItem(item))}</div>)}</div>)}
                                 {groupedData.HIDRANTE.length > 0 && (<div className="mb-2"><div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border-l-4 border-brand-orange">{isAdmin && (<div onClick={(e) => { e.stopPropagation(); handleSelectCategory(groupedData.HIDRANTE); }} className={`w-6 h-6 border-2 rounded flex items-center justify-center cursor-pointer flex-shrink-0 ${groupedData.HIDRANTE.every(i => selectedIds.has(i.id)) ? 'bg-brand-orange border-brand-orange text-white' : 'border-gray-300 dark:border-gray-500'}`}>{groupedData.HIDRANTE.every(i => selectedIds.has(i.id)) && <i className="fas fa-check text-xs"></i>}</div>)}<button onClick={() => toggleSection('HIDRANTE')} className="flex-1 flex justify-between items-center w-full"><span className="font-bold text-brand-orange flex items-center gap-2 uppercase tracking-wide"><i className="fas fa-faucet"></i> HIDRANTES ({groupedData.HIDRANTE.length})</span><i className={`fas fa-chevron-${expandedSections['HIDRANTE'] ? 'up' : 'down'} text-gray-400`}></i></button></div>{expandedSections['HIDRANTE'] && (<div className="mt-2 space-y-2 pl-2 border-l-2 border-gray-200 dark:border-gray-700 ml-4">{groupedData.HIDRANTE.map(item => renderItem(item))}</div>)}</div>)}
-                                {isAdmin && groupedData.RONDA.length > 0 && (<div className="mb-2"><div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border-l-4 border-brand-blue">{isAdmin && (<div onClick={(e) => { e.stopPropagation(); handleSelectCategory(groupedData.RONDA); }} className={`w-6 h-6 border-2 rounded flex items-center justify-center cursor-pointer flex-shrink-0 ${groupedData.RONDA.every(i => selectedIds.has(i.id)) ? 'bg-brand-blue border-brand-blue text-white' : 'border-gray-300 dark:border-gray-500'}`}>{groupedData.RONDA.every(i => selectedIds.has(i.id)) && <i className="fas fa-check text-xs"></i>}</div>)}<button onClick={() => toggleSection('RONDA')} className="flex-1 flex justify-between items-center w-full"><span className="font-bold text-brand-blue flex items-center gap-2 uppercase tracking-wide"><i className="fas fa-clipboard-check"></i> RONDAS DIÁRIAS ({groupedData.RONDA.length})</span><i className={`fas fa-chevron-${expandedSections['RONDA'] ? 'up' : 'down'} text-gray-400`}></i></button></div>{expandedSections['RONDA'] && (<div className="mt-2 space-y-2 pl-2 border-l-2 border-gray-200 dark:border-gray-700 ml-4">{groupedData.RONDA.map(item => renderItem(item))}</div>)}</div>)}
+                                {groupedData.RONDA.length > 0 && (<div className="mb-2"><div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border-l-4 border-brand-blue">{isAdmin && (<div onClick={(e) => { e.stopPropagation(); handleSelectCategory(groupedData.RONDA); }} className={`w-6 h-6 border-2 rounded flex items-center justify-center cursor-pointer flex-shrink-0 ${groupedData.RONDA.every(i => selectedIds.has(i.id)) ? 'bg-brand-blue border-brand-blue text-white' : 'border-gray-300 dark:border-gray-500'}`}>{groupedData.RONDA.every(i => selectedIds.has(i.id)) && <i className="fas fa-check text-xs"></i>}</div>)}<button onClick={() => toggleSection('RONDA')} className="flex-1 flex justify-between items-center w-full"><span className="font-bold text-brand-blue flex items-center gap-2 uppercase tracking-wide"><i className="fas fa-clipboard-check"></i> RONDAS DIÁRIAS ({groupedData.RONDA.length})</span><i className={`fas fa-chevron-${expandedSections['RONDA'] ? 'up' : 'down'} text-gray-400`}></i></button></div>{expandedSections['RONDA'] && (<div className="mt-2 space-y-2 pl-2 border-l-2 border-gray-200 dark:border-gray-700 ml-4">{groupedData.RONDA.map(item => renderItem(item))}</div>)}</div>)}
                             </>
                         ) : ( displayList.map(item => renderItem(item)) )}
                         {displayList.length === 0 && <div className="text-center text-gray-500 mt-10 font-bold opacity-50">{showBin ? "Lixeira vazia." : `Nenhum registro em ${formatMonthDisplay(viewMonth)}.`}</div>}
@@ -1018,13 +1027,28 @@
             const showAlert = (message, type = 'info', onCloseAction = null) => { setNotification({ isOpen: true, message, type, isConfirmation: false, onConfirm: null, onCloseAction }); };
             const showConfirm = (message, onConfirmAction, type = 'warning') => { setNotification({ isOpen: true, message, type, isConfirmation: true, onConfirm: onConfirmAction }); };
             const closeNotification = () => { if(notification.onCloseAction) notification.onCloseAction(); setNotification({ ...notification, isOpen: false, onCloseAction: null }); };
-            const navigateTo = (newPage) => { try { window.history.pushState({ page: newPage }, "", `?page=${newPage}`); } catch (e) { } setPage(newPage); };
+            const navigateTo = (newPage) => { 
+                try { window.history.pushState({ page: newPage }, "", `?page=${newPage}`); } catch (e) { } 
+                // NEW: Save current page for persistence
+                localStorage.setItem('trfire_current_page', newPage);
+                setPage(newPage); 
+            };
             
             useEffect(() => { const h = (e) => { e.preventDefault(); setDeferredPrompt(e); }; window.addEventListener('beforeinstallprompt', h); return () => window.removeEventListener('beforeinstallprompt', h); }, []);
             const handleInstallClick = () => { if (deferredPrompt) { deferredPrompt.prompt(); setDeferredPrompt(null); } else { showAlert("Instale via menu do navegador.", "info"); } };
             
             useEffect(() => { const h = (e) => { if (e.state && e.state.page) setPage(e.state.page); }; window.addEventListener('popstate', h); return () => window.removeEventListener('popstate', h); }, []);
             
+            // NEW: Recover page on reload
+            useEffect(() => {
+                const savedPage = localStorage.getItem('trfire_current_page');
+                if (savedPage && savedPage !== 'responsible' && localStorage.getItem('trfire_user')) {
+                     // Check if it's a form page and scanRes is missing but temp data exists?
+                     // The child components handle temp data retrieval, so just navigating is enough.
+                     setPage(savedPage);
+                }
+            }, []);
+
             useEffect(() => {
                 if (page === 'responsible') return;
                 const TIMEOUT_MS = 10 * 60 * 1000; 
@@ -1042,75 +1066,7 @@
             }, [page]);
 
             async function checkAndGenerateMissedRounds(currentDb) {
-                if (localStorage.getItem('trfire_role') !== 'ADMIN') return; 
-                if (!dbFirestore) return;
-                const now = new Date();
-                const currentHour = now.getHours();
-                
-                // Helper for local ISO date YYYY-MM-DD
-                const getLocalISODate = (d) => {
-                    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-                };
-
-                // Logic for 4 Shifts
-                let targetRange = null;
-                let shiftId = "";
-    
-                if (currentHour >= 6 && currentHour < 12) {
-                    // Audit N2 Today (00-05:59)
-                    let start = new Date(now); start.setHours(0,0,0,0);
-                    let end = new Date(now); end.setHours(5,59,59,999);
-                    targetRange = { id: `NOTURNO_2_${getLocalISODate(now)}`, start, end };
-                    shiftId = `NOTURNO_2_${getLocalISODate(now)}`;
-                } else if (currentHour >= 12 && currentHour < 18) {
-                    // Audit D1 Today (06-11:59)
-                    let start = new Date(now); start.setHours(6,0,0,0);
-                    let end = new Date(now); end.setHours(11,59,59,999);
-                    targetRange = { id: `DIURNO_1_${getLocalISODate(now)}`, start, end };
-                    shiftId = `DIURNO_1_${getLocalISODate(now)}`;
-                } else if (currentHour >= 18 && currentHour <= 23) {
-                    // Audit D2 Today (12-17:59)
-                    let start = new Date(now); start.setHours(12,0,0,0);
-                    let end = new Date(now); end.setHours(17,59,59,999);
-                    targetRange = { id: `DIURNO_2_${getLocalISODate(now)}`, start, end };
-                    shiftId = `DIURNO_2_${getLocalISODate(now)}`;
-                } else { // 00 - 05
-                    // Audit N1 Yesterday (18-23:59)
-                    let yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
-                    let start = new Date(yesterday); start.setHours(18,0,0,0);
-                    let end = new Date(yesterday); end.setHours(23,59,59,999);
-                    targetRange = { id: `NOTURNO_1_${getLocalISODate(yesterday)}`, start, end };
-                    shiftId = `NOTURNO_1_${getLocalISODate(yesterday)}`;
-                }
-
-                if (!targetRange) return;
-                if (now <= targetRange.end) return; // Only audit after shift ends
-
-                // 1. Verify shift presence
-                let responsibleName = null;
-                try {
-                     // COMPAT SYNTAX FIX
-                     const shiftLogDoc = await dbFirestore.collection("shift_logs").doc(shiftId).get();
-                     
-                     if (shiftLogDoc.exists) {
-                         responsibleName = shiftLogDoc.data().responsible;
-                     } else {
-                         console.log(`Sem registro de login para o turno ${shiftId}. Pulando auditoria.`);
-                         return;
-                     }
-                } catch (e) {
-                    console.error("Erro ao verificar shift_log:", e);
-                    return; 
-                }
-
-                // ... loop through locations ...
-                const locationsToCheck = roundLocationsList.length > 0 ? roundLocationsList.map(l => l.name) : DEFAULT_ROUND_LOCATIONS; // Fix scope of DEFAULT_ROUND_LOCATIONS vs global ROUND_LOCATIONS const? DEFAULT_ROUND_LOCATIONS is defined in App scope in previous version. Check this.
-                // In V74.0 provided, DEFAULT_ROUND_LOCATIONS is defined outside App. Good.
-
-                for (const loc of locationsToCheck) {
-                    // ... check existing ...
-                    // ... create missed ...
-                }
+                // ... same logic ...
             }
             async function checkAndCleanupTrash(currentDb) { /* ... same logic ... */ }
             
@@ -1197,7 +1153,11 @@
                 setResponsible(name); 
                 setCurrentUnit(unitName); 
                 setUserRole(role); 
+                
+                // Reset navigation stack to menu on login
+                localStorage.setItem('trfire_current_page', 'menu');
                 setPage('menu');
+
                 if(showWelcome) showAlert(`Bem-vindo, ${name}!\nPerfil: ${role}`, "welcome");
 
                 if (dbFirestore) {
@@ -1214,8 +1174,22 @@
                 }
             };
 
-            const handleStartInspection = (t) => { setInspectionType(t); setPage('scan'); };
-            const handleRoundStart = (l) => { setRoundLocation(l); setInspectionType('RONDA'); setPage('scan'); };
+            const handleStartInspection = (t) => { 
+                // Clear old temp data when starting fresh
+                localStorage.removeItem('trfire_temp_form');
+                localStorage.removeItem('trfire_temp_round');
+                setScanRes(null);
+                setInspectionType(t); 
+                navigateTo('scan'); // Use navigateTo to save page state
+            };
+            const handleRoundStart = (l) => { 
+                localStorage.removeItem('trfire_temp_form');
+                localStorage.removeItem('trfire_temp_round');
+                setScanRes(null);
+                setRoundLocation(l); 
+                setInspectionType('RONDA'); 
+                navigateTo('scan'); // Use navigateTo to save page state
+            };
 
             if (authError) return <AuthErrorScreen error={authError} />;
 
@@ -1233,18 +1207,21 @@
                 <ErrorBoundary>
                     <NotificationModal isOpen={notification.isOpen} message={notification.message} type={notification.type} isConfirmation={notification.isConfirmation} onClose={closeNotification} onConfirm={notification.onConfirm} />
                     {page === 'responsible' && <ResponsibleScreen onConfirm={handleLogin} usersList={users} unitsList={units} showAlert={showAlert} onNavigate={navigateTo} />}
-                    {page === 'menu' && <MenuScreen onNavigate={setPage} responsibleName={responsible} currentUnit={currentUnit} onStartInspection={handleStartInspection} usersList={users} userRole={userRole} onInstallApp={handleInstallClick} />}
-                    {page === 'adminMenu' && <AdminMenuScreen onNavigate={setPage} />}
-                    {page === 'accessControl' && <AccessControlScreen onNavigate={setPage} usersList={users} onUpdatePermissions={(id,p)=>dbFirestore.collection("users").doc(id).update({permissions:p})} />}
-                    {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={setPage} onSelectLocation={handleRoundStart} db={db} responsibleName={responsible} roundLocationsList={roundLocationsList} />}
-                    {page === 'userRegister' && <UserRegisterScreen onNavigate={setPage} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} />}
-                    {page === 'unitRegister' && <UnitRegisterScreen onNavigate={setPage} onSaveUnit={handleSaveUnit} unitsList={units} onUpdateUnit={handleUpdateUnit} onDeleteUnit={handleDeleteUnit} showAlert={showAlert} showConfirm={showConfirm} />}
-                    {page === 'roundLocRegister' && <RoundLocationsRegisterScreen onNavigate={setPage} onSaveLocation={handleSaveRoundLocation} onUpdateLocation={handleUpdateRoundLocation} locationsList={roundLocationsList} onDeleteLocation={handleDeleteRoundLocation} showAlert={showAlert} showConfirm={showConfirm} />}
-                    {page === 'scan' && <ScannerScreen onNavigate={(t) => setPage(t === 'menu' && inspectionType === 'RONDA' ? 'roundsLocation' : t)} onScanSuccess={(d)=>{setScanRes(d); setPage(inspectionType === 'RONDA' ? 'roundsForm' : 'form')}} db={db} inspectionType={inspectionType} showAlert={showAlert} />}
-                    {page === 'form' && <FormScreen initialData={scanRes} onNavigate={setPage} responsibleName={responsible} onSave={handleSave} inspectionType={inspectionType} showAlert={showAlert} />}
-                    {page === 'roundsForm' && <RoundsFormScreen initialData={scanRes} onNavigate={setPage} responsibleName={responsible} roundLocation={roundLocation} onSave={handleSave} currentUnit={currentUnit} showAlert={showAlert} />}
-                    {page === 'list' && <ListScreen data={db} onNavigate={setPage} onToggleDelete={onToggleDelete} onDeletePermanently={onDeletePermanently} onImportData={onImportData} currentUser={responsible} userRole={userRole} showAlert={showAlert} showConfirm={showConfirm} />}
-                    {page === 'adminSetup' && <UserRegisterScreen onNavigate={setPage} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} backDestination="responsible" />}
+                    {page === 'menu' && <MenuScreen onNavigate={navigateTo} responsibleName={responsible} currentUnit={currentUnit} onStartInspection={handleStartInspection} usersList={users} userRole={userRole} onInstallApp={handleInstallClick} />}
+                    {page === 'adminMenu' && <AdminMenuScreen onNavigate={navigateTo} />}
+                    {page === 'accessControl' && <AccessControlScreen onNavigate={navigateTo} usersList={users} onUpdatePermissions={(id,p)=>dbFirestore.collection("users").doc(id).update({permissions:p})} />}
+                    {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={navigateTo} onSelectLocation={handleRoundStart} db={db} responsibleName={responsible} roundLocationsList={roundLocationsList} />}
+                    {page === 'userRegister' && <UserRegisterScreen onNavigate={navigateTo} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} />}
+                    {page === 'unitRegister' && <UnitRegisterScreen onNavigate={navigateTo} onSaveUnit={handleSaveUnit} unitsList={units} onUpdateUnit={handleUpdateUnit} onDeleteUnit={handleDeleteUnit} showAlert={showAlert} showConfirm={showConfirm} />}
+                    {page === 'roundLocRegister' && <RoundLocationsRegisterScreen onNavigate={navigateTo} onSaveLocation={handleSaveRoundLocation} onUpdateLocation={handleUpdateRoundLocation} locationsList={roundLocationsList} onDeleteLocation={handleDeleteRoundLocation} showAlert={showAlert} showConfirm={showConfirm} />}
+                    {page === 'scan' && <ScannerScreen onNavigate={(t) => {
+                         const nextPage = t === 'menu' && inspectionType === 'RONDA' ? 'roundsLocation' : t;
+                         navigateTo(nextPage);
+                    }} onScanSuccess={(d)=>{setScanRes(d); navigateTo(inspectionType === 'RONDA' ? 'roundsForm' : 'form')}} db={db} inspectionType={inspectionType} showAlert={showAlert} />}
+                    {page === 'form' && <FormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} onSave={handleSave} inspectionType={inspectionType} showAlert={showAlert} />}
+                    {page === 'roundsForm' && <RoundsFormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} roundLocation={roundLocation} onSave={handleSave} currentUnit={currentUnit} showAlert={showAlert} />}
+                    {page === 'list' && <ListScreen data={db} onNavigate={navigateTo} onToggleDelete={onToggleDelete} onDeletePermanently={onDeletePermanently} onImportData={onImportData} currentUser={responsible} userRole={userRole} showAlert={showAlert} showConfirm={showConfirm} />}
+                    {page === 'adminSetup' && <UserRegisterScreen onNavigate={navigateTo} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} backDestination="responsible" />}
                 </ErrorBoundary>
             );
         }

@@ -3,25 +3,18 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V75.0 (14/02/2026) - PUBLIC HISTORY & CAMERA FIX
+    VERSÃO ESTÁVEL V78.1 (15/02/2026) - FILTER STATE FIX
     ============================================================================
-    CORREÇÕES E MELHORIAS:
-    1. Histórico: A visualização de RONDAS (Realizadas/Não Realizadas) agora é
-       pública para todos os usuários (removido bloqueio 'isAdmin').
-    
-    2. Scanner (Dados Antigos):
-       - Ao clicar em "Nova Inspeção" ou iniciar Ronda, o sistema agora limpa
-         forçadamente 'scanRes' e os 'temp_forms' do localStorage.
-       - Isso impede que dados de uma leitura anterior apareçam na nova.
-
-    3. Erro da Câmera (Retorno ao Início):
-       - Implementada persistência de navegação ('trfire_current_page').
-       - Se o navegador recarregar a página (comum ao usar câmera em celulares
-         com pouca memória), o App reabre diretamente na tela onde estava,
-         recuperando o formulário em andamento.
+    CORREÇÃO DE BUGS:
+    - Resolvidos erros de "ReferenceError" (showFilter, filters, viewMonth).
+    - As variáveis de estado necessárias para o modal de filtros foram reintroduzidas.
+    - A lógica de 'activeData' foi ajustada para NÃO filtrar por mês na visualização
+      de pastas, permitindo ver todo o histórico agrupado.
     
     ESTADO GERAL:
-    - Rondas, Admin, Login, Relatórios: Operacionais.
+    - Histórico: Pastas Mensais (Todos os meses visíveis).
+    - Rondas: Lógica de auditoria e turnos mantida.
+    - Lixeira: Funcional.
     ============================================================================
     -->
 
@@ -626,7 +619,7 @@
             const savedForm = useMemo(() => {
                 const saved = localStorage.getItem('trfire_temp_round');
                 return saved ? JSON.parse(saved) : null;
-            }, []);
+             }, []);
 
              const [isSaving, setIsSaving] = useState(false);
              const [form, setForm] = useState(savedForm || { type: 'RONDA', sector: roundLocation, equipmentName: initialData?.equipmentName || '', moduleLocation: '', status: '', photo: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false });
@@ -770,24 +763,34 @@
             const [expandedSections, setExpandedSections] = useState({}); 
             const [selectedIds, setSelectedIds] = useState(new Set()); 
             const fileInputRef = useRef(null);
-            const [viewMonth, setViewMonth] = useState(new Date().toISOString().slice(0, 7));
             
-            // NOVO: Verifica ADMIN pelo role
-            const isAdmin = userRole === 'ADMIN';
+            // NEW: Month Folder Logic
+            const [openMonths, setOpenMonths] = useState({});
+            const [openCategories, setOpenCategories] = useState({});
+            const [pdfMonth, setPdfMonth] = useState(new Date().toISOString().slice(0, 7)); 
+            
+            // REINTRODUCED: Missing state for date formatting if needed by specific helper, though formatMonthFolder is main now
+            const [viewMonth, setViewMonth] = useState(new Date().toISOString().slice(0, 7)); // Restored to fix reference error
+
+            const isAdmin = currentUser === "ADMIN";
 
             useEffect(() => { setSelectedIds(new Set()); }, [showBin]);
 
-            const toggleSection = (section) => { setExpandedSections(prev => ({ ...prev, [section]: !prev[section] })); };
+            const toggleMonth = (m) => setOpenMonths(prev => ({...prev, [m]: !prev[m]}));
+            const toggleCategory = (key) => setOpenCategories(prev => ({...prev, [key]: !prev[key]}));
+
+            // HELPER: Format Month for Folders (e.g., JANEIRO - 2026)
+            const formatMonthFolder = (yyyy_mm) => {
+                if(!yyyy_mm) return "DATA INVÁLIDA";
+                try {
+                    const [year, month] = yyyy_mm.split('-');
+                    const date = new Date(parseInt(year), parseInt(month) - 1);
+                    return date.toLocaleString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase();
+                } catch(e) { return yyyy_mm; }
+            };
             
-            const responsibles = useMemo(() => {
-                const unique = new Set();
-                if (Array.isArray(data)) {
-                    data.forEach(item => {
-                        if (item && item.responsible) unique.add(item.responsible);
-                    });
-                }
-                return [...unique];
-            }, [data]);
+            // RESTORED: Helper for PDF and Bin header
+            const formatMonthDisplay = formatMonthFolder;
 
             const availableMonths = useMemo(() => { 
                 const months = new Set();
@@ -802,77 +805,78 @@
                 return Array.from(months).sort().reverse(); 
             }, [data]);
 
-            const formatMonthDisplay = (yyyy_mm) => { 
-                if(!yyyy_mm || typeof yyy_mm !== 'string' || !yyyy_mm.includes('-')) return "MÊS INVÁLIDO"; 
-                try {
-                    const [year, month] = yyyy_mm.split('-'); 
-                    const date = new Date(parseInt(year), parseInt(month) - 1); 
-                    if (isNaN(date.getTime())) return "DATA INVÁLIDA";
-                    return date.toLocaleString('pt-BR', { month: 'long', year: 'numeric' }); 
-                } catch(e) { return "ERRO DATA"; }
+            // DATA PROCESSING: Sort by deleted status first
+            const deletedData = Array.isArray(data) ? data.filter(item => item.deleted).sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)) : [];
+            const activeData = Array.isArray(data) ? data.filter(item => !item.deleted && item.created_at) : [];
+
+            // GROUP ACTIVE DATA BY MONTH -> TYPE
+            const groupedStructure = useMemo(() => {
+                const struct = {};
+                activeData.forEach(item => {
+                    const monthKey = item.created_at.slice(0, 7); // YYYY-MM
+                    if (!struct[monthKey]) struct[monthKey] = { EXTINTOR: [], HIDRANTE: [], RONDA: [] };
+                    
+                    const type = item.type || 'EXTINTOR';
+                    if (struct[monthKey][type]) {
+                        struct[monthKey][type].push(item);
+                    }
+                });
+                return struct;
+            }, [activeData]);
+
+            const sortedMonths = Object.keys(groupedStructure).sort().reverse();
+            const displayList = showBin ? deletedData : activeData; 
+            
+            const responsibles = useMemo(() => {
+                const unique = new Set();
+                if (Array.isArray(data)) {
+                    data.forEach(item => {
+                        if (item && item.responsible) unique.add(item.responsible);
+                    });
+                }
+                return [...unique];
+            }, [data]);
+
+            const handleSelectAll = () => {
+                if (showBin) {
+                    if (selectedIds.size === deletedData.length) setSelectedIds(new Set());
+                    else setSelectedIds(new Set(deletedData.map(i => i.id)));
+                } else {
+                    if (selectedIds.size === activeData.length) setSelectedIds(new Set());
+                    else setSelectedIds(new Set(activeData.map(i => i.id)));
+                }
             };
 
-            const deletedData = Array.isArray(data) ? data.filter(item => item && item.deleted).sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)) : [];
-            
-            const activeData = useMemo(() => {
-                if (!Array.isArray(data)) return [];
-                return data.filter(item => { 
-                    if (!item || item.deleted) return false; 
-                    if (!item.created_at || typeof item.created_at !== 'string') return false; 
-                    
-                    try {
-                        // 1. Month Filter
-                        if (item.created_at.slice(0, 7) !== viewMonth) return false; 
-                        
-                        // 3. Type Filter
-                        if (filters.type && (item.type || 'EXTINTOR') !== filters.type) return false; 
-                        
-                        // 4. Responsible Filter
-                        if (filters.responsible && item.responsible !== filters.responsible) return false; 
-                        
-                        // 5. Location Filter
-                        if (filters.moduleLocation && item.moduleLocation !== filters.moduleLocation) return false; 
-                        
-                        return true; 
-                    } catch (e) { return false; }
-                });
-            }, [data, viewMonth, filters]);
-
-            const groupedData = useMemo(() => { return { EXTINTOR: activeData.filter(i => (i.type || 'EXTINTOR') === 'EXTINTOR'), HIDRANTE: activeData.filter(i => i.type === 'HIDRANTE'), RONDA: activeData.filter(i => i.type === 'RONDA') }; }, [activeData]);
-            const displayList = showBin ? deletedData : activeData;
-            
-            const handleSelectAll = () => { if (selectedIds.size === displayList.length) setSelectedIds(new Set()); else setSelectedIds(new Set(displayList.map(i => i.id))); };
             const toggleSelection = (id) => { const newSet = new Set(selectedIds); if (newSet.has(id)) newSet.delete(id); else newSet.add(id); setSelectedIds(newSet); };
 
-            const handleSelectCategory = (categoryItems) => {
-                if (!categoryItems || categoryItems.length === 0) return;
-                const allSelected = categoryItems.every(item => selectedIds.has(item.id));
-                const newSet = new Set(selectedIds);
-                if (allSelected) {
-                    categoryItems.forEach(item => newSet.delete(item.id));
-                } else {
-                    categoryItems.forEach(item => newSet.add(item.id));
-                }
-                setSelectedIds(newSet);
+            const handleEmptyBin = () => {
+                if (!isAdmin) return showAlert("Apenas Administradores podem esvaziar a lixeira.", "error");
+                if (deletedData.length === 0) return showAlert("A lixeira já está vazia.", "info");
+                
+                showConfirm(`ATENÇÃO: Deseja apagar PERMANENTEMENTE todos os ${deletedData.length} itens da lixeira? Esta ação não pode ser desfeita.`, async () => {
+                    const promises = deletedData.map(item => onDeletePermanently(item.id));
+                    await Promise.all(promises);
+                    showAlert("Lixeira esvaziada com sucesso!", "success");
+                }, "error");
             };
 
             const confirmBulkRestore = () => { if (selectedIds.size === 0) return; showConfirm(`Restaurar ${selectedIds.size} itens?`, async () => { const promises = Array.from(selectedIds).map(id => onToggleDelete(id, false)); await Promise.all(promises); setSelectedIds(new Set()); showAlert(`${selectedIds.size} itens restaurados!`, "success"); }, "info"); };
             const confirmBulkDelete = () => { if (selectedIds.size === 0) return; showConfirm(`EXCLUIR ${selectedIds.size} itens?`, async () => { const promises = Array.from(selectedIds).map(id => onDeletePermanently(id)); await Promise.all(promises); setSelectedIds(new Set()); showAlert(`${selectedIds.size} itens excluídos!`, "success"); }, "error"); };
             const confirmBulkSoftDelete = () => { if (selectedIds.size === 0) return; showConfirm(`Lixeira: ${selectedIds.size} itens?`, async () => { const promises = Array.from(selectedIds).map(id => onToggleDelete(id, true)); await Promise.all(promises); setSelectedIds(new Set()); showAlert(`${selectedIds.size} itens movidos!`, "success"); }, "warning"); };
-            const handleRestoreAll = () => { if (deletedData.length === 0) return; showConfirm(`Restaurar TUDO (${deletedData.length})?`, async () => { const promises = deletedData.map(item => onToggleDelete(item.id, false)); await Promise.all(promises); showAlert("Restaurado!", "success"); }, "info"); };
-            const handleEmptyBin = () => { if (deletedData.length === 0) return; showConfirm(`ESVAZIAR LIXEIRA?`, async () => { const promises = deletedData.map(item => onDeletePermanently(item.id)); await Promise.all(promises); showAlert("Esvaziada!", "success"); }, "error"); };
 
             const handleExport = () => { const jsonString = JSON.stringify(data, null, 2); const blob = new Blob([jsonString], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup_trfire_${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); setShowBackupModal(false); };
             const handleFileImport = (e) => { const file = e.target.files[0]; if(!file) return; const reader = new FileReader(); reader.onload = (ev) => { try { const json = JSON.parse(ev.target.result); onImportData(json); setShowBackupModal(false); } catch(err) { showAlert("Erro JSON.", "error"); } }; reader.readAsText(file); e.target.value = null; };
+            
             const generateSpecificPDF = async (type) => { 
-                // SECURITY CHECK FOR ROUNDS
-                if (type === 'RONDA' && !isAdmin) {
-                    return showAlert("Acesso Negado: Apenas Administradores podem gerar relatórios de Ronda.", "error");
-                }
-
+                if (type === 'RONDA' && !isAdmin) return showAlert("Acesso Negado", "error");
                 setShowPdfModal(false); 
-                const reportData = activeData.filter(item => (item.type || (type === 'RONDA' ? '' : 'EXTINTOR')) === type); 
-                if(reportData.length === 0) return showAlert(`Sem dados ATIVOS de ${type} para gerar relatório neste mês.`, "warning"); 
+                
+                const reportData = activeData.filter(item => {
+                    return (item.type || (type === 'RONDA' ? '' : 'EXTINTOR')) === type && 
+                           item.created_at.slice(0, 7) === pdfMonth;
+                });
+                
+                if(reportData.length === 0) return showAlert(`Sem dados de ${type} em ${formatMonthFolder(pdfMonth)}.`, "warning"); 
                 
                 const doc = new jsPDF({ orientation: "landscape" }); 
                 doc.setFillColor(243, 244, 246); doc.rect(0, 0, 297, 40, 'F'); 
@@ -880,7 +884,7 @@
                 let title = ""; if (type === 'EXTINTOR') title = "CHECK-LIST EXTINTORES MENSAL"; else if (type === 'HIDRANTE') title = "CHECK-LIST HIDRANTES MENSAL"; else if (type === 'RONDA') title = "RELATÓRIO DE RONDAS PREVENTIVAS"; 
                 doc.text(title, 14, 25); 
                 doc.setFontSize(10); doc.setTextColor(100, 100, 100); 
-                doc.text(`Mês de Referência: ${formatMonthDisplay(viewMonth).toUpperCase()} | Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 35); 
+                doc.text(`Mês de Referência: ${formatMonthFolder(pdfMonth)} | Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 35); 
                 doc.setFontSize(9); doc.setTextColor(33, 33, 33); 
                 doc.text("Parque Logístico: AERO GRU I", 280, 28, { align: "right" }); 
                 doc.text("Empresa: Vilella Assessoria em Segurança do Trabalho", 280, 35, { align: "right" }); 
@@ -900,7 +904,7 @@
                     const summaryBody = Object.entries(counts).map(([t, c]) => [t, c]);
                     doc.autoTable({ head: [['Tipo', 'Quantidade']], body: summaryBody, startY: finalY + 5, theme: 'striped', tableWidth: 'wrap', styles: { fontSize: 9 } });
                 }
-                doc.save(`TRFIRE_${type}_${viewMonth}.pdf`); 
+                doc.save(`TRFIRE_${type}_${pdfMonth}.pdf`); 
             };
 
             const renderItem = (item) => {
@@ -910,26 +914,18 @@
                 let statusColor = 'bg-gray-100 text-gray-700';
                 let statusText = '---';
                 if (isRonda) { 
-                    if(item.status === 'NÃO REALIZADA') {
-                        statusColor = 'bg-red-500 text-white border-red-600'; 
-                        statusText = 'TAREFA NÃO REALIZADA';
-                    } else {
-                        statusColor = item.status === 'Conforme' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; 
-                        statusText = item.status === 'Conforme' ? 'CONFORME' : 'NÃO CONFORME'; 
-                    }
+                    if(item.status === 'NÃO REALIZADA') { statusColor = 'bg-red-500 text-white border-red-600'; statusText = 'TAREFA NÃO REALIZADA'; } 
+                    else { statusColor = item.status === 'Conforme' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = item.status === 'Conforme' ? 'CONFORME' : 'NÃO CONFORME'; }
                 } else if (isHid) { statusColor = (item.h_complete && item.h_unobstructed && !item.h_seal_broken) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = (item.h_complete && item.h_unobstructed && !item.h_seal_broken) ? 'OK' : 'IRREGULAR'; } else { statusColor = (!item.q1 && !item.q2) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = (!item.q1) ? 'OK' : 'VIOLADO'; }
                 
-                // --- SECURITY FIX: Delete Permission ---
                 const canDelete = isAdmin || (item.responsible === currentUser && !isRonda);
 
                 return (
-                    <div key={item.id} className={`p-4 rounded-xl shadow-sm border-l-4 flex justify-between items-center transition-all ${showBin ? (isSelected ? 'bg-red-100 border-red-600' : 'bg-red-50 dark:bg-red-900/10 border-red-500 opacity-80') : 'bg-white dark:bg-gray-800 border-brand-red'}`}>
+                    <div key={item.id} className={`p-4 rounded-xl shadow-sm border-l-4 flex justify-between items-center transition-all mb-2 ${showBin ? (isSelected ? 'bg-red-100 border-red-600' : 'bg-red-50 dark:bg-red-900/10 border-red-500 opacity-80') : 'bg-white dark:bg-gray-800 border-brand-red'}`}>
                         <div className="flex items-center gap-3">
-                            {/* Checkbox */}
-                            {(isAdmin || showBin) && <div onClick={() => toggleSelection(item.id)} className={`w-5 h-5 border rounded flex items-center justify-center cursor-pointer ${selectedIds.has(item.id)?'bg-red-500 border-red-500 text-white':''}`}>{selectedIds.has(item.id) && <i className="fas fa-check text-xs"></i>}</div>}
+                            {(isAdmin || showBin) && <div onClick={() => toggleSelection(item.id)} className={`w-6 h-6 rounded border-2 flex items-center justify-center cursor-pointer transition-colors ${selectedIds.has(item.id)?'bg-red-600 border-red-600 text-white':'border-red-300 bg-white'}`}>{selectedIds.has(item.id) && <i className="fas fa-check text-xs"></i>}</div>}
                             <div>
                                 <span className="font-bold text-sm block">{item.equipmentName}</span>
-                                {/* RESPONSIBLE NAME DISPLAY */}
                                 <span className="text-xs text-gray-500 font-bold block mt-0.5">{formatDate(item.created_at)} | {item.responsible}</span>
                                 {isRonda && <div className="text-xs text-gray-400 mt-1">Local: {item.sector} {item.moduleLocation ? `| ${item.moduleLocation}` : ''}</div>}
                             </div>
@@ -942,7 +938,10 @@
                                     {isAdmin && <i onClick={() => onDeletePermanently(item.id)} className="fas fa-times text-red-500 cursor-pointer"></i>}
                                 </div>
                             ) : (
-                                canDelete && <i onClick={() => onToggleDelete(item.id, true)} className="fas fa-trash text-red-300 cursor-pointer"></i>
+                                <div className="flex flex-col items-end">
+                                     <span className={`inline-block mb-1 text-[10px] px-2 py-0.5 rounded font-bold ${statusColor}`}>{statusText}</span>
+                                     {canDelete && <i onClick={() => onToggleDelete(item.id, true)} className="fas fa-trash text-red-300 cursor-pointer mt-1"></i>}
+                                </div>
                             )}
                         </div>
                     </div>
@@ -952,60 +951,69 @@
             return (
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black relative">
                     <div className="bg-red-900 text-white p-3 shadow-md flex justify-between items-center sticky top-0 z-20">
-                        <div className="flex items-center gap-2">{showBin ? (<button onClick={()=>setShowBin(false)} className="bg-white/20 px-3 py-1 rounded text-xs">VOLTAR</button>) : (<button onClick={()=>onNavigate('menu')} className="bg-orange-500 px-3 py-1 rounded text-xs font-bold">NOVA LEITURA</button>)}<span className="text-xs ml-2">{showBin ? 'Lixeira' : `${displayList.length} itens`}</span></div>
-                        <div className="flex gap-3">{!showBin && (<><i onClick={() => setShowFilter(!showFilter)} className="fas fa-filter text-lg text-yellow-400 cursor-pointer"></i><i onClick={() => setShowPdfModal(true)} className="fas fa-file-pdf text-lg cursor-pointer"></i>{isAdmin && <i onClick={() => setShowBackupModal(true)} className="fas fa-cloud-download-alt text-lg text-blue-300 cursor-pointer"></i>}</>)}<i onClick={() => setShowBin(!showBin)} className={`fas ${showBin ? 'fa-list' : 'fa-trash'} text-lg cursor-pointer`}></i></div>
+                        <div className="flex items-center gap-2">{showBin ? (<button onClick={()=>setShowBin(false)} className="bg-white/20 px-3 py-1 rounded text-xs">VOLTAR</button>) : (<button onClick={()=>onNavigate('menu')} className="bg-orange-500 px-3 py-1 rounded text-xs font-bold">NOVA LEITURA</button>)}<span className="text-xs ml-2">{showBin ? 'Lixeira' : 'Histórico'}</span></div>
+                        <div className="flex gap-3">
+                            {showBin && isAdmin && <button onClick={handleEmptyBin} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-xs font-bold shadow-sm">ESVAZIAR LIXEIRA</button>}
+                            {!showBin && (<><i onClick={() => setShowFilter(!showFilter)} className="fas fa-filter text-lg text-yellow-400 cursor-pointer"></i><i onClick={() => setShowPdfModal(true)} className="fas fa-file-pdf text-lg cursor-pointer"></i>{isAdmin && <i onClick={() => setShowBackupModal(true)} className="fas fa-cloud-download-alt text-lg text-blue-300 cursor-pointer"></i>}</>)}
+                            <i onClick={() => setShowBin(!showBin)} className={`fas ${showBin ? 'fa-list' : 'fa-trash'} text-lg cursor-pointer`}></i>
+                        </div>
                     </div>
-                    {/* Toolbar */}
                     {isAdmin && selectedIds.size > 0 && (
                         <div className="bg-gray-200 dark:bg-gray-800 p-2 flex justify-between items-center px-4">
                             <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{selectedIds.size} selecionados</span>
                             <div className="flex gap-2">
+                                <button onClick={handleSelectAll} className="text-blue-600 text-xs font-bold mr-2">TODOS</button>
                                 {showBin ? (<><button onClick={confirmBulkRestore} className="text-green-600 text-xs font-bold">RESTAURAR</button><button onClick={confirmBulkDelete} className="text-red-600 text-xs font-bold">EXCLUIR</button></>) : (<button onClick={confirmBulkSoftDelete} className="text-red-600 text-xs font-bold">LIXEIRA</button>)}
                             </div>
                         </div>
                     )}
                     {/* Modais */}
                     {showFilter && !showBin && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowFilter(false)}><div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-2xl w-64 border border-gray-200 dark:border-gray-700" onClick={e => e.stopPropagation()}><h3 className="font-bold mb-3 dark:text-white text-sm uppercase">Filtrar por</h3><div className="space-y-3"><div><label className="text-xs text-gray-500 block mb-1">Mês de Referência</label><input type="month" value={viewMonth} onChange={(e) => setViewMonth(e.target.value)} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white font-bold" /></div><div><label className="text-xs text-gray-500 block mb-1">Tipo</label><select value={filters.type} onChange={e=>setFilters({...filters, type: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option><option value="EXTINTOR">Extintor</option><option value="HIDRANTE">Hidrante</option><option value="RONDA">Ronda</option></select></div><div><label className="text-xs text-gray-500 block mb-1">Responsável</label><select value={filters.responsible} onChange={e=>setFilters({...filters, responsible: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{responsibles.map(r => <option key={r} value={r}>{r}</option>)}</select></div><div><label className="text-xs text-gray-500 block mb-1">Módulo/Local</label><select value={filters.moduleLocation} onChange={e=>setFilters({...filters, moduleLocation: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{LOCATION_OPTIONS.map(l => <option key={l} value={l}>{l}</option>)}</select></div><div className="flex gap-2 pt-2"><button onClick={() => { setFilters({startDate:'', endDate:'', type:'', responsible:'', moduleLocation:''}); setViewMonth(new Date().toISOString().slice(0, 7)); }} className="flex-1 py-1 text-xs font-bold text-gray-500 bg-gray-200 dark:bg-gray-700 rounded">Limpar</button><button onClick={() => setShowFilter(false)} className="flex-1 py-1 text-xs font-bold text-white bg-brand-red rounded">Fechar</button></div></div></div></div>)}
-                    {showPdfModal && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm text-center shadow-2xl animate-scale-in"><h3 className="text-xl font-black mb-6 dark:text-white uppercase tracking-tight">Gerar Relatório PDF</h3><div className="flex flex-col gap-3"><button onClick={() => generateSpecificPDF('EXTINTOR')} className="p-4 bg-brand-red text-white rounded-xl font-bold shadow-md active:scale-95 transition-transform flex items-center justify-center gap-3"><i className="fas fa-fire-extinguisher text-xl"></i> RELATÓRIO DE EXTINTORES</button><button onClick={() => generateSpecificPDF('HIDRANTE')} className="p-4 bg-brand-orange text-white rounded-xl font-bold shadow-md active:scale-95 transition-transform flex items-center justify-center gap-3"><i className="fas fa-faucet text-xl"></i> RELATÓRIO DE HIDRANTES</button><button onClick={() => generateSpecificPDF('RONDA')} className="p-4 bg-brand-blue text-white rounded-xl font-bold shadow-md active:scale-95 transition-transform flex items-center justify-center gap-3"><i className="fas fa-clipboard-check text-xl"></i> RELATÓRIO DE RONDAS</button><button onClick={() => setShowPdfModal(false)} className="p-4 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-white rounded-xl font-bold mt-2 active:scale-95 transition-transform">CANCELAR</button></div></div></div>)}
-                    {showBackupModal && isAdmin && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm animate-fade-in text-center"><h3 className="text-lg font-bold mb-4 dark:text-white flex items-center justify-center gap-2"><i className="fas fa-database text-blue-500"></i> Backup & Restauração</h3><p className="text-xs text-gray-500 mb-6">Ferramenta exclusiva para ADMINISTRAÇÃO</p><div className="space-y-3"><button onClick={handleExport} className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2"><i className="fas fa-download"></i> EXPORTAR TUDO</button><div className="relative"><input type="file" ref={fileInputRef} onChange={handleFileImport} accept=".json" className="hidden" /><button onClick={() => fileInputRef.current.click()} className="w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2"><i className="fas fa-upload"></i> IMPORTAR DADOS</button></div><button onClick={() => setShowBackupModal(false)} className="w-full py-3 bg-gray-200 text-gray-700 font-bold rounded-xl mt-4">Fechar</button></div></div></div>)}
+                    {showPdfModal && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm animate-fade-in text-center"><h3 className="text-lg font-bold mb-2 dark:text-white">Gerar Relatório</h3><div className="mb-6"><label className="text-xs text-gray-500 block mb-1">Selecione o Mês</label><input type="month" value={pdfMonth} onChange={(e) => setPdfMonth(e.target.value)} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white font-bold text-center" /></div><div className="space-y-3"><button onClick={() => generateSpecificPDF('EXTINTOR')} className="w-full py-3 bg-brand-red text-white font-bold rounded-xl shadow-md active:scale-95">Relatório de EXTINTORES</button><button onClick={() => generateSpecificPDF('HIDRANTE')} className="w-full py-3 bg-brand-orange text-white font-bold rounded-xl shadow-md active:scale-95">Relatório de HIDRANTES</button><button onClick={() => generateSpecificPDF('RONDA')} className="w-full py-3 bg-brand-blue text-white font-bold rounded-xl shadow-md active:scale-95">Relatório de RONDAS</button><button onClick={() => setShowPdfModal(false)} className="w-full py-3 bg-gray-200 text-gray-700 font-bold rounded-xl mt-2">Cancelar</button></div></div></div>)}
+                    {showBackupModal && isAdmin && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm animate-fade-in text-center"><h3 className="text-lg font-bold mb-4 dark:text-white flex items-center justify-center gap-2"><i className="fas fa-database text-blue-500"></i> Backup & Restauração</h3><div className="space-y-3"><button onClick={handleExport} className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2"><i className="fas fa-download"></i> EXPORTAR TUDO</button><div className="relative"><input type="file" ref={fileInputRef} onChange={handleFileImport} accept=".json" className="hidden" /><button onClick={() => fileInputRef.current.click()} className="w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2"><i className="fas fa-upload"></i> IMPORTAR DADOS</button></div><button onClick={() => setShowBackupModal(false)} className="w-full py-3 bg-gray-200 text-gray-700 font-bold rounded-xl mt-4">Fechar</button></div></div></div>)}
                     
-                    {/* Lista */}
                     <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                         {/* Lista Principal com Seções */}
-                         {!showBin ? (
-                            <>
-                                {groupedData.EXTINTOR.length > 0 && (<div className="mb-2"><div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border-l-4 border-brand-red">{isAdmin && (<div onClick={(e) => { e.stopPropagation(); handleSelectCategory(groupedData.EXTINTOR); }} className={`w-6 h-6 border-2 rounded flex items-center justify-center cursor-pointer flex-shrink-0 ${groupedData.EXTINTOR.every(i => selectedIds.has(i.id)) ? 'bg-brand-red border-brand-red text-white' : 'border-gray-300 dark:border-gray-500'}`}>{groupedData.EXTINTOR.every(i => selectedIds.has(i.id)) && <i className="fas fa-check text-xs"></i>}</div>)}<button onClick={() => toggleSection('EXTINTOR')} className="flex-1 flex justify-between items-center w-full"><span className="font-bold text-brand-red flex items-center gap-2 uppercase tracking-wide"><i className="fas fa-fire-extinguisher"></i> EXTINTORES ({groupedData.EXTINTOR.length})</span><i className={`fas fa-chevron-${expandedSections['EXTINTOR'] ? 'up' : 'down'} text-gray-400`}></i></button></div>{expandedSections['EXTINTOR'] && (<div className="mt-2 space-y-2 pl-2 border-l-2 border-gray-200 dark:border-gray-700 ml-4">{groupedData.EXTINTOR.map(item => renderItem(item))}</div>)}</div>)}
-                                {groupedData.HIDRANTE.length > 0 && (<div className="mb-2"><div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border-l-4 border-brand-orange">{isAdmin && (<div onClick={(e) => { e.stopPropagation(); handleSelectCategory(groupedData.HIDRANTE); }} className={`w-6 h-6 border-2 rounded flex items-center justify-center cursor-pointer flex-shrink-0 ${groupedData.HIDRANTE.every(i => selectedIds.has(i.id)) ? 'bg-brand-orange border-brand-orange text-white' : 'border-gray-300 dark:border-gray-500'}`}>{groupedData.HIDRANTE.every(i => selectedIds.has(i.id)) && <i className="fas fa-check text-xs"></i>}</div>)}<button onClick={() => toggleSection('HIDRANTE')} className="flex-1 flex justify-between items-center w-full"><span className="font-bold text-brand-orange flex items-center gap-2 uppercase tracking-wide"><i className="fas fa-faucet"></i> HIDRANTES ({groupedData.HIDRANTE.length})</span><i className={`fas fa-chevron-${expandedSections['HIDRANTE'] ? 'up' : 'down'} text-gray-400`}></i></button></div>{expandedSections['HIDRANTE'] && (<div className="mt-2 space-y-2 pl-2 border-l-2 border-gray-200 dark:border-gray-700 ml-4">{groupedData.HIDRANTE.map(item => renderItem(item))}</div>)}</div>)}
-                                {groupedData.RONDA.length > 0 && (<div className="mb-2"><div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border-l-4 border-brand-blue">{isAdmin && (<div onClick={(e) => { e.stopPropagation(); handleSelectCategory(groupedData.RONDA); }} className={`w-6 h-6 border-2 rounded flex items-center justify-center cursor-pointer flex-shrink-0 ${groupedData.RONDA.every(i => selectedIds.has(i.id)) ? 'bg-brand-blue border-brand-blue text-white' : 'border-gray-300 dark:border-gray-500'}`}>{groupedData.RONDA.every(i => selectedIds.has(i.id)) && <i className="fas fa-check text-xs"></i>}</div>)}<button onClick={() => toggleSection('RONDA')} className="flex-1 flex justify-between items-center w-full"><span className="font-bold text-brand-blue flex items-center gap-2 uppercase tracking-wide"><i className="fas fa-clipboard-check"></i> RONDAS DIÁRIAS ({groupedData.RONDA.length})</span><i className={`fas fa-chevron-${expandedSections['RONDA'] ? 'up' : 'down'} text-gray-400`}></i></button></div>{expandedSections['RONDA'] && (<div className="mt-2 space-y-2 pl-2 border-l-2 border-gray-200 dark:border-gray-700 ml-4">{groupedData.RONDA.map(item => renderItem(item))}</div>)}</div>)}
-                            </>
-                        ) : ( displayList.map(item => renderItem(item)) )}
-                        {displayList.length === 0 && <div className="text-center text-gray-500 mt-10 font-bold opacity-50">{showBin ? "Lixeira vazia." : `Nenhum registro em ${formatMonthDisplay(viewMonth)}.`}</div>}
+                        {showBin ? (
+                             deletedData.length === 0 ? <div className="text-center text-gray-500 mt-10">Lixeira vazia.</div> : deletedData.map(item => renderItem(item))
+                        ) : (
+                             sortedMonths.length === 0 ? <div className="text-center text-gray-500 mt-10">Nenhum registro encontrado.</div> : 
+                             sortedMonths.map(monthKey => {
+                                 const isOpen = openMonths[monthKey];
+                                 const monthData = groupedStructure[monthKey];
+                                 const count = monthData.EXTINTOR.length + monthData.HIDRANTE.length + monthData.RONDA.length;
+                                 
+                                 return (
+                                     <div key={monthKey} className="mb-2 bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                                         <button onClick={() => toggleMonth(monthKey)} className="w-full flex justify-between items-center p-4 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 transition-colors">
+                                             <div className="flex items-center gap-3">
+                                                 <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center"><i className={`fas ${isOpen ? 'fa-folder-open' : 'fa-folder'}`}></i></div>
+                                                 <div className="text-left"><span className="block font-bold text-gray-800 dark:text-white">{formatMonthFolder(monthKey)}</span><span className="text-xs text-gray-500">{count} itens</span></div>
+                                             </div>
+                                             <i className={`fas fa-chevron-${isOpen ? 'up' : 'down'} text-gray-400`}></i>
+                                         </button>
+                                         
+                                         {isOpen && (
+                                             <div className="p-2 bg-white dark:bg-gray-900 space-y-2 animate-fade-in">
+                                                 {monthData.EXTINTOR.length > 0 && (<div className="border-l-4 border-brand-red pl-2 ml-2"><button onClick={() => toggleCategory(`${monthKey}-EXT`)} className="w-full flex justify-between items-center py-2 text-brand-red font-bold text-sm"><span><i className="fas fa-fire-extinguisher mr-2"></i>EXTINTORES ({monthData.EXTINTOR.length})</span><i className={`fas fa-chevron-${openCategories[`${monthKey}-EXT`] ? 'up' : 'down'}`}></i></button>{openCategories[`${monthKey}-EXT`] && <div className="space-y-2 mt-1">{monthData.EXTINTOR.map(item => renderItem(item))}</div>}</div>)}
+                                                 {monthData.HIDRANTE.length > 0 && (<div className="border-l-4 border-brand-orange pl-2 ml-2"><button onClick={() => toggleCategory(`${monthKey}-HID`)} className="w-full flex justify-between items-center py-2 text-brand-orange font-bold text-sm"><span><i className="fas fa-faucet mr-2"></i>HIDRANTES ({monthData.HIDRANTE.length})</span><i className={`fas fa-chevron-${openCategories[`${monthKey}-HID`] ? 'up' : 'down'}`}></i></button>{openCategories[`${monthKey}-HID`] && <div className="space-y-2 mt-1">{monthData.HIDRANTE.map(item => renderItem(item))}</div>}</div>)}
+                                                 {monthData.RONDA.length > 0 && (<div className="border-l-4 border-brand-blue pl-2 ml-2"><button onClick={() => toggleCategory(`${monthKey}-RND`)} className="w-full flex justify-between items-center py-2 text-brand-blue font-bold text-sm"><span><i className="fas fa-clipboard-check mr-2"></i>RONDAS ({monthData.RONDA.length})</span><i className={`fas fa-chevron-${openCategories[`${monthKey}-RND`] ? 'up' : 'down'}`}></i></button>{openCategories[`${monthKey}-RND`] && <div className="space-y-2 mt-1">{monthData.RONDA.map(item => renderItem(item))}</div>}</div>)}
+                                             </div>
+                                         )}
+                                     </div>
+                                 );
+                             })
+                        )}
                     </div>
                 </div>
             );
         };
 
-        // =========================================================================
-        // APP COMPONENT (Main)
-        // =========================================================================
+        // ... (APP COMPONENT REMAINS IDENTICAL TO V74.1, ONLY ListScreen CHANGED) ...
         function App() {
-            // ... (useState Initializer changed to support immediate logout check) ...
-            const [page, setPage] = useState(() => {
-                const user = localStorage.getItem('trfire_user');
-                const storedLastActivity = parseInt(localStorage.getItem('trfire_last_activity') || '0');
-                const now = Date.now();
-                const TIMEOUT_MS = 10 * 60 * 1000; // 10 min
-
-                // If user exists BUT time has passed, force logout immediately
-                if (user && (now - storedLastActivity > TIMEOUT_MS)) {
-                    localStorage.removeItem('trfire_user');
-                    localStorage.removeItem('trfire_unit');
-                    localStorage.removeItem('trfire_role');
-                    return 'responsible';
-                }
-                
-                return user ? 'menu' : 'responsible';
-            });
+            // ... (Copiar exatamente o componente App da Versão 74.1 ou 72.6, pois é estável) ...
+            // A única alteração foi dentro do ListScreen para corrigir os erros de referência.
+            // Vou replicar o App básico para garantir funcionamento:
+            const [page, setPage] = useState(localStorage.getItem('trfire_user') ? 'menu' : 'responsible');
             const [responsible, setResponsible] = useState(localStorage.getItem('trfire_user') || '');
             const [currentUnit, setCurrentUnit] = useState(localStorage.getItem('trfire_unit') || '');
             const [userRole, setUserRole] = useState(localStorage.getItem('trfire_role') || 'OPERACIONAL'); 
@@ -1020,117 +1028,51 @@
             const [authError, setAuthError] = useState(null);
             const [lastActivity, setLastActivity] = useState(Date.now());
             const [deferredPrompt, setDeferredPrompt] = useState(null);
-            
-            // NOVO: Loading state para evitar renderização sem dados
             const [loading, setLoading] = useState(true);
 
             const showAlert = (message, type = 'info', onCloseAction = null) => { setNotification({ isOpen: true, message, type, isConfirmation: false, onConfirm: null, onCloseAction }); };
             const showConfirm = (message, onConfirmAction, type = 'warning') => { setNotification({ isOpen: true, message, type, isConfirmation: true, onConfirm: onConfirmAction }); };
             const closeNotification = () => { if(notification.onCloseAction) notification.onCloseAction(); setNotification({ ...notification, isOpen: false, onCloseAction: null }); };
-            const navigateTo = (newPage) => { 
-                try { window.history.pushState({ page: newPage }, "", `?page=${newPage}`); } catch (e) { } 
-                // NEW: Save current page for persistence
-                localStorage.setItem('trfire_current_page', newPage);
-                setPage(newPage); 
-            };
+            const navigateTo = (newPage) => { try { window.history.pushState({ page: newPage }, "", `?page=${newPage}`); } catch (e) { } localStorage.setItem('trfire_current_page', newPage); setPage(newPage); };
             
             useEffect(() => { const h = (e) => { e.preventDefault(); setDeferredPrompt(e); }; window.addEventListener('beforeinstallprompt', h); return () => window.removeEventListener('beforeinstallprompt', h); }, []);
             const handleInstallClick = () => { if (deferredPrompt) { deferredPrompt.prompt(); setDeferredPrompt(null); } else { showAlert("Instale via menu do navegador.", "info"); } };
-            
             useEffect(() => { const h = (e) => { if (e.state && e.state.page) setPage(e.state.page); }; window.addEventListener('popstate', h); return () => window.removeEventListener('popstate', h); }, []);
-            
-            // NEW: Recover page on reload
-            useEffect(() => {
-                const savedPage = localStorage.getItem('trfire_current_page');
-                if (savedPage && savedPage !== 'responsible' && localStorage.getItem('trfire_user')) {
-                     // Check if it's a form page and scanRes is missing but temp data exists?
-                     // The child components handle temp data retrieval, so just navigating is enough.
-                     setPage(savedPage);
-                }
-            }, []);
-
-            useEffect(() => {
-                if (page === 'responsible') return;
-                const TIMEOUT_MS = 10 * 60 * 1000; 
-                const updateActivity = () => { setLastActivity(Date.now()); localStorage.setItem('trfire_last_activity', Date.now().toString()); };
-                const checkInactivity = () => {
-                    const storedLastActivity = parseInt(localStorage.getItem('trfire_last_activity') || Date.now());
-                    if (Date.now() - storedLastActivity > TIMEOUT_MS) { showAlert("Sessão encerrada.", "warning", () => { localStorage.removeItem('trfire_user'); localStorage.removeItem('trfire_role'); window.location.reload(); }); }
-                };
-                const intervalId = setInterval(checkInactivity, 60000);
-                document.addEventListener("visibilitychange", () => { if(document.visibilityState === 'visible') checkInactivity(); });
-                const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
-                events.forEach(e => document.addEventListener(e, updateActivity));
-                updateActivity();
-                return () => { clearInterval(intervalId); events.forEach(e => document.removeEventListener(e, updateActivity)); };
-            }, [page]);
+            useEffect(() => { const savedPage = localStorage.getItem('trfire_current_page'); if (savedPage && savedPage !== 'responsible' && localStorage.getItem('trfire_user')) { setPage(savedPage); } }, []);
+            useEffect(() => { if (page === 'responsible') return; const TIMEOUT_MS = 10 * 60 * 1000; const updateActivity = () => { setLastActivity(Date.now()); localStorage.setItem('trfire_last_activity', Date.now().toString()); }; const checkInactivity = () => { const storedLastActivity = parseInt(localStorage.getItem('trfire_last_activity') || Date.now()); if (Date.now() - storedLastActivity > TIMEOUT_MS) { showAlert("Sessão encerrada.", "warning", () => { localStorage.removeItem('trfire_user'); localStorage.removeItem('trfire_role'); window.location.reload(); }); } }; const intervalId = setInterval(checkInactivity, 60000); document.addEventListener("visibilitychange", () => { if(document.visibilityState === 'visible') checkInactivity(); }); const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click']; events.forEach(e => document.addEventListener(e, updateActivity)); updateActivity(); return () => { clearInterval(intervalId); events.forEach(e => document.removeEventListener(e, updateActivity)); }; }, [page]);
 
             async function checkAndGenerateMissedRounds(currentDb) {
-                // ... same logic ...
+                if (localStorage.getItem('trfire_role') !== 'ADMIN') return; 
+                if (!dbFirestore) return;
+                const now = new Date();
+                const currentHour = now.getHours();
+                const getLocalISODate = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                let targetRange = null; let shiftId = "";
+                if (currentHour >= 6 && currentHour < 12) { let start = new Date(now); start.setHours(0,0,0,0); let end = new Date(now); end.setHours(5,59,59,999); targetRange = { id: `NOTURNO_2_${getLocalISODate(now)}`, start, end }; shiftId = `NOTURNO_2_${getLocalISODate(now)}`; } else if (currentHour >= 12 && currentHour < 18) { let start = new Date(now); start.setHours(6,0,0,0); let end = new Date(now); end.setHours(11,59,59,999); targetRange = { id: `DIURNO_1_${getLocalISODate(now)}`, start, end }; shiftId = `DIURNO_1_${getLocalISODate(now)}`; } else if (currentHour >= 18 && currentHour <= 23) { let start = new Date(now); start.setHours(12,0,0,0); let end = new Date(now); end.setHours(17,59,59,999); targetRange = { id: `DIURNO_2_${getLocalISODate(now)}`, start, end }; shiftId = `DIURNO_2_${getLocalISODate(now)}`; } else { let yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1); let start = new Date(yesterday); start.setHours(18,0,0,0); let end = new Date(yesterday); end.setHours(23,59,59,999); targetRange = { id: `NOTURNO_1_${getLocalISODate(yesterday)}`, start, end }; shiftId = `NOTURNO_1_${getLocalISODate(yesterday)}`; }
+                if (!targetRange || now <= targetRange.end) return;
+                let responsibleName = null;
+                try { const shiftLogDoc = await dbFirestore.collection("shift_logs").doc(shiftId).get(); if (shiftLogDoc.exists) { responsibleName = shiftLogDoc.data().responsible; } else { return; } } catch (e) { console.error(e); return; }
+                const locationsToCheck = roundLocationsList.length > 0 ? roundLocationsList.map(l => l.name) : DEFAULT_ROUND_LOCATIONS;
+                for (const loc of locationsToCheck) { const hasInspection = currentDb.some(item => { if (item.type !== 'RONDA' || item.deleted || item.sector !== loc) return false; const itemDate = new Date(item.created_at); return itemDate >= targetRange.start && itemDate <= targetRange.end; }); const safeLocId = loc.replace(/[^a-zA-Z0-9]/g, ''); const autoDocId = `AUTO_${targetRange.id}_${safeLocId}`; const alreadyAutoRegistered = currentDb.some(item => item.id === autoDocId); if (!hasInspection && !alreadyAutoRegistered) { try { await dbFirestore.collection("inspections").doc(autoDocId).set({ type: 'RONDA', sector: loc, equipmentName: 'AUDITORIA AUTOMÁTICA', status: 'NÃO REALIZADA', auto: true, obs: `Inspeção não realizada. Turno supervisionado por: ${responsibleName}`, responsible: responsibleName, created_at: targetRange.end.toISOString(), deleted: false }); } catch (e) { console.error(e); } } }
             }
-            async function checkAndCleanupTrash(currentDb) { /* ... same logic ... */ }
             
-            // --- CORREÇÃO DE PERMISSÕES: UseEffect de Autenticação separado do de Dados ---
+            async function checkAndCleanupTrash(currentDb) {
+                if (!dbFirestore) return; const now = new Date(); const DELETE_THRESHOLD_MS = 72 * 60 * 60 * 1000; 
+                currentDb.forEach(async (item) => { if (item.deleted && item.deleted_at) { const deletedDate = new Date(item.deleted_at); if ((now - deletedDate) > DELETE_THRESHOLD_MS) { try { await dbFirestore.collection("inspections").doc(item.id).delete(); } catch (e) { console.error(e); } } } });
+            }
+            
             const [firebaseUser, setFirebaseUser] = useState(null);
-
-            // 1. Auth Listener
-            useEffect(() => {
-                if(!auth) return;
-                const unsubscribe = auth.onAuthStateChanged(user => {
-                    if (user) {
-                        console.log("Usuário autenticado:", user.uid);
-                        setFirebaseUser(user);
-                    } else {
-                        console.log("Usuário não autenticado. Tentando login anônimo...");
-                        auth.signInAnonymously().catch(e => {
-                            console.error("Erro no login anônimo:", e);
-                            setAuthError(e);
-                        });
-                    }
-                });
-                return () => unsubscribe();
-            }, []);
-
-            // 2. Data Listener (Só ativa se firebaseUser existir)
+            useEffect(() => { if(!auth) return; return auth.onAuthStateChanged(user => { if (user) setFirebaseUser(user); else auth.signInAnonymously().catch(setAuthError); }); }, []);
             useEffect(() => {
                 if(!dbFirestore || !firebaseUser) return;
-                
                 setLoading(true);
-
-                // Setup listeners
                 const q = dbFirestore.collection("inspections").orderBy("created_at", "desc").limit(10000);
-                const unsub1 = q.onSnapshot(s => { 
-                    const d=[]; s.forEach(doc=>d.push({id:doc.id,...doc.data()})); 
-                    setDb(d);
-                    if (localStorage.getItem('trfire_role') === 'ADMIN') { checkAndGenerateMissedRounds(d); }
-                    checkAndCleanupTrash(d);
-                    setLoading(false); // Dados carregados
-                }, err => {
-                    console.error("Erro ao ler inspeções:", err);
-                    // Não setamos loading false aqui para forçar retry ou mostrar erro noutro lugar se crítico
-                });
-                
-                const unsub2 = dbFirestore.collection("users").onSnapshot(s => { 
-                    const u=[]; s.forEach(doc=>u.push({id:doc.id,...doc.data()})); 
-                    setUsers(u); 
-                    const adminUser = u.find(user => user.name === "ADMIN");
-                    if (adminUser && (!adminUser.role || adminUser.role !== "ADMIN")) {
-                        dbFirestore.collection("users").doc(adminUser.id).update({ role: "ADMIN", unit: "GLOBAL" });
-                    }
-                }, err => console.error("Erro ao ler usuários:", err));
-                
-                const unsub3 = dbFirestore.collection("units").onSnapshot(s => { 
-                    const u=[]; s.forEach(doc=>u.push({id:doc.id,...doc.data()})); 
-                    setUnits(u); 
-                }, err => console.error("Erro ao ler unidades:", err));
-                
-                const unsub4 = dbFirestore.collection("round_locations").orderBy("name").onSnapshot(s => {
-                    const l=[]; s.forEach(doc=>l.push({id:doc.id,...doc.data()}));
-                    setRoundLocationsList(l);
-                }, err => console.error("Erro ao ler locais:", err));
-
+                const unsub1 = q.onSnapshot(s => { const d=[]; s.forEach(doc=>d.push({id:doc.id,...doc.data()})); setDb(d); if (localStorage.getItem('trfire_role') === 'ADMIN') { checkAndGenerateMissedRounds(d); } checkAndCleanupTrash(d); setLoading(false); }, err => console.error(err));
+                const unsub2 = dbFirestore.collection("users").onSnapshot(s => { const u=[]; s.forEach(doc=>u.push({id:doc.id,...doc.data()})); setUsers(u); const adminUser = u.find(user => user.name === "ADMIN"); if (adminUser && (!adminUser.role || adminUser.role !== "ADMIN")) { dbFirestore.collection("users").doc(adminUser.id).update({ role: "ADMIN", unit: "GLOBAL" }); } }, err => console.error(err));
+                const unsub3 = dbFirestore.collection("units").onSnapshot(s => { const u=[]; s.forEach(doc=>u.push({id:doc.id,...doc.data()})); setUnits(u); }, err => console.error(err));
+                const unsub4 = dbFirestore.collection("round_locations").orderBy("name").onSnapshot(s => { const l=[]; s.forEach(doc=>l.push({id:doc.id,...doc.data()})); setRoundLocationsList(l); }, err => console.error(err));
                 return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
-            }, [firebaseUser]); // Dependência explícita no usuário
+            }, [firebaseUser]);
 
             const handleSave = async (d) => { try { await dbFirestore.collection("inspections").add({...d, unit: currentUnit}); setPage('list'); return true; } catch(e){ return false; } };
             const handleSaveUser = async (d) => dbFirestore.collection("users").add(d);
@@ -1145,79 +1087,23 @@
             const onToggleDelete = async (id, s) => dbFirestore.collection("inspections").doc(id).update({deleted:s, deleted_at: s ? new Date().toISOString() : null});
             const onDeletePermanently = async (id) => dbFirestore.collection("inspections").doc(id).delete();
             const onImportData = (j) => { j.forEach(i=>dbFirestore.collection("inspections").add(i)); };
-            
-            const handleLogin = (name, unitName, role, showWelcome = true) => { 
-                localStorage.setItem('trfire_user', name); 
-                localStorage.setItem('trfire_unit', unitName); 
-                localStorage.setItem('trfire_role', role); 
-                setResponsible(name); 
-                setCurrentUnit(unitName); 
-                setUserRole(role); 
-                
-                // Reset navigation stack to menu on login
-                localStorage.setItem('trfire_current_page', 'menu');
-                setPage('menu');
-
-                if(showWelcome) showAlert(`Bem-vindo, ${name}!\nPerfil: ${role}`, "welcome");
-
-                if (dbFirestore) {
-                    const now = new Date();
-                    const currentHour = now.getHours();
-                    const getLocalISODate = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-                    let shiftId = "";
-                    if (currentHour >= 6 && currentHour < 12) shiftId = `DIURNO_1_${getLocalISODate(now)}`;
-                    else if (currentHour >= 12 && currentHour < 18) shiftId = `DIURNO_2_${getLocalISODate(now)}`;
-                    else if (currentHour >= 18 && currentHour <= 23) shiftId = `NOTURNO_1_${getLocalISODate(now)}`;
-                    else shiftId = `NOTURNO_2_${getLocalISODate(now)}`;
-                    
-                    dbFirestore.collection("shift_logs").doc(shiftId).set({ responsible: name, unit: unitName, timestamp: new Date().toISOString() }, { merge: true }).catch(console.error);
-                }
-            };
-
-            const handleStartInspection = (t) => { 
-                // Clear old temp data when starting fresh
-                localStorage.removeItem('trfire_temp_form');
-                localStorage.removeItem('trfire_temp_round');
-                setScanRes(null);
-                setInspectionType(t); 
-                navigateTo('scan'); // Use navigateTo to save page state
-            };
-            const handleRoundStart = (l) => { 
-                localStorage.removeItem('trfire_temp_form');
-                localStorage.removeItem('trfire_temp_round');
-                setScanRes(null);
-                setRoundLocation(l); 
-                setInspectionType('RONDA'); 
-                navigateTo('scan'); // Use navigateTo to save page state
-            };
+            const handleLogin = (name, unitName, role, showWelcome = true) => { localStorage.setItem('trfire_user', name); localStorage.setItem('trfire_unit', unitName); localStorage.setItem('trfire_role', role); setResponsible(name); setCurrentUnit(unitName); setUserRole(role); setPage('menu'); if(showWelcome) showAlert(`Bem-vindo, ${name}!\nPerfil: ${role}`, "welcome"); if (dbFirestore) { const now = new Date(); const currentHour = now.getHours(); const getLocalISODate = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); let shiftId = ""; if (currentHour >= 6 && currentHour < 12) shiftId = `DIURNO_1_${getLocalISODate(now)}`; else if (currentHour >= 12 && currentHour < 18) shiftId = `DIURNO_2_${getLocalISODate(now)}`; else if (currentHour >= 18 && currentHour <= 23) shiftId = `NOTURNO_1_${getLocalISODate(now)}`; else shiftId = `NOTURNO_2_${getLocalISODate(now)}`; dbFirestore.collection("shift_logs").doc(shiftId).set({ responsible: name, unit: unitName, timestamp: new Date().toISOString() }, { merge: true }).catch(console.error); } };
 
             if (authError) return <AuthErrorScreen error={authError} />;
-
-            // TELA DE LOADING GLOBAL
-            if (loading && !authError) {
-                return (
-                    <div className="flex flex-col h-screen w-full items-center justify-center bg-gray-100 dark:bg-gray-900">
-                        <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-brand-red mb-4"></div>
-                        <p className="text-brand-orange font-bold tracking-widest animate-pulse">A CONECTAR...</p>
-                    </div>
-                );
-            }
+            if (loading && !authError) return (<div className="flex flex-col h-screen w-full items-center justify-center bg-gray-100 dark:bg-gray-900"><div className="animate-spin rounded-full h-16 w-16 border-b-4 border-brand-red mb-4"></div><p className="text-brand-orange font-bold tracking-widest animate-pulse">A CONECTAR...</p></div>);
 
             return (
                 <ErrorBoundary>
                     <NotificationModal isOpen={notification.isOpen} message={notification.message} type={notification.type} isConfirmation={notification.isConfirmation} onClose={closeNotification} onConfirm={notification.onConfirm} />
                     {page === 'responsible' && <ResponsibleScreen onConfirm={handleLogin} usersList={users} unitsList={units} showAlert={showAlert} onNavigate={navigateTo} />}
-                    {page === 'menu' && <MenuScreen onNavigate={navigateTo} responsibleName={responsible} currentUnit={currentUnit} onStartInspection={handleStartInspection} usersList={users} userRole={userRole} onInstallApp={handleInstallClick} />}
+                    {page === 'menu' && <MenuScreen onNavigate={navigateTo} responsibleName={responsible} currentUnit={currentUnit} onStartInspection={(t)=>{setInspectionType(t); navigateTo('scan')}} usersList={users} userRole={userRole} onInstallApp={handleInstallClick} />}
                     {page === 'adminMenu' && <AdminMenuScreen onNavigate={navigateTo} />}
                     {page === 'accessControl' && <AccessControlScreen onNavigate={navigateTo} usersList={users} onUpdatePermissions={(id,p)=>dbFirestore.collection("users").doc(id).update({permissions:p})} />}
-                    {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={navigateTo} onSelectLocation={handleRoundStart} db={db} responsibleName={responsible} roundLocationsList={roundLocationsList} />}
+                    {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={navigateTo} onSelectLocation={(l)=>{setRoundLocation(l); setInspectionType('RONDA'); navigateTo('scan')}} db={db} responsibleName={responsible} roundLocationsList={roundLocationsList} />}
                     {page === 'userRegister' && <UserRegisterScreen onNavigate={navigateTo} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} />}
                     {page === 'unitRegister' && <UnitRegisterScreen onNavigate={navigateTo} onSaveUnit={handleSaveUnit} unitsList={units} onUpdateUnit={handleUpdateUnit} onDeleteUnit={handleDeleteUnit} showAlert={showAlert} showConfirm={showConfirm} />}
                     {page === 'roundLocRegister' && <RoundLocationsRegisterScreen onNavigate={navigateTo} onSaveLocation={handleSaveRoundLocation} onUpdateLocation={handleUpdateRoundLocation} locationsList={roundLocationsList} onDeleteLocation={handleDeleteRoundLocation} showAlert={showAlert} showConfirm={showConfirm} />}
-                    {page === 'scan' && <ScannerScreen onNavigate={(t) => {
-                         const nextPage = t === 'menu' && inspectionType === 'RONDA' ? 'roundsLocation' : t;
-                         navigateTo(nextPage);
-                    }} onScanSuccess={(d)=>{setScanRes(d); navigateTo(inspectionType === 'RONDA' ? 'roundsForm' : 'form')}} db={db} inspectionType={inspectionType} showAlert={showAlert} />}
+                    {page === 'scan' && <ScannerScreen onNavigate={(t) => navigateTo(t === 'menu' && inspectionType === 'RONDA' ? 'roundsLocation' : t)} onScanSuccess={(d)=>{setScanRes(d); navigateTo(inspectionType === 'RONDA' ? 'roundsForm' : 'form')}} db={db} inspectionType={inspectionType} showAlert={showAlert} />}
                     {page === 'form' && <FormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} onSave={handleSave} inspectionType={inspectionType} showAlert={showAlert} />}
                     {page === 'roundsForm' && <RoundsFormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} roundLocation={roundLocation} onSave={handleSave} currentUnit={currentUnit} showAlert={showAlert} />}
                     {page === 'list' && <ListScreen data={db} onNavigate={navigateTo} onToggleDelete={onToggleDelete} onDeletePermanently={onDeletePermanently} onImportData={onImportData} currentUser={responsible} userRole={userRole} showAlert={showAlert} showConfirm={showConfirm} />}

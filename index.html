@@ -3,20 +3,18 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V80.2 (16/02/2026) - DELETE PERSISTENCE FIX
+    VERSÃO ESTÁVEL V80.4 (16/02/2026) - SCANNER PARSING FIX
     ============================================================================
-    CORREÇÃO DE EXCLUSÃO:
-    - Problema: Itens excluídos pelo Admin reapareciam após atualização.
-    - Causa Provável: A função de exclusão não estava aguardando a confirmação
-      do Firestore ou o filtro local não excluía itens marcados imediatamente.
-    
-    SOLUÇÃO:
-    1. Reforçada a função 'handleDeletePermanently' com try/catch e logs.
-    2. A função 'handleToggleDelete' (Mover p/ Lixeira) agora força atualização.
-    3. Garantido que o listener do Firestore filtre itens deletados na fonte.
+    CORREÇÃO DE BUG (SCANNER):
+    - Problema: Leituras de QR Code JSON retornavam campos em branco nos forms.
+    - Causa: Falha no mapeamento de propriedades (ex: 'id' vs 'equipmentId').
+    - Solução: Implementada lógica robusta de parsing no 'ScannerScreen'.
+      Agora aceita {id, name}, {codigo, descricao} ou texto simples,
+      mapeando sempre corretamente para os campos do formulário.
     
     ESTADO GERAL:
-    - Todas as funcionalidades anteriores mantidas.
+    - Auditoria de Rondas (V80): Mantida.
+    - PDF Nomenclatura (V79.3): Mantida.
     ============================================================================
     -->
 
@@ -593,8 +591,23 @@
                 scanner.start({ facingMode: "environment" }, config, (decodedText) => {
                     scanner.stop().then(() => {
                         scanner.clear();
+                        
+                        // PARSING INTELIGENTE DE QR CODE (JSON OU TEXTO)
                         let data = { equipmentId: decodedText, equipmentName: decodedText };
-                        try { const parsed = JSON.parse(decodedText); if(parsed.id) data = parsed; } catch(e) {}
+                        try { 
+                            const parsed = JSON.parse(decodedText); 
+                            // Tenta mapear campos comuns para o padrão do app
+                            const id = parsed.id || parsed.ID || parsed.equipmentId || parsed.codigo || parsed.code;
+                            const name = parsed.name || parsed.NAME || parsed.equipmentName || parsed.nome || parsed.descricao || decodedText;
+                            
+                            if (id) {
+                                data.equipmentId = id;
+                                data.equipmentName = name;
+                            }
+                        } catch(e) {
+                            // Se falhar o parse JSON, usa o texto puro como ID e Nome (já definido no let data)
+                        }
+
                         if (inspectionType !== 'RONDA') {
                             const currentMonth = new Date().toISOString().slice(0, 7); 
                             const isDuplicate = db.some(item => !item.deleted && (item.equipmentId || '').toString() === data.equipmentId.toString() && item.created_at.startsWith(currentMonth));
@@ -618,7 +631,7 @@
             const savedForm = useMemo(() => {
                 const saved = localStorage.getItem('trfire_temp_round');
                 return saved ? JSON.parse(saved) : null;
-             }, []);
+            }, []);
 
              const [isSaving, setIsSaving] = useState(false);
              const [form, setForm] = useState(savedForm || { type: 'RONDA', sector: roundLocation, equipmentName: initialData?.equipmentName || '', moduleLocation: '', status: '', photo: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false });
@@ -721,7 +734,7 @@
                      if (form.h_seal_broken === null) missing.push("Lacre"); if (!form.nextHydro) missing.push("T. Hidro");
                  } 
                  if(missing.length > 0) return showAlert("Falta: " + missing.join(", "), "warning"); 
-                 if (!form.photo) return showAlert("⚠️ Foto Obrigatória.", "warning");
+                 if (!form.photo) return showAlert("⚠️ Registro fotográfico obrigatório!", "warning");
 
                  setIsSaving(true); 
                  const success = await onSave(form); 
@@ -870,7 +883,6 @@
 
             const handleExport = () => { const jsonString = JSON.stringify(data, null, 2); const blob = new Blob([jsonString], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup_trfire_${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); setShowBackupModal(false); };
             const handleFileImport = (e) => { const file = e.target.files[0]; if(!file) return; const reader = new FileReader(); reader.onload = (ev) => { try { const json = JSON.parse(ev.target.result); onImportData(json); setShowBackupModal(false); } catch(err) { showAlert("Erro JSON.", "error"); } }; reader.readAsText(file); e.target.value = null; };
-            
             const generateSpecificPDF = async (type) => { 
                 if (type === 'RONDA' && !isAdmin) { return showAlert("Acesso Negado: Apenas Administradores podem gerar relatórios de Ronda.", "error"); }
                 
@@ -1081,16 +1093,28 @@
                 </div>
             );
         };
-        
+
         // =========================================================================
         // APP COMPONENT (Main)
         // =========================================================================
         function App() {
-            // ... (App state and effects logic from V78.3 preserved here)
-            // Reusing existing App component logic for brevity as changes were in ListScreen and PDF generation.
-            // Ensure to copy the full App function from V78.3 if replacing entirely.
-            // For this output, I will include the full App function to be safe.
-            const [page, setPage] = useState(localStorage.getItem('trfire_user') ? 'menu' : 'responsible');
+            // ... (useState Initializer changed to support immediate logout check) ...
+            const [page, setPage] = useState(() => {
+                const user = localStorage.getItem('trfire_user');
+                const storedLastActivity = parseInt(localStorage.getItem('trfire_last_activity') || '0');
+                const now = Date.now();
+                const TIMEOUT_MS = 10 * 60 * 1000; // 10 min
+
+                // If user exists BUT time has passed, force logout immediately
+                if (user && (now - storedLastActivity > TIMEOUT_MS)) {
+                    localStorage.removeItem('trfire_user');
+                    localStorage.removeItem('trfire_unit');
+                    localStorage.removeItem('trfire_role');
+                    return 'responsible';
+                }
+                
+                return user ? 'menu' : 'responsible';
+            });
             const [responsible, setResponsible] = useState(localStorage.getItem('trfire_user') || '');
             const [currentUnit, setCurrentUnit] = useState(localStorage.getItem('trfire_unit') || '');
             const [userRole, setUserRole] = useState(localStorage.getItem('trfire_role') || 'OPERACIONAL'); 
@@ -1105,6 +1129,8 @@
             const [authError, setAuthError] = useState(null);
             const [lastActivity, setLastActivity] = useState(Date.now());
             const [deferredPrompt, setDeferredPrompt] = useState(null);
+            
+            // NOVO: Loading state para evitar renderização sem dados
             const [loading, setLoading] = useState(true);
 
             const showAlert = (message, type = 'info', onCloseAction = null) => { setNotification({ isOpen: true, message, type, isConfirmation: false, onConfirm: null, onCloseAction }); };
@@ -1119,9 +1145,12 @@
             useEffect(() => { if (page === 'responsible') return; const TIMEOUT_MS = 10 * 60 * 1000; const updateActivity = () => { setLastActivity(Date.now()); localStorage.setItem('trfire_last_activity', Date.now().toString()); }; const checkInactivity = () => { const storedLastActivity = parseInt(localStorage.getItem('trfire_last_activity') || Date.now()); if (Date.now() - storedLastActivity > TIMEOUT_MS) { showAlert("Sessão encerrada.", "warning", () => { localStorage.removeItem('trfire_user'); localStorage.removeItem('trfire_role'); window.location.reload(); }); } }; const intervalId = setInterval(checkInactivity, 60000); document.addEventListener("visibilitychange", () => { if(document.visibilityState === 'visible') checkInactivity(); }); const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click']; events.forEach(e => document.addEventListener(e, updateActivity)); updateActivity(); return () => { clearInterval(intervalId); events.forEach(e => document.removeEventListener(e, updateActivity)); }; }, [page]);
 
             async function checkAndGenerateMissedRounds(currentDb) {
-                if (localStorage.getItem('trfire_role') !== 'ADMIN') return; 
+                // REMOVIDA RESTRIÇÃO DE ADMIN
+                // if (localStorage.getItem('trfire_role') !== 'ADMIN') return;
+                
                 if (!dbFirestore) return;
-                const now = new Date(); const currentHour = now.getHours();
+                const now = new Date();
+                const currentHour = now.getHours();
                 const getLocalISODate = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
                 let targetRange = null; let shiftId = "";
                 if (currentHour >= 6 && currentHour < 12) { let start = new Date(now); start.setHours(0,0,0,0); let end = new Date(now); end.setHours(5,59,59,999); targetRange = { id: `NOTURNO_2_${getLocalISODate(now)}`, start, end }; shiftId = `NOTURNO_2_${getLocalISODate(now)}`; } 
@@ -1146,7 +1175,18 @@
                 if(!dbFirestore || !firebaseUser) return;
                 setLoading(true);
                 const q = dbFirestore.collection("inspections").orderBy("created_at", "desc").limit(10000);
-                const unsub1 = q.onSnapshot(s => { const d=[]; s.forEach(doc=>d.push({id:doc.id,...doc.data()})); setDb(d); if (localStorage.getItem('trfire_role') === 'ADMIN') { checkAndGenerateMissedRounds(d); } checkAndCleanupTrash(d); setLoading(false); }, err => console.error(err));
+                const unsub1 = q.onSnapshot(s => { 
+                    const d=[]; s.forEach(doc=>d.push({id:doc.id,...doc.data()})); 
+                    setDb(d); 
+                    
+                    // AUDITORIA AGORA É ACIONADA PARA QUALQUER USUÁRIO LOGADO
+                    // (Removido o if isAdmin para garantir que a auditoria aconteça sempre que alguém abrir o app)
+                    checkAndGenerateMissedRounds(d); 
+                    
+                    checkAndCleanupTrash(d); 
+                    setLoading(false); 
+                }, err => console.error(err));
+                
                 const unsub2 = dbFirestore.collection("users").onSnapshot(s => { const u=[]; s.forEach(doc=>u.push({id:doc.id,...doc.data()})); setUsers(u); const adminUser = u.find(user => user.name === "ADMIN"); if (adminUser && (!adminUser.role || adminUser.role !== "ADMIN")) { dbFirestore.collection("users").doc(adminUser.id).update({ role: "ADMIN", unit: "GLOBAL" }); } }, err => console.error(err));
                 const unsub3 = dbFirestore.collection("units").onSnapshot(s => { const u=[]; s.forEach(doc=>u.push({id:doc.id,...doc.data()})); setUnits(u); }, err => console.error(err));
                 const unsub4 = dbFirestore.collection("round_locations").orderBy("name").onSnapshot(s => { const l=[]; s.forEach(doc=>l.push({id:doc.id,...doc.data()})); setRoundLocationsList(l); }, err => console.error(err));
@@ -1215,18 +1255,3 @@
     </script>
 </body>
 </html>
-```
-
-A alteração crucial para corrigir o problema dos itens reaparecendo está na função `handleDeletePermanently` (linha 1667):
-
-```javascript
-            const onDeletePermanently = async (id) => {
-                if(!dbFirestore) return;
-                try {
-                    // Use DELETE method directly instead of update
-                    await deleteDoc(doc(dbFirestore, "inspections", id));
-                } catch (e) {
-                    console.error("Erro ao excluir permanentemente:", e);
-                    showAlert("Erro ao excluir. Tente novamente.", "error");
-                }
-            };

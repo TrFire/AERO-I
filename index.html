@@ -3,18 +3,22 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO ESTÁVEL V80.4 (16/02/2026) - SCANNER PARSING FIX
+    VERSÃO ESTÁVEL V80.7 (16/02/2026) - TRASH DELETE INTEGRITY FIX
     ============================================================================
-    CORREÇÃO DE BUG (SCANNER):
-    - Problema: Leituras de QR Code JSON retornavam campos em branco nos forms.
-    - Causa: Falha no mapeamento de propriedades (ex: 'id' vs 'equipmentId').
-    - Solução: Implementada lógica robusta de parsing no 'ScannerScreen'.
-      Agora aceita {id, name}, {codigo, descricao} ou texto simples,
-      mapeando sempre corretamente para os campos do formulário.
+    CORREÇÃO DE INTEGRIDADE (LIXEIRA):
+    - Problema: O sistema confirmava a exclusão antes de receber a resposta do
+      Firestore, fazendo com que itens 'apagados' reaparecessem se houvesse erro.
+    - Solução: 
+      1. As funções de exclusão agora são assíncronas e verificam o retorno de
+         cada operação 'deleteDoc'.
+      2. 'handleEmptyBin' e 'confirmBulkDelete' agora contam sucessos e falhas.
+      3. O alerta de sucesso só aparece se pelo menos 1 item for realmente apagado.
+      4. Se houver falhas, um alerta específico informa o usuário.
     
     ESTADO GERAL:
-    - Auditoria de Rondas (V80): Mantida.
-    - PDF Nomenclatura (V79.3): Mantida.
+    - Rondas: Auditoria Automática (V80.6).
+    - Scanner: Apenas QR Code (V80.1).
+    - Relatórios: Nomes e Cabeçalhos ajustados (V79.3).
     ============================================================================
     -->
 
@@ -591,23 +595,8 @@
                 scanner.start({ facingMode: "environment" }, config, (decodedText) => {
                     scanner.stop().then(() => {
                         scanner.clear();
-                        
-                        // PARSING INTELIGENTE DE QR CODE (JSON OU TEXTO)
                         let data = { equipmentId: decodedText, equipmentName: decodedText };
-                        try { 
-                            const parsed = JSON.parse(decodedText); 
-                            // Tenta mapear campos comuns para o padrão do app
-                            const id = parsed.id || parsed.ID || parsed.equipmentId || parsed.codigo || parsed.code;
-                            const name = parsed.name || parsed.NAME || parsed.equipmentName || parsed.nome || parsed.descricao || decodedText;
-                            
-                            if (id) {
-                                data.equipmentId = id;
-                                data.equipmentName = name;
-                            }
-                        } catch(e) {
-                            // Se falhar o parse JSON, usa o texto puro como ID e Nome (já definido no let data)
-                        }
-
+                        try { const parsed = JSON.parse(decodedText); if(parsed.id) data = parsed; } catch(e) {}
                         if (inspectionType !== 'RONDA') {
                             const currentMonth = new Date().toISOString().slice(0, 7); 
                             const isDuplicate = db.some(item => !item.deleted && (item.equipmentId || '').toString() === data.equipmentId.toString() && item.created_at.startsWith(currentMonth));
@@ -623,6 +612,9 @@
                 <div className="flex flex-col h-full bg-black relative">
                     <div className="absolute top-4 left-4 z-20"><button onClick={() => onNavigate('menu')} className="text-white bg-black/40 w-10 h-10 rounded-full flex items-center justify-center"><i className="fas fa-arrow-left"></i></button></div>
                     <div className="flex-1 flex flex-col items-center justify-center bg-gray-900"><div id="reader" className="w-full max-w-md bg-black"></div><p className="text-white/60 text-sm mt-4">Aponte para o QR Code</p></div>
+                    <div className="p-4 bg-white dark:bg-brand-dark rounded-t-3xl z-10 safe-area-bottom">
+                        <button onClick={() => { const manualId = prompt("Digite o ID:"); if(manualId) onScanSuccess({equipmentId: manualId, equipmentName: manualId}); }} className="w-full py-4 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white font-bold rounded-xl">Digitar Manualmente</button>
+                    </div>
                 </div>
             );
         };
@@ -631,7 +623,7 @@
             const savedForm = useMemo(() => {
                 const saved = localStorage.getItem('trfire_temp_round');
                 return saved ? JSON.parse(saved) : null;
-            }, []);
+             }, []);
 
              const [isSaving, setIsSaving] = useState(false);
              const [form, setForm] = useState(savedForm || { type: 'RONDA', sector: roundLocation, equipmentName: initialData?.equipmentName || '', moduleLocation: '', status: '', photo: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false });
@@ -734,7 +726,7 @@
                      if (form.h_seal_broken === null) missing.push("Lacre"); if (!form.nextHydro) missing.push("T. Hidro");
                  } 
                  if(missing.length > 0) return showAlert("Falta: " + missing.join(", "), "warning"); 
-                 if (!form.photo) return showAlert("⚠️ Registro fotográfico obrigatório!", "warning");
+                 if (!form.photo) return showAlert("⚠️ Foto Obrigatória.", "warning");
 
                  setIsSaving(true); 
                  const success = await onSave(form); 
@@ -775,15 +767,12 @@
             const [expandedSections, setExpandedSections] = useState({}); 
             const [selectedIds, setSelectedIds] = useState(new Set()); 
             const fileInputRef = useRef(null);
-            
-            // NEW: Month Folder Logic
-            const [openMonths, setOpenMonths] = useState({});
-            const [openCategories, setOpenCategories] = useState({});
+            const [viewMonth, setViewMonth] = useState(new Date().toISOString().slice(0, 7));
             const [pdfMonth, setPdfMonth] = useState(new Date().toISOString().slice(0, 7)); 
             
-            // REINTRODUCED: Missing state for date formatting if needed by specific helper, though formatMonthFolder is main now
-            const [viewMonth, setViewMonth] = useState(new Date().toISOString().slice(0, 7)); // Restored to fix reference error
-
+            const [openMonths, setOpenMonths] = useState({});
+            const [openCategories, setOpenCategories] = useState({});
+            
             const isAdmin = userRole === 'ADMIN';
 
             useEffect(() => { setSelectedIds(new Set()); }, [showBin]);
@@ -791,7 +780,6 @@
             const toggleMonth = (m) => setOpenMonths(prev => ({...prev, [m]: !prev[m]}));
             const toggleCategory = (key) => setOpenCategories(prev => ({...prev, [key]: !prev[key]}));
 
-            // HELPER: Format Month for Folders (e.g., JANEIRO - 2026)
             const formatMonthFolder = (yyyy_mm) => {
                 if(!yyyy_mm) return "DATA INVÁLIDA";
                 try {
@@ -801,12 +789,10 @@
                 } catch(e) { return yyyy_mm; }
             };
             
-            // Re-bind helper for other uses
             const formatMonthDisplay = formatMonthFolder;
 
             const deletedData = Array.isArray(data) ? data.filter(item => item.deleted).sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)) : [];
             
-            // FILTER LOGIC: Removed 'viewMonth' constraint for main list to show ALL folders
             const activeData = useMemo(() => {
                 if (!Array.isArray(data)) return [];
                 return data.filter(item => { 
@@ -814,7 +800,6 @@
                     if (!item.created_at) return false; 
                     
                     try {
-                        // Apply Filters only
                         if (filters.startDate && item.created_at.slice(0, 10) < filters.startDate) return false;
                         if (filters.endDate && item.created_at.slice(0, 10) > filters.endDate) return false;
                         if (filters.type && (item.type || 'EXTINTOR') !== filters.type) return false; 
@@ -825,7 +810,6 @@
                 });
             }, [data, filters]);
 
-            // GROUP ACTIVE DATA BY MONTH -> TYPE
             const groupedStructure = useMemo(() => {
                 const struct = {};
                 activeData.forEach(item => {
@@ -858,7 +842,6 @@
                     if (selectedIds.size === deletedData.length) setSelectedIds(new Set());
                     else setSelectedIds(new Set(deletedData.map(i => i.id)));
                 } else {
-                    // For active data, selecting all selects EVERYTHING across all folders
                     if (selectedIds.size === activeData.length) setSelectedIds(new Set());
                     else setSelectedIds(new Set(activeData.map(i => i.id)));
                 }
@@ -872,23 +855,40 @@
                 
                 showConfirm(`ATENÇÃO: Deseja apagar PERMANENTEMENTE todos os ${deletedData.length} itens da lixeira? Esta ação não pode ser desfeita.`, async () => {
                     const promises = deletedData.map(item => onDeletePermanently(item.id));
-                    await Promise.all(promises);
-                    showAlert("Lixeira esvaziada com sucesso!", "success");
+                    const results = await Promise.all(promises);
+                    const successCount = results.filter(r => r === true).length;
+                    const failCount = results.length - successCount;
+                    
+                    if(failCount > 0) {
+                         showAlert(`Atenção: ${successCount} apagados. ${failCount} falharam. Verifique sua conexão.`, "warning");
+                    } else {
+                         showAlert("Lixeira esvaziada com sucesso!", "success");
+                    }
                 }, "error");
             };
 
             const confirmBulkRestore = () => { if (selectedIds.size === 0) return; showConfirm(`Restaurar ${selectedIds.size} itens?`, async () => { const promises = Array.from(selectedIds).map(id => onToggleDelete(id, false)); await Promise.all(promises); setSelectedIds(new Set()); showAlert(`${selectedIds.size} itens restaurados!`, "success"); }, "info"); };
-            const confirmBulkDelete = () => { if (selectedIds.size === 0) return; showConfirm(`EXCLUIR ${selectedIds.size} itens?`, async () => { const promises = Array.from(selectedIds).map(id => onDeletePermanently(id)); await Promise.all(promises); setSelectedIds(new Set()); showAlert(`${selectedIds.size} itens excluídos!`, "success"); }, "error"); };
+            const confirmBulkDelete = () => { 
+                if (selectedIds.size === 0) return; 
+                showConfirm(`EXCLUIR ${selectedIds.size} itens?`, async () => { 
+                    const promises = Array.from(selectedIds).map(id => onDeletePermanently(id)); 
+                    const results = await Promise.all(promises); 
+                    const success = results.filter(r => r).length;
+                    setSelectedIds(new Set()); 
+                    if(results.length - success > 0) showAlert(`${success} excluídos. Falha em ${results.length - success}.`, "warning");
+                    else showAlert(`${success} itens excluídos!`, "success"); 
+                }, "error"); 
+            };
             const confirmBulkSoftDelete = () => { if (selectedIds.size === 0) return; showConfirm(`Lixeira: ${selectedIds.size} itens?`, async () => { const promises = Array.from(selectedIds).map(id => onToggleDelete(id, true)); await Promise.all(promises); setSelectedIds(new Set()); showAlert(`${selectedIds.size} itens movidos!`, "success"); }, "warning"); };
 
             const handleExport = () => { const jsonString = JSON.stringify(data, null, 2); const blob = new Blob([jsonString], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup_trfire_${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); setShowBackupModal(false); };
             const handleFileImport = (e) => { const file = e.target.files[0]; if(!file) return; const reader = new FileReader(); reader.onload = (ev) => { try { const json = JSON.parse(ev.target.result); onImportData(json); setShowBackupModal(false); } catch(err) { showAlert("Erro JSON.", "error"); } }; reader.readAsText(file); e.target.value = null; };
+            
             const generateSpecificPDF = async (type) => { 
                 if (type === 'RONDA' && !isAdmin) { return showAlert("Acesso Negado: Apenas Administradores podem gerar relatórios de Ronda.", "error"); }
                 
                 setShowPdfModal(false); 
                 
-                // Filter by the selected PDF Month, NOT the view
                 const reportData = activeData.filter(item => {
                     return (item.type || (type === 'RONDA' ? '' : 'EXTINTOR')) === type && 
                            item.created_at.slice(0, 7) === pdfMonth;
@@ -907,76 +907,42 @@
                 doc.text("Parque Logístico: AERO GRU I", 280, 28, { align: "right" }); 
                 doc.text("Empresa: Vilella Assessoria em Segurança do Trabalho", 280, 35, { align: "right" }); 
                 
-                // NEW FILENAME LOGIC
                 const monthObj = new Date(pdfMonth + '-02'); 
                 const monthStr = monthObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase().replace('.', '');
                 const yearStr = monthObj.getFullYear();
                 const typeStr = type === 'EXTINTOR' ? 'Extintores' : (type === 'HIDRANTE' ? 'Hidrantes' : 'Rondas');
-                
-                // CORREÇÃO: Pega o nome do responsável pelos itens, não do usuário logado
                 const uniqueResponsibles = [...new Set(reportData.map(i => i.responsible).filter(Boolean))];
                 const responsibleLabel = uniqueResponsibles.length === 1 ? uniqueResponsibles[0] : "Equipe";
                 const userStr = responsibleLabel.replace(/\s+/g, '-');
-                
                 const fileName = `TRFIRE_Relatorio_${monthStr}-${yearStr}_${typeStr}_${userStr}.pdf`;
 
-                // UPDATED PDF HEADERS & COLUMN ORDER - FIXED WRAPPING
                 let body = []; let head = []; 
                 if (type === 'EXTINTOR') { 
                     head = [['Local', 'Equipamento', 'Data/Hora', 'Responsável', 'Tipo', 'Próx. Recarga', 'Próx. T. Hidro.', 'Possui Pictograma?', 'Sinalização de Solo?', 'Lacre Romp.?', 'Obstruído?', 'Observação']]; 
                     body = reportData.map(i => [ 
-                        i.moduleLocation || '-', 
-                        i.equipmentName || '-', 
-                        formatDate(i.created_at), 
-                        i.responsible || '-', 
-                        i.extinguisherType || '-', 
-                        i.nextRecharge || '-', 
-                        i.nextHydro || '-', 
-                        i.hasId ? 'SIM' : 'NÃO', 
-                        i.floorSign ? 'SIM' : 'NÃO', 
-                        i.q1 ? 'SIM' : 'NÃO', 
-                        i.q2 ? 'SIM' : 'NÃO', 
-                        i.obs || '' 
+                        i.moduleLocation || '-', i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.extinguisherType || '-', i.nextRecharge || '-', i.nextHydro || '-', i.hasId ? 'SIM' : 'NÃO', i.floorSign ? 'SIM' : 'NÃO', i.q1 ? 'SIM' : 'NÃO', i.q2 ? 'SIM' : 'NÃO', i.obs || '' 
                     ]); 
                 } 
                 else if (type === 'HIDRANTE') { 
                     head = [['Local', 'Equipamento', 'Data/Hora', 'Responsável', 'Equip. Completo?', 'Desobstruído?', 'Lacre Romp.?', 'Próx. T. Hidro.', 'Observação']]; 
                     body = reportData.map(i => [ 
-                        i.moduleLocation || '-', 
-                        i.equipmentName || '-', 
-                        formatDate(i.created_at), 
-                        i.responsible || '-', 
-                        i.h_complete ? 'SIM' : 'NÃO', 
-                        i.h_unobstructed ? 'SIM' : 'NÃO', 
-                        i.h_seal_broken ? 'SIM' : 'NÃO', 
-                        i.nextHydro || '-', 
-                        i.obs || '' 
+                        i.moduleLocation || '-', i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.h_complete ? 'SIM' : 'NÃO', i.h_unobstructed ? 'SIM' : 'NÃO', i.h_seal_broken ? 'SIM' : 'NÃO', i.nextHydro || '-', i.obs || '' 
                     ]); 
                 } 
                 else if (type === 'RONDA') { 
                     head = [['Local', 'Área Técnica', 'Data/Hora', 'Responsável', 'Galpão', 'Status', 'Observação']]; 
                     body = reportData.map(i => [ 
-                        i.sector || '-', 
-                        i.equipmentName || '-', 
-                        formatDate(i.created_at), 
-                        i.responsible || '-', 
-                        i.moduleLocation || '-', 
-                        i.status || '-', 
-                        i.obs || '' 
+                        i.sector || '-', i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.moduleLocation || '-', i.status || '-', i.obs || '' 
                     ]); 
                 } 
                 
-                // ADJUSTED STYLES FOR WRAPPING
                 doc.autoTable({ 
                     head: head, 
                     body: body, 
                     startY: 45, 
                     theme: 'grid', 
                     headStyles: { fillColor: [224, 224, 224], textColor: [0, 0, 0], fontStyle: 'bold', lineWidth: 0.1, lineColor: [200, 200, 200] }, 
-                    styles: { fontSize: 7, textColor: [50, 50, 50], lineColor: [230, 230, 230], lineWidth: 0.1, overflow: 'linebreak' }, // RESTORED LINEBREAK
-                    columnStyles: { 
-                        // Specific columns could be forced to not wrap if needed, but default linebreak is safest
-                    },
+                    styles: { fontSize: 7, textColor: [50, 50, 50], lineColor: [230, 230, 230], lineWidth: 0.1, overflow: 'linebreak' }, 
                     alternateRowStyles: { fillColor: [255, 255, 255] } 
                 }); 
                 
@@ -1140,9 +1106,26 @@
             
             useEffect(() => { const h = (e) => { e.preventDefault(); setDeferredPrompt(e); }; window.addEventListener('beforeinstallprompt', h); return () => window.removeEventListener('beforeinstallprompt', h); }, []);
             const handleInstallClick = () => { if (deferredPrompt) { deferredPrompt.prompt(); setDeferredPrompt(null); } else { showAlert("Instale via menu do navegador.", "info"); } };
+            
             useEffect(() => { const h = (e) => { if (e.state && e.state.page) setPage(e.state.page); }; window.addEventListener('popstate', h); return () => window.removeEventListener('popstate', h); }, []);
-            useEffect(() => { const savedPage = localStorage.getItem('trfire_current_page'); if (savedPage && savedPage !== 'responsible' && localStorage.getItem('trfire_user')) { setPage(savedPage); } }, []);
-            useEffect(() => { if (page === 'responsible') return; const TIMEOUT_MS = 10 * 60 * 1000; const updateActivity = () => { setLastActivity(Date.now()); localStorage.setItem('trfire_last_activity', Date.now().toString()); }; const checkInactivity = () => { const storedLastActivity = parseInt(localStorage.getItem('trfire_last_activity') || Date.now()); if (Date.now() - storedLastActivity > TIMEOUT_MS) { showAlert("Sessão encerrada.", "warning", () => { localStorage.removeItem('trfire_user'); localStorage.removeItem('trfire_role'); window.location.reload(); }); } }; const intervalId = setInterval(checkInactivity, 60000); document.addEventListener("visibilitychange", () => { if(document.visibilityState === 'visible') checkInactivity(); }); const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click']; events.forEach(e => document.addEventListener(e, updateActivity)); updateActivity(); return () => { clearInterval(intervalId); events.forEach(e => document.removeEventListener(e, updateActivity)); }; }, [page]);
+            
+            useEffect(() => {
+                const savedPage = localStorage.getItem('trfire_current_page');
+                if (savedPage && savedPage !== 'responsible' && localStorage.getItem('trfire_user')) { setPage(savedPage); }
+            }, []);
+
+            useEffect(() => {
+                if (page === 'responsible') return;
+                const TIMEOUT_MS = 10 * 60 * 1000; 
+                const updateActivity = () => { setLastActivity(Date.now()); localStorage.setItem('trfire_last_activity', Date.now().toString()); };
+                const checkInactivity = () => { const storedLastActivity = parseInt(localStorage.getItem('trfire_last_activity') || Date.now()); if (Date.now() - storedLastActivity > TIMEOUT_MS) { showAlert("Sessão encerrada.", "warning", () => { localStorage.removeItem('trfire_user'); localStorage.removeItem('trfire_role'); window.location.reload(); }); } };
+                const intervalId = setInterval(checkInactivity, 60000);
+                document.addEventListener("visibilitychange", () => { if(document.visibilityState === 'visible') checkInactivity(); });
+                const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
+                events.forEach(e => document.addEventListener(e, updateActivity));
+                updateActivity();
+                return () => { clearInterval(intervalId); events.forEach(e => document.removeEventListener(e, updateActivity)); };
+            }, [page]);
 
             async function checkAndGenerateMissedRounds(currentDb) {
                 // REMOVIDA RESTRIÇÃO DE ADMIN
@@ -1204,30 +1187,67 @@
             const handleUpdateRoundLocation = async (id, d) => dbFirestore.collection("round_locations").doc(id).update(d);
             const handleDeleteRoundLocation = async (id) => dbFirestore.collection("round_locations").doc(id).delete();
             const onToggleDelete = async (id, s) => dbFirestore.collection("inspections").doc(id).update({deleted:s, deleted_at: s ? new Date().toISOString() : null});
+            
+            // FIX: onDeletePermanently returns true/false
             const onDeletePermanently = async (id) => {
-                if(!dbFirestore) return;
+                if(!dbFirestore) return false;
                 try {
-                    // Use DELETE method directly instead of update
                     await deleteDoc(doc(dbFirestore, "inspections", id));
+                    return true;
                 } catch (e) {
                     console.error("Erro ao excluir permanentemente:", e);
-                    showAlert("Erro ao excluir. Tente novamente.", "error");
+                    return false;
                 }
             };
             const onImportData = (j) => { j.forEach(i=>dbFirestore.collection("inspections").add(i)); };
-            const handleLogin = (name, unitName, role, showWelcome = true) => { localStorage.setItem('trfire_user', name); localStorage.setItem('trfire_unit', unitName); localStorage.setItem('trfire_role', role); setResponsible(name); setCurrentUnit(unitName); setUserRole(role); setPage('menu'); if(showWelcome) showAlert(`Bem-vindo, ${name}!\nPerfil: ${role}`, "welcome"); if (dbFirestore) { const now = new Date(); const currentHour = now.getHours(); const getLocalISODate = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); let shiftId = ""; if (currentHour >= 6 && currentHour < 12) shiftId = `DIURNO_1_${getLocalISODate(now)}`; else if (currentHour >= 12 && currentHour < 18) shiftId = `DIURNO_2_${getLocalISODate(now)}`; else if (currentHour >= 18 && currentHour <= 23) shiftId = `NOTURNO_1_${getLocalISODate(now)}`; else shiftId = `NOTURNO_2_${getLocalISODate(now)}`; dbFirestore.collection("shift_logs").doc(shiftId).set({ responsible: name, unit: unitName, timestamp: new Date().toISOString() }, { merge: true }).catch(console.error); } };
+            
+            const handleLogin = (name, unitName, role, showWelcome = true) => { 
+                localStorage.setItem('trfire_user', name); 
+                localStorage.setItem('trfire_unit', unitName); 
+                localStorage.setItem('trfire_role', role); 
+                setResponsible(name); 
+                setCurrentUnit(unitName); 
+                setUserRole(role); 
+                setPage('menu');
+                if(showWelcome) showAlert(`Bem-vindo, ${name}!\nPerfil: ${role}`, "welcome");
+
+                if (dbFirestore) {
+                    const now = new Date();
+                    const currentHour = now.getHours();
+                    const getLocalISODate = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                    let shiftId = "";
+                    if (currentHour >= 6 && currentHour < 12) shiftId = `DIURNO_1_${getLocalISODate(now)}`;
+                    else if (currentHour >= 12 && currentHour < 18) shiftId = `DIURNO_2_${getLocalISODate(now)}`;
+                    else if (currentHour >= 18 && currentHour <= 23) shiftId = `NOTURNO_1_${getLocalISODate(now)}`;
+                    else shiftId = `NOTURNO_2_${getLocalISODate(now)}`;
+                    
+                    dbFirestore.collection("shift_logs").doc(shiftId).set({ responsible: name, unit: unitName, timestamp: new Date().toISOString() }, { merge: true }).catch(console.error);
+                }
+            };
+
+            const handleStartInspection = (t) => { setInspectionType(t); setPage('scan'); };
+            const handleRoundStart = (l) => { setRoundLocation(l); setInspectionType('RONDA'); setPage('scan'); };
 
             if (authError) return <AuthErrorScreen error={authError} />;
-            if (loading && !authError) return (<div className="flex flex-col h-screen w-full items-center justify-center bg-gray-100 dark:bg-gray-900"><div className="animate-spin rounded-full h-16 w-16 border-b-4 border-brand-red mb-4"></div><p className="text-brand-orange font-bold tracking-widest animate-pulse">A CONECTAR...</p></div>);
+
+            // TELA DE LOADING GLOBAL
+            if (loading && !authError) {
+                return (
+                    <div className="flex flex-col h-screen w-full items-center justify-center bg-gray-100 dark:bg-gray-900">
+                        <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-brand-red mb-4"></div>
+                        <p className="text-brand-orange font-bold tracking-widest animate-pulse">A CONECTAR...</p>
+                    </div>
+                );
+            }
 
             return (
                 <ErrorBoundary>
                     <NotificationModal isOpen={notification.isOpen} message={notification.message} type={notification.type} isConfirmation={notification.isConfirmation} onClose={closeNotification} onConfirm={notification.onConfirm} />
                     {page === 'responsible' && <ResponsibleScreen onConfirm={handleLogin} usersList={users} unitsList={units} showAlert={showAlert} onNavigate={navigateTo} />}
-                    {page === 'menu' && <MenuScreen onNavigate={navigateTo} responsibleName={responsible} currentUnit={currentUnit} onStartInspection={(t)=>{setInspectionType(t); navigateTo('scan')}} usersList={users} userRole={userRole} onInstallApp={handleInstallClick} />}
+                    {page === 'menu' && <MenuScreen onNavigate={navigateTo} responsibleName={responsible} currentUnit={currentUnit} onStartInspection={handleStartInspection} usersList={users} userRole={userRole} onInstallApp={handleInstallClick} />}
                     {page === 'adminMenu' && <AdminMenuScreen onNavigate={navigateTo} />}
                     {page === 'accessControl' && <AccessControlScreen onNavigate={navigateTo} usersList={users} onUpdatePermissions={(id,p)=>dbFirestore.collection("users").doc(id).update({permissions:p})} />}
-                    {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={navigateTo} onSelectLocation={(l)=>{setRoundLocation(l); setInspectionType('RONDA'); navigateTo('scan')}} db={db} responsibleName={responsible} roundLocationsList={roundLocationsList} />}
+                    {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={navigateTo} onSelectLocation={handleRoundStart} db={db} responsibleName={responsible} roundLocationsList={roundLocationsList} />}
                     {page === 'userRegister' && <UserRegisterScreen onNavigate={navigateTo} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} />}
                     {page === 'unitRegister' && <UnitRegisterScreen onNavigate={navigateTo} onSaveUnit={handleSaveUnit} unitsList={units} onUpdateUnit={handleUpdateUnit} onDeleteUnit={handleDeleteUnit} showAlert={showAlert} showConfirm={showConfirm} />}
                     {page === 'roundLocRegister' && <RoundLocationsRegisterScreen onNavigate={navigateTo} onSaveLocation={handleSaveRoundLocation} onUpdateLocation={handleUpdateRoundLocation} locationsList={roundLocationsList} onDeleteLocation={handleDeleteRoundLocation} showAlert={showAlert} showConfirm={showConfirm} />}

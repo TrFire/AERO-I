@@ -3,32 +3,14 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO MESTRE V83.1 (18/02/2026) - PONTO DE RESTAURAÇÃO
+    VERSÃO MESTRE V88.0 (18/02/2026) - MENU CORRIGIDO E TELA DE EXTINTORES
     ============================================================================
     RESUMO DO SISTEMA:
-    1. ARQUITETURA:
-       - Utiliza Firebase SDK de Compatibilidade (v8 syntax) para estabilidade
-         máxima em arquivo único (sem erros de 'deleteDoc' ou 'require').
-    
-    2. RONDAS & AUDITORIA:
-       - 4 Turnos definidos (Diurno 1/2, Noturno 1/2).
-       - Auditoria automática ao iniciar: Verifica se houve login no turno anterior;
-         se sim, gera falta para quem estava logado; se não, ignora.
-       - Lista de Condições: "Tanque - 100% Cheio", "Tanque Abaixo do Nivel", etc.
-    
-    3. HISTÓRICO & DADOS:
-       - Visualização: Pastas Mensais (Agrupadas) -> Categorias.
-       - Edição: Admin pode editar itens clicando no lápis (abre o formulário original).
-       - Lixeira: Exclusão Otimista (some da tela imediatamente) + Física (banco).
-    
-    4. SCANNER & FORMULÁRIOS:
-       - Scanner: Apenas leitura QR Code (Botão manual removido).
-       - Cache: Limpeza automática de dados temporários ao iniciar nova leitura.
-       - Validação: Foto obrigatória.
-    
-    5. RELATÓRIOS:
-       - Nome do arquivo: "TRFIRE_Relatorio_MES-ANO_Tipo_Resp.pdf".
-       - Layout: Ajustado para não cortar textos longos (quebra de linha).
+    1. ARQUITETURA: Firebase SDK Compat (v8) + Offline Persistence.
+    2. NAVEGAÇÃO & UI:
+       - Menu Sidebar refeito com <div> interativas para evitar bloqueio de touch.
+       - Tela específica de Categoria (Extintores) com Botão Gigante de Scanner.
+       - Formatação de pastas de histórico ajustada (Ex: Janeiro-2026).
     ============================================================================
     -->
 
@@ -78,7 +60,6 @@
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-    <!-- Firebase Compat Scripts (Essencial para não dar erro de deleteDoc/require) -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
@@ -141,11 +122,10 @@
             dbFirestore = firebase.firestore();
             auth = firebase.auth();
             
-            // ATIVAÇÃO DO MODO OFFLINE (PERSISTÊNCIA NATIVA)
             dbFirestore.enablePersistence({ synchronizeTabs: true })
                 .catch((err) => { console.warn("Aviso Persistência Offline:", err.code); });
 
-            console.log("Firebase Compat Conectado (Com Offline V84.0).");
+            console.log("Firebase Compat Conectado (V88.0).");
         } catch (error) { console.error("Erro Firebase:", error); }
 
         const LOGO_SRC = "logo.png"; 
@@ -154,31 +134,35 @@
         const EXTINGUISHER_TYPES = ["ABC- 4KG", "ABC- 6KG", "AGUA- 10LT", "AVD- 9LT", "CO²- 6KG", "EM- 9LT", "PÓ BC- 4KG", "PÓ BC- 6KG", "PÓ BC- 8KG", "PÓ BC- 12KG"];
         const DEFAULT_ROUND_LOCATIONS = ["CASA DE BOMBAS / G-100", "TANQUE DE DIESEL / G-100", "RTI / G-100", "GERADOR / G-100", "CASA DE BOMBAS / G-200", "TANQUE DE DIESEL / G-200", "RTI / G-200", "GERADOR / G-200", "GERADOR / G-300"];
         const ROUND_AREAS = ["G-100", "G-200", "G-300"];
-        
-        // LISTA DE CONDIÇÕES (ATUALIZADA)
-        const ROUND_CONDITIONS = [
-            "QDC - Automatico",
-            "QDC - Manual",
-            "Tanque - 100% Cheio", 
-            "Tanque Abaixo do Nivel", 
-            "Painel Op. Normalmente",
-            "Painel Com Falhas"
-        ];
+        const ROUND_CONDITIONS = ["QDC - Automatico", "QDC - Manual", "Tanque - 100% Cheio", "Tanque Abaixo do Nivel", "Painel Op. Normalmente", "Painel Com Falhas"];
         
         const formatDate = (dateStr) => { 
             if (!dateStr) return '-'; 
             try { return new Date(dateStr).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
             catch(e) { return '-'; }
         };
+
+        // FORMATAÇÃO DE MÊS SOLICITADA (Ex: Janeiro-2026)
+        const formatMonthFolder = (yyyy_mm) => {
+            if(!yyyy_mm) return "DATA INVÁLIDA";
+            try {
+                const [year, month] = yyyy_mm.split('-');
+                const date = new Date(parseInt(year), parseInt(month) - 1);
+                const monthStr = date.toLocaleString('pt-BR', { month: 'long' });
+                // Primeira letra maiúscula + Ano
+                return `${monthStr.charAt(0).toUpperCase() + monthStr.slice(1)}-${year}`;
+            } catch(e) { return yyyy_mm; }
+        };
+
         const LogoImage = ({ className }) => (<img src={LOGO_SRC} onError={(e) => {e.target.onerror = null; e.target.src=FALLBACK_LOGO}} alt="Logo" className={className} />);
 
-        // --- COMPONENTES ---
+        // --- COMPONENTES GLOBAIS ---
 
         class ErrorBoundary extends React.Component {
             constructor(props) { super(props); this.state = { hasError: false, error: null }; }
             static getDerivedStateFromError(error) { return { hasError: true, error }; }
             render() {
-                if (this.state.hasError) return <div className="flex flex-col items-center justify-center h-screen bg-red-50 p-6 text-center text-red-800 font-bold">Algo correu mal.<br/>Reinicie o app.</div>;
+                if (this.state.hasError) return <div className="flex flex-col items-center justify-center h-screen bg-red-50 p-6 text-center text-red-800 font-bold">Algo correu mal na tela.<br/>Por favor, atualize a página.</div>;
                 return this.props.children;
             }
         }
@@ -188,7 +172,7 @@
             const colors = { error: 'bg-red-500', success: 'bg-green-500', warning: 'bg-yellow-500', info: 'bg-blue-500', welcome: 'bg-brand-orange' };
             const icon = { error: 'fa-times', success: 'fa-check', warning: 'fa-exclamation', info: 'fa-info', welcome: 'fa-user-check' };
             return (
-                <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 animate-fade-in">
+                <div className="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center p-4 animate-fade-in">
                     <div className="bg-white dark:bg-gray-800 p-6 rounded-3xl w-full max-w-sm text-center shadow-2xl border border-gray-100 dark:border-gray-700">
                         <div className={`w-16 h-16 rounded-full ${colors[type] || colors.info} flex items-center justify-center mx-auto mb-4 shadow-lg`}><i className={`fas ${icon[type] || icon.info} text-3xl text-white`}></i></div>
                         <h3 className="text-xl font-black text-gray-800 dark:text-white mb-2 uppercase">{isConfirmation ? 'Confirmação' : (type === 'welcome' ? 'Bem-vindo!' : (type === 'error' ? 'Atenção' : 'Sucesso'))}</h3>
@@ -213,28 +197,39 @@
             );
         }
 
-        function GlobalSidebar({ isOpen, onClose, onNavigate, onStartInspection, userRole, responsibleName, currentUnit, handleLogout }) {
+        function GlobalSidebar({ isOpen, onClose, onNavigate, onOpenReport, onOpenBackup, usersList, responsibleName, currentUnit, userRole, handleLogout }) {
             if (!isOpen) return null;
             const isAdmin = userRole === 'ADMIN';
 
-            const navigateAndClose = (page, action) => {
-                onClose();
-                if (action) { action(); } else { onNavigate(page); }
-            };
+            const userPerms = useMemo(() => {
+                if (!usersList || usersList.length === 0) return ['EXTINTOR', 'HIDRANTE', 'HISTORICO', 'RONDA']; 
+                const user = usersList.find(u => u.name === responsibleName);
+                return user?.permissions || ['EXTINTOR', 'HIDRANTE', 'HISTORICO'];
+            }, [usersList, responsibleName]);
+            
+            const hasAccess = (perm) => isAdmin || userPerms.includes(perm);
 
+            // COMPONENTE DO MENU BLINDADO PARA PREVIEW
             const MenuItem = ({ icon, text, onClick, colorClass = "text-gray-700 dark:text-gray-200" }) => (
-                <button onClick={onClick} className="w-full flex items-center gap-4 px-6 py-4 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors active:bg-gray-200 dark:active:bg-gray-700 text-left border-b border-gray-100 dark:border-gray-800">
+                <div 
+                    onClick={() => {
+                        onClick();
+                        onClose();
+                    }} 
+                    className="w-full flex items-center gap-4 px-6 py-4 hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700 text-left border-b border-gray-100 dark:border-gray-800 cursor-pointer select-none"
+                >
                     <div className={`w-6 text-center ${colorClass}`}><i className={`fas ${icon} text-lg`}></i></div>
                     <span className={`font-bold ${colorClass}`}>{text}</span>
-                </button>
+                </div>
             );
 
             return (
                 <div className="fixed inset-0 z-[100] flex">
                     <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose}></div>
-                    <div className="relative w-72 bg-white dark:bg-gray-900 h-full flex flex-col shadow-2xl animate-fade-in-left">
+                    
+                    <div className="relative w-72 bg-white dark:bg-gray-900 h-full flex flex-col shadow-2xl animate-fade-in-left" onClick={(e) => e.stopPropagation()}>
                         <div className="p-6 bg-brand-red text-white flex flex-col items-center justify-center relative">
-                            <button onClick={onClose} className="absolute top-4 right-4 text-white/80 hover:text-white p-2"><i className="fas fa-times text-xl"></i></button>
+                            <div onClick={onClose} className="absolute top-4 right-4 text-white/80 hover:text-white p-2 cursor-pointer"><i className="fas fa-times text-xl"></i></div>
                             <div className="w-20 h-20 bg-white rounded-full p-3 flex items-center justify-center shadow-lg mb-3">
                                 <LogoImage className="w-full h-full object-contain" />
                             </div>
@@ -246,44 +241,159 @@
                         </div>
                         
                         <div className="flex-1 overflow-y-auto py-2 flex flex-col">
-                            <MenuItem icon="fa-home" text="Página Inicial" onClick={() => navigateAndClose('menu')} />
-                            <MenuItem icon="fa-fire-extinguisher" text="Insp. Extintores" colorClass="text-brand-red" onClick={() => navigateAndClose('scan', () => onStartInspection('EXTINTOR'))} />
-                            <MenuItem icon="fa-faucet" text="Insp. Hidrantes" colorClass="text-brand-orange" onClick={() => navigateAndClose('scan', () => onStartInspection('HIDRANTE'))} />
-                            <MenuItem icon="fa-clipboard-check" text="Ronda Diária" colorClass="text-brand-blue" onClick={() => navigateAndClose('roundsLocation')} />
-                            <MenuItem icon="fa-history" text="Histórico Geral" onClick={() => navigateAndClose('list')} />
+                            <MenuItem icon="fa-chart-pie" text="Página Inicial (Dashboard)" colorClass="text-teal-600 dark:text-teal-400" onClick={() => onNavigate('dashboard')} />
+                            
+                            {hasAccess('EXTINTOR') && <MenuItem icon="fa-fire-extinguisher" text="Extintores" colorClass="text-brand-red" onClick={() => onNavigate('category_EXTINTOR')} />}
+                            {hasAccess('HIDRANTE') && <MenuItem icon="fa-faucet" text="Hidrantes" colorClass="text-brand-orange" onClick={() => onNavigate('category_HIDRANTE')} />}
+                            {hasAccess('RONDA') && <MenuItem icon="fa-clipboard-check" text="Ronda Diária" colorClass="text-brand-blue" onClick={() => onNavigate('roundsLocation')} />}
+                            
+                            {hasAccess('HISTORICO') && <MenuItem icon="fa-history" text="Histórico Geral" onClick={() => onNavigate('list')} />}
+                            
+                            <div className="mt-4 mb-1 px-6 text-xs font-black text-gray-400 uppercase tracking-wider">Documentos & Dados</div>
+                            <MenuItem icon="fa-file-pdf" text="Gerar Relatórios" colorClass="text-yellow-600 dark:text-yellow-400" onClick={() => onOpenReport()} />
+                            {isAdmin && <MenuItem icon="fa-cloud-download-alt" text="Backup de Dados" colorClass="text-blue-500" onClick={() => onOpenBackup()} />}
                             
                             {isAdmin && (
                                 <>
                                     <div className="mt-4 mb-1 px-6 text-xs font-black text-gray-400 uppercase tracking-wider">Gestão</div>
-                                    <MenuItem icon="fa-chart-pie" text="Dashboard" colorClass="text-teal-600 dark:text-teal-400" onClick={() => navigateAndClose('dashboard')} />
-                                    <MenuItem icon="fa-cog" text="Administração" colorClass="text-purple-600 dark:text-purple-400" onClick={() => navigateAndClose('adminMenu')} />
+                                    <MenuItem icon="fa-cog" text="Administração" colorClass="text-purple-600 dark:text-purple-400" onClick={() => onNavigate('adminMenu')} />
                                 </>
                             )}
                         </div>
                         
                         <div className="p-4 border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
-                            <button onClick={() => { onClose(); handleLogout(); }} className="w-full py-3.5 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-black rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform">
+                            <div onClick={() => { onClose(); handleLogout(); }} className="w-full py-3.5 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-black rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform cursor-pointer">
                                 <i className="fas fa-sign-out-alt"></i> ENCERRAR SESSÃO
-                            </button>
+                            </div>
                         </div>
                     </div>
                 </div>
             );
         }
 
-        function ColorSelect({ label, val, field, onChange, invert=false }) { 
-            let bgClass = "bg-white dark:bg-gray-800"; let textClass = "text-gray-700 dark:text-gray-200"; 
-            if(val === true) { bgClass = invert ? "bg-red-100 dark:bg-red-900 border-red-500" : "bg-green-100 dark:bg-green-900 border-green-500"; textClass = invert ? "text-red-700 dark:text-red-100" : "text-green-700 dark:text-green-100"; } 
-            else if(val === false) { bgClass = invert ? "bg-green-100 dark:bg-green-900 border-green-500" : "bg-red-100 dark:bg-red-900 border-red-500"; textClass = invert ? "text-green-700 dark:text-green-100" : "text-red-700 dark:text-red-100"; } 
+        // --- COMPONENTES REUTILIZÁVEIS ---
+
+        function HistoryItemCard({ item, showBin, isSelected, toggleSelection, onToggleDelete, onDeletePermanently, isAdmin, currentUser, onEditItem }) {
+            const isHid = item.type === 'HIDRANTE';
+            const isRonda = item.type === 'RONDA';
+            let statusColor = 'bg-gray-100 text-gray-700';
+            let statusText = '---';
+            if (isRonda) { 
+                if(item.status === 'NÃO REALIZADA') { statusColor = 'bg-red-500 text-white border-red-600'; statusText = 'TAREFA NÃO REALIZADA'; } 
+                else { statusColor = item.status === 'Conforme' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = item.status === 'Conforme' ? 'CONFORME' : 'NÃO CONFORME'; }
+            } else if (isHid) { statusColor = (item.h_complete && item.h_unobstructed && !item.h_seal_broken) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = (item.h_complete && item.h_unobstructed && !item.h_seal_broken) ? 'OK' : 'IRREGULAR'; } else { statusColor = (!item.q1 && !item.q2) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = (!item.q1) ? 'OK' : 'VIOLADO'; }
+            
+            const canDelete = isAdmin || (item.responsible === currentUser && !isRonda);
+
             return (
-                <div className={`p-3 rounded-xl border ${val !== null ? 'border-2' : 'border-gray-200 dark:border-gray-700'} ${bgClass} shadow-sm transition-colors w-full`}>
-                    <p className={`font-bold mb-1 text-xs ${val !== null ? textClass : 'text-gray-500 dark:text-gray-400'}`}>{label}</p>
-                    <select value={val === null ? '' : (val ? 'true' : 'false')} onChange={(e) => onChange(field, e.target.value)} className={`w-full bg-transparent font-bold focus:outline-none ${textClass} appearance-none`}>
-                        <option value="">Selecionar...</option><option value="true">Sim</option><option value="false">Não</option>
-                    </select>
+                <div className={`p-4 rounded-xl shadow-sm border-l-4 flex justify-between items-center transition-all mb-2 ${showBin ? (isSelected ? 'bg-red-100 border-red-600' : 'bg-red-50 dark:bg-red-900/10 border-red-500 opacity-80') : 'bg-white dark:bg-gray-800 border-brand-red'}`}>
+                    <div className="flex items-center gap-3">
+                        {(isAdmin || showBin) && toggleSelection && <div onClick={() => toggleSelection(item.id)} className={`w-6 h-6 rounded border-2 flex items-center justify-center cursor-pointer transition-colors ${isSelected ? 'bg-red-600 border-red-600 text-white':'border-red-300 bg-white'}`}>{isSelected && <i className="fas fa-check text-xs"></i>}</div>}
+                        <div>
+                            <span className="font-bold text-sm flex items-center gap-2">
+                                {item.equipmentName}
+                                {item.pendingSync && <i className="fas fa-cloud-upload-alt text-brand-orange text-xs" title="Sincronização pendente"></i>}
+                            </span>
+                            <span className="text-xs text-gray-500 font-bold block mt-0.5">{formatDate(item.created_at)} | {item.responsible}</span>
+                            {isRonda && <div className="text-xs text-gray-400 mt-1">Local: {item.sector} {item.moduleLocation ? `| ${item.moduleLocation}` : ''}</div>}
+                            {!isRonda && item.moduleLocation && <div className="text-[10px] text-gray-400 uppercase mt-0.5">{item.moduleLocation}</div>}
+                        </div>
+                        {(item.photo || item.hasPhoto) && <div className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-1 rounded flex items-center gap-1"><i className="fas fa-camera"></i></div>}
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                        {showBin ? (
+                            <div className="flex gap-2">
+                                <button type="button" onClick={() => onToggleDelete(item.id, false)} className="fas fa-trash-restore text-green-500 cursor-pointer p-1 focus:outline-none"></button>
+                                {isAdmin && <button type="button" onClick={() => onDeletePermanently(item.id)} className="fas fa-times text-red-500 cursor-pointer p-1 focus:outline-none"></button>}
+                            </div>
+                        ) : (
+                            <div className="flex flex-col items-end">
+                                 <div className="flex items-center gap-2">
+                                    <span className={`inline-block text-[10px] px-2 py-0.5 rounded font-bold ${statusColor}`}>{statusText}</span>
+                                    {isAdmin && onEditItem && (
+                                        <button type="button" onClick={(e) => { e.stopPropagation(); onEditItem(item); }} className="w-8 h-8 flex items-center justify-center text-blue-500 hover:text-blue-700 transition-colors focus:outline-none">
+                                            <i className="fas fa-pen"></i>
+                                        </button>
+                                    )}
+                                 </div>
+                                 {canDelete && onToggleDelete && <button type="button" onClick={() => onToggleDelete(item.id, true)} className="fas fa-trash text-red-300 cursor-pointer mt-1 p-1 focus:outline-none"></button>}
+                            </div>
+                        )}
+                    </div>
                 </div>
-            ); 
+            );
         }
+
+        // --- MODAIS GLOBAIS (Relatório e Backup) ---
+
+        function ReportModal({ isOpen, onClose, data, showAlert, isAdmin }) {
+            const [pdfMonth, setPdfMonth] = useState(new Date().toISOString().slice(0, 7));
+            
+            if (!isOpen) return null;
+
+            const generateSpecificPDF = async (type) => { 
+                if (type === 'RONDA' && !isAdmin) { return showAlert("Acesso Negado: Apenas Administradores podem gerar relatórios de Ronda.", "error"); }
+                
+                const activeData = data.filter(item => !item.deleted && item.created_at);
+                const reportData = activeData.filter(item => { return (item.type || (type === 'RONDA' ? '' : 'EXTINTOR')) === type && item.created_at.slice(0, 7) === pdfMonth; });
+                
+                if(reportData.length === 0) return showAlert(`Sem dados de ${type} em ${formatMonthFolder(pdfMonth)}.`, "warning"); 
+                
+                onClose();
+                
+                const doc = new jsPDF({ orientation: "landscape" }); doc.setFillColor(243, 244, 246); doc.rect(0, 0, 297, 40, 'F'); doc.setTextColor(33, 33, 33); doc.setFontSize(22); let title = ""; if (type === 'EXTINTOR') title = "CHECK-LIST EXTINTORES MENSAL"; else if (type === 'HIDRANTE') title = "CHECK-LIST HIDRANTES MENSAL"; else if (type === 'RONDA') title = "RELATÓRIO DE RONDAS PREVENTIVAS"; doc.text(title, 14, 25); doc.setFontSize(10); doc.setTextColor(100, 100, 100); doc.text(`Mês de Referência: ${formatMonthFolder(pdfMonth)} | Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 35); doc.setFontSize(9); doc.setTextColor(33, 33, 33); doc.text("Parque Logístico: AERO GRU I", 280, 28, { align: "right" }); doc.text("Empresa: Vilella Assessoria em Segurança do Trabalho", 280, 35, { align: "right" }); 
+                const monthObj = new Date(pdfMonth + '-02'); const monthStr = monthObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase().replace('.', ''); const yearStr = monthObj.getFullYear(); const typeStr = type === 'EXTINTOR' ? 'Extintores' : (type === 'HIDRANTE' ? 'Hidrantes' : 'Rondas');
+                const uniqueResponsibles = [...new Set(reportData.map(i => i.responsible).filter(Boolean))]; const responsibleLabel = uniqueResponsibles.length === 1 ? uniqueResponsibles[0] : "Equipe"; const userStr = responsibleLabel.replace(/\s+/g, '-'); const fileName = `TRFIRE_Relatorio_${monthStr}-${yearStr}_${typeStr}_${userStr}.pdf`;
+                let body = []; let head = []; 
+                if (type === 'EXTINTOR') { head = [['Local', 'Equipamento', 'Data/Hora', 'Responsável', 'Tipo', 'Próx. Recarga', 'Próx. T. Hidro.', 'Possui Pictograma?', 'Sinalização de Solo?', 'Lacre Romp.?', 'Obstruído?', 'Observação']]; body = reportData.map(i => [ i.moduleLocation || '-', i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.extinguisherType || '-', i.nextRecharge || '-', i.nextHydro || '-', i.hasId ? 'SIM' : 'NÃO', i.floorSign ? 'SIM' : 'NÃO', i.q1 ? 'SIM' : 'NÃO', i.q2 ? 'SIM' : 'NÃO', i.obs || '' ]); } 
+                else if (type === 'HIDRANTE') { head = [['Local', 'Equipamento', 'Data/Hora', 'Responsável', 'Equip. Completo?', 'Desobstruído?', 'Lacre Romp.?', 'Próx. T. Hidro.', 'Observação']]; body = reportData.map(i => [ i.moduleLocation || '-', i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.h_complete ? 'SIM' : 'NÃO', i.h_unobstructed ? 'NÃO' : 'SIM', i.h_seal_broken ? 'SIM' : 'NÃO', i.nextHydro || '-', i.obs || '' ]); } 
+                else if (type === 'RONDA') { head = [['Local', 'Área Técnica', 'Data/Hora', 'Responsável', 'Condições', 'Status', 'Observação']]; body = reportData.map(i => [ i.sector || '-', i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.moduleLocation || '-', i.status || '-', i.obs || '' ]); } 
+                doc.autoTable({ head: head, body: body, startY: 45, theme: 'grid', headStyles: { fillColor: [224, 224, 224], textColor: [0, 0, 0], fontStyle: 'bold', lineWidth: 0.1, lineColor: [200, 200, 200] }, styles: { fontSize: 7, textColor: [50, 50, 50], lineColor: [230, 230, 230], lineWidth: 0.1, overflow: 'linebreak' }, alternateRowStyles: { fillColor: [255, 255, 255] } }); 
+                if (type === 'EXTINTOR') { let finalY = doc.lastAutoTable.finalY + 10; const counts = {}; reportData.forEach(item => { const t = item.extinguisherType || 'Indefinido'; counts[t] = (counts[t] || 0) + 1; }); if (finalY > 150) { doc.addPage(); finalY = 20; } doc.setFontSize(12); doc.setTextColor(33, 33, 33); doc.text("Resumo Quantitativo:", 14, finalY); const summaryBody = Object.entries(counts).map(([t, c]) => [t, c]); doc.autoTable({ head: [['Tipo', 'Quantidade']], body: summaryBody, startY: finalY + 5, theme: 'striped', tableWidth: 'wrap', styles: { fontSize: 9 } }); }
+                doc.save(fileName); 
+            };
+
+            return (
+                <div className="fixed inset-0 bg-black/80 z-[110] flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm animate-fade-in text-center shadow-2xl relative">
+                        <button type="button" onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-white focus:outline-none"><i className="fas fa-times text-xl"></i></button>
+                        <h3 className="text-lg font-black mb-2 dark:text-white">Gerar Relatório PDF</h3>
+                        <div className="mb-6"><label className="text-xs text-gray-500 block mb-1">Selecione o Mês</label><input type="month" value={pdfMonth} onChange={(e) => setPdfMonth(e.target.value)} className="w-full p-3 bg-gray-100 dark:bg-gray-700 rounded-xl text-sm dark:text-white font-bold text-center border-none outline-none" /></div>
+                        <div className="space-y-3">
+                            <button type="button" onClick={() => generateSpecificPDF('EXTINTOR')} className="w-full py-4 bg-brand-red text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2 focus:outline-none"><i className="fas fa-fire-extinguisher"></i> Relatório EXTINTORES</button>
+                            <button type="button" onClick={() => generateSpecificPDF('HIDRANTE')} className="w-full py-4 bg-brand-orange text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2 focus:outline-none"><i className="fas fa-faucet"></i> Relatório HIDRANTES</button>
+                            {isAdmin && <button type="button" onClick={() => generateSpecificPDF('RONDA')} className="w-full py-4 bg-brand-blue text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2 focus:outline-none"><i className="fas fa-clipboard-check"></i> Relatório RONDAS</button>}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function BackupModal({ isOpen, onClose, data, onImportData, showAlert }) {
+            const fileInputRef = useRef(null);
+            if (!isOpen) return null;
+
+            const handleExport = () => { const jsonString = JSON.stringify(data, null, 2); const blob = new Blob([jsonString], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup_trfire_${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); onClose(); };
+            const handleFileImport = (e) => { const file = e.target.files[0]; if(!file) return; const reader = new FileReader(); reader.onload = (ev) => { try { const json = JSON.parse(ev.target.result); onImportData(json); onClose(); showAlert("Dados importados com sucesso!", "success"); } catch(err) { showAlert("Erro JSON.", "error"); } }; reader.readAsText(file); e.target.value = null; };
+
+            return (
+                <div className="fixed inset-0 bg-black/80 z-[110] flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm animate-fade-in text-center shadow-2xl relative">
+                        <button type="button" onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-white focus:outline-none"><i className="fas fa-times text-xl"></i></button>
+                        <h3 className="text-lg font-black mb-6 dark:text-white flex items-center justify-center gap-2"><i className="fas fa-database text-blue-500"></i> Backup & Restauração</h3>
+                        <div className="space-y-4">
+                            <button type="button" onClick={handleExport} className="w-full py-4 bg-blue-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2 focus:outline-none"><i className="fas fa-download"></i> EXPORTAR TUDO (.JSON)</button>
+                            <div className="relative">
+                                <input type="file" ref={fileInputRef} onChange={handleFileImport} accept=".json" className="hidden" />
+                                <button type="button" onClick={() => fileInputRef.current.click()} className="w-full py-4 bg-green-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2 focus:outline-none"><i className="fas fa-upload"></i> IMPORTAR DADOS</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- TELAS DO APP ---
 
         function ResponsibleScreen({ onConfirm, usersList, unitsList, showAlert, onNavigate, isOnline }) {
             const [selectedName, setSelectedName] = useState("");
@@ -326,120 +436,99 @@
                     <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-2xl w-full max-w-sm space-y-4 mt-6">
                         <div><label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">Unidade</label><div className="relative"><select value={selectedUnit} onChange={(e) => { setSelectedUnit(e.target.value); }} className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white appearance-none font-bold text-gray-700 text-base"><option value="">{unitsList && unitsList.length > 0 ? "Selecione..." : "A carregar..."}</option>{unitsList && unitsList.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}</select></div></div>
                         <div><label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">Responsável</label><div className="relative"><input type="text" value={selectedName} onChange={(e) => setSelectedName(e.target.value.toUpperCase())} placeholder="Digite seu nome..." className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 text-base"/></div></div>
-                        <div><label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">Senha</label><div className="relative"><input type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Digite sua senha..." className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 text-base pr-12" /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 flex items-center px-4 text-gray-400"><i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i></button></div></div>
-                        <button onClick={handleLoginAttempt} disabled={!isButtonEnabled} className={`w-full py-4 rounded-xl text-lg font-bold shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 ${isButtonEnabled ? 'bg-brand-orange hover:bg-orange-600 text-white' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}>INICIAR INSPEÇÃO <i className="fas fa-arrow-right"></i></button>
+                        <div><label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">Senha</label><div className="relative"><input type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Digite sua senha..." className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 text-base pr-12" /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 flex items-center px-4 text-gray-400 focus:outline-none"><i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i></button></div></div>
+                        <button type="button" onClick={handleLoginAttempt} disabled={!isButtonEnabled} className={`w-full py-4 rounded-xl text-lg font-bold shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 ${isButtonEnabled ? 'bg-brand-orange hover:bg-orange-600 text-white' : 'bg-gray-300 text-gray-500 cursor-not-allowed'} focus:outline-none`}>INICIAR INSPEÇÃO <i className="fas fa-arrow-right"></i></button>
                     </div>
                     <div className="absolute bottom-2 w-full text-center space-y-1"><div className="text-white/90 text-[10px] text-center mb-0.5 leading-tight font-medium"><p>Copyright © 2026 Fire Personality ME</p><p>Todos os direitos reservados</p><p>(Thawillys Rocha)</p></div><p className="text-white/40 text-[10px]">Versão Beta 1.5</p></div>
                 </div>
             );
         };
 
-        function RoundLocationsRegisterScreen({ onNavigate, onSaveLocation, onUpdateLocation, locationsList, onDeleteLocation, showAlert, showConfirm }) {
-            const [newLocation, setNewLocation] = useState("");
-            const [saving, setSaving] = useState(false);
-            const [editingId, setEditingId] = useState(null);
+        // NOVA TELA: CATEGORIA UNIFICADA (Scanner + Histórico do Mês)
+        function CategoryScreen({ type, db, onStartInspection, onToggleDelete, onDeletePermanently, currentUser, userRole, onEditItem, onOpenMenu }) {
+            const isAdmin = userRole === 'ADMIN';
+            const [openMonths, setOpenMonths] = useState({});
+            
+            const title = type === 'EXTINTOR' ? 'EXTINTORES' : 'HIDRANTES';
+            const headerColor = type === 'EXTINTOR' ? 'bg-brand-red' : 'bg-brand-orange';
+            const icon = type === 'EXTINTOR' ? 'fa-fire-extinguisher' : 'fa-faucet';
 
-            const handleSave = async () => {
-                if (!newLocation) return showAlert("Digite o nome do local.", "warning");
-                setSaving(true);
-                if (editingId) { await onUpdateLocation(editingId, { name: newLocation.toUpperCase() }); showAlert("Atualizado!", "success"); setEditingId(null); } 
-                else { await onSaveLocation({ name: newLocation.toUpperCase() }); showAlert("Adicionado!", "success"); }
-                setSaving(false); setNewLocation("");
-            };
+            const activeData = useMemo(() => {
+                if (!Array.isArray(db)) return [];
+                return db.filter(item => !item.deleted && item.type === type && item.created_at);
+            }, [db, type]);
 
-            const handleEditClick = (loc) => { setEditingId(loc.id); setNewLocation(loc.name); };
-            const handleCancelEdit = () => { setEditingId(null); setNewLocation(""); };
-            const handleDelete = (id) => { showConfirm("Excluir este local?", () => onDeleteLocation(id), "error"); };
+            const groupedStructure = useMemo(() => {
+                const struct = {};
+                activeData.forEach(item => {
+                    const monthKey = item.created_at.slice(0, 7); 
+                    if (!struct[monthKey]) struct[monthKey] = [];
+                    struct[monthKey].push(item);
+                });
+                return struct;
+            }, [activeData]);
+
+            const sortedMonths = Object.keys(groupedStructure).sort().reverse();
+            const toggleMonth = (m) => setOpenMonths(prev => ({...prev, [m]: !prev[m]}));
 
             return (
-                <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 overflow-y-auto">
-                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate('adminMenu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
-                    <div className="mt-16 text-center mb-8"><div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-full mb-4"><i className="fas fa-map-marker-alt text-2xl text-white"></i></div><h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">{editingId ? 'EDITAR LOCAL' : 'LOCAIS DE RONDA'}</h2><p className="text-gray-500 dark:text-gray-400 text-sm">Gerenciar pontos</p></div>
-                    <div className="space-y-4"><input value={newLocation} onChange={e => setNewLocation(e.target.value)} placeholder="NOME DO LOCAL" className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-blue outline-none dark:text-white font-bold text-gray-700 uppercase" /><div className="flex gap-2">{editingId && <button onClick={handleCancelEdit} className="flex-1 py-4 bg-gray-300 text-gray-700 rounded-xl font-bold shadow-lg">CANCELAR</button>}<button onClick={handleSave} disabled={saving} className="flex-[2] py-4 bg-brand-blue text-white rounded-xl text-lg font-bold shadow-lg active:scale-95 transition-transform">{saving ? '...' : (editingId ? 'ATUALIZAR' : 'ADICIONAR')}</button></div></div>
-                    <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700"><h3 className="font-bold text-gray-500 mb-4 text-xs uppercase">Locais Cadastrados ({locationsList.length})</h3><div className="space-y-2">{locationsList.map(loc => (<div key={loc.id} className={`bg-white dark:bg-gray-900 border ${editingId === loc.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'} p-4 rounded-xl flex items-center justify-between shadow-sm`}><span className="font-bold text-gray-800 dark:text-white text-sm">{loc.name}</span><div className="flex gap-2"><button onClick={() => handleEditClick(loc)} className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center hover:bg-blue-200"><i className="fas fa-pen text-xs"></i></button><button onClick={() => handleDelete(loc.id)} className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center hover:bg-red-200"><i className="fas fa-trash text-xs"></i></button></div></div>))}</div></div>
-                </div>
-            );
-        };
-
-        function UnitRegisterScreen({ onNavigate, onSaveUnit, unitsList, onUpdateUnit, onDeleteUnit, showAlert, showConfirm }) {
-            const [newUnit, setNewUnit] = useState({ name: '', address: '' });
-            const [editingId, setEditingId] = useState(null);
-            const handleSave = async () => {
-                if (!newUnit.name) return showAlert("Preencha nome.", "warning");
-                if (editingId) { await onUpdateUnit(editingId, newUnit); setEditingId(null); showAlert("Atualizado!", "success"); } 
-                else { await onSaveUnit(newUnit); showAlert("Cadastrado!", "success"); }
-                setNewUnit({ name: '', address: '' });
-            };
-            const handleEditClick = (u) => { setEditingId(u.id); setNewUnit({ name: u.name, address: u.address }); };
-            return (
-                <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 overflow-y-auto">
-                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate('adminMenu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
-                    <div className="mt-16 space-y-4"><input value={newUnit.name} onChange={e => setNewUnit({...newUnit, name: e.target.value.toUpperCase()})} placeholder="NOME UNIDADE" className="w-full p-4 bg-gray-100 rounded-xl font-bold" /><input value={newUnit.address} onChange={e => setNewUnit({...newUnit, address: e.target.value})} placeholder="ENDEREÇO" className="w-full p-4 bg-gray-100 rounded-xl font-bold" /><button onClick={handleSave} className="w-full py-4 bg-brand-orange text-white rounded-xl font-bold">SALVAR</button></div>
-                    <div className="mt-8 space-y-2">{unitsList && unitsList.map(u => (<div key={u.id} className="p-4 border rounded-xl flex justify-between"><div><b>{u.name}</b><br/><span className="text-xs">{u.address}</span></div><div><button onClick={() => handleEditClick(u)} className="mr-2 text-blue-500"><i className="fas fa-pen"></i></button><button onClick={()=>showConfirm("Excluir?", ()=>onDeleteUnit(u.id), "error")} className="text-red-500"><i className="fas fa-trash"></i></button></div></div>))}</div>
-                </div>
-            );
-        };
-
-        function UserRegisterScreen({ onNavigate, onSaveUser, usersList, unitsList, onUpdateUser, onDeleteUser, showAlert, showConfirm, backDestination = 'adminMenu' }) {
-            const [newUser, setNewUser] = useState({ name: '', pass: '', unit: '', shift: 'DIURNO', role: 'OPERACIONAL' });
-            const [editingId, setEditingId] = useState(null);
-            const handleSave = async () => {
-                if (!newUser.name || !newUser.pass) return showAlert("Dados incompletos.", "warning");
-                let finalUnit = newUser.unit;
-                if ((newUser.name.toUpperCase() === "ADMIN" || newUser.role === "ADMIN") && !finalUnit) finalUnit = "GLOBAL";
-                
-                const userData = { 
-                    name: newUser.name.toUpperCase(), 
-                    pass: newUser.pass, 
-                    unit: finalUnit || '', 
-                    shift: newUser.shift, 
-                    role: newUser.role 
-                };
-                
-                if (editingId) { await onUpdateUser(editingId, userData); setEditingId(null); showAlert("Atualizado!", "success"); } 
-                else { await onSaveUser(userData); showAlert("Cadastrado!", "success"); }
-                setNewUser({ name: '', pass: '', unit: '', shift: 'DIURNO', role: 'OPERACIONAL' });
-            };
-            const handleEditClick = (u) => { setEditingId(u.id); setNewUser({ name: u.name, pass: u.pass, unit: u.unit || '', shift: u.shift || 'DIURNO', role: u.role || 'OPERACIONAL' }); };
-            return (
-                <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 overflow-y-auto">
-                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate(backDestination)} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
-                    <div className="mt-16 space-y-4">
-                        <select value={newUser.unit} onChange={e => setNewUser({...newUser, unit: e.target.value})} className="w-full p-4 bg-gray-100 rounded-xl font-bold"><option value="">Unidade (Opcional)</option>{unitsList && unitsList.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}</select>
-                        <div className="flex gap-2">
-                            <select value={newUser.shift} onChange={e => setNewUser({...newUser, shift: e.target.value})} className="flex-1 p-4 bg-gray-100 rounded-xl font-bold"><option value="DIURNO">DIURNO</option><option value="NOTURNO">NOTURNO</option></select>
-                            <select value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})} className="flex-1 p-4 bg-gray-100 rounded-xl font-bold text-blue-700"><option value="OPERACIONAL">OPERACIONAL</option><option value="ADMIN">ADMIN</option></select>
-                        </div>
-                        <input value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} placeholder="NOME" className="w-full p-4 bg-gray-100 rounded-xl font-bold" />
-                        <input value={newUser.pass} onChange={e => setNewUser({...newUser, pass: e.target.value})} placeholder="SENHA" className="w-full p-4 bg-gray-100 rounded-xl font-bold" />
-                        <button onClick={handleSave} className="w-full py-4 bg-brand-orange text-white rounded-xl font-bold">SALVAR</button>
+                <div className="flex flex-col h-full bg-gray-50 dark:bg-black relative">
+                    {/* Header Padrão */}
+                    <div className={`${headerColor} text-white p-4 shadow-md flex items-center justify-between sticky top-0 z-20`}>
+                        <h2 className="text-lg font-black tracking-wide flex items-center gap-2 uppercase">
+                            <i className={`fas ${icon}`}></i> {title}
+                        </h2>
+                        <button type="button" onClick={onOpenMenu} className="text-2xl active:scale-95 p-1 focus:outline-none"><i className="fas fa-bars"></i></button>
                     </div>
-                    <div className="mt-8 space-y-2">{usersList && usersList.map(u => (<div key={u.id} className="p-4 border rounded-xl flex justify-between"><div><b>{u.name}</b> <span className="text-xs bg-gray-200 px-1 rounded">{u.shift || 'D'}</span> {u.role === 'ADMIN' && <span className="text-xs bg-purple-200 text-purple-800 px-1 rounded ml-1">ADM</span>}<br/><span className="text-xs">{u.unit || 'GLOBAL'}</span></div><div><button onClick={() => handleEditClick(u)} className="mr-2 text-blue-500"><i className="fas fa-pen"></i></button><button onClick={()=>showConfirm("Excluir?", ()=>onDeleteUser(u.id), "error")} className="text-red-500"><i className="fas fa-trash"></i></button></div></div>))}</div>
-                </div>
-            );
-        };
 
-        function AdminMenuScreen({ onNavigate, onOpenMenu }) {
-            return (
-                <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 animate-fade-in relative">
-                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate('menu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm active:scale-95"><i className="fas fa-arrow-left"></i></button></div>
-                    <div className="absolute top-4 right-4"><button onClick={onOpenMenu} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm active:scale-95"><i className="fas fa-bars"></i></button></div>
-                    <div className="mt-16 text-center mb-8"><h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">ADMINISTRAÇÃO</h2></div>
-                    <div className="w-full space-y-4">
-                        <button onClick={() => onNavigate('dashboard')} className="w-full py-4 bg-teal-600 text-white rounded-xl font-bold shadow-lg flex items-center justify-center gap-2"><i className="fas fa-chart-pie"></i> DASHBOARD & VENCIMENTOS</button>
-                        <button onClick={() => onNavigate('accessControl')} className="w-full py-4 bg-purple-600 text-white rounded-xl font-bold shadow-lg">ACESSOS</button>
-                        <button onClick={() => onNavigate('unitRegister')} className="w-full py-4 bg-gray-600 text-white rounded-xl font-bold shadow-lg">UNIDADES</button>
-                        <button onClick={() => onNavigate('roundLocRegister')} className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold shadow-lg">LOCAIS DE RONDA</button>
-                        <button onClick={() => onNavigate('userRegister')} className="w-full py-4 bg-gray-700 text-white rounded-xl font-bold shadow-lg">BOMBEIROS</button>
+                    {/* SEÇÃO DO BOTÃO GIGANTE DE SCANNER */}
+                    <div className="p-6 bg-white dark:bg-gray-900 shadow-sm z-10 border-b border-gray-100 dark:border-gray-800 flex flex-col items-center">
+                        <button type="button" onClick={() => onStartInspection(type)} className={`w-full max-w-sm py-6 ${headerColor} text-white rounded-3xl font-black text-xl shadow-xl flex flex-col items-center justify-center gap-3 active:scale-95 transition-transform focus:outline-none cursor-pointer`}>
+                            <i className="fas fa-qrcode text-5xl mb-1"></i> 
+                            <span>ESCANEAR QR-CODE</span>
+                        </button>
+                        <p className="text-center text-sm text-gray-500 mt-4 font-medium">Toque acima para abrir a câmera e iniciar a inspeção.</p>
+                    </div>
+
+                    {/* SEÇÃO DO HISTÓRICO EM PASTAS */}
+                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                        <h3 className="font-bold text-gray-400 text-xs uppercase mb-2">Histórico - {title}</h3>
+                        {sortedMonths.length === 0 ? <div className="text-center text-gray-500 mt-6 bg-white dark:bg-gray-800 p-6 rounded-2xl">Nenhuma inspeção encontrada.</div> : 
+                             sortedMonths.map(monthKey => {
+                                 const isOpen = openMonths[monthKey];
+                                 const items = groupedStructure[monthKey];
+                                 
+                                 return (
+                                     <div key={monthKey} className="mb-2 bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                                         <div onClick={() => toggleMonth(monthKey)} className="w-full flex justify-between items-center p-4 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 transition-colors cursor-pointer select-none">
+                                             <div className="flex items-center gap-3">
+                                                 <div className={`w-10 h-10 rounded-full ${type === 'EXTINTOR' ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-600'} flex items-center justify-center`}><i className={`fas ${isOpen ? 'fa-folder-open' : 'fa-folder'}`}></i></div>
+                                                 <div className="text-left"><span className="block font-bold text-gray-800 dark:text-white">{formatMonthFolder(monthKey)}</span><span className="text-xs text-gray-500">{items.length} inspeções</span></div>
+                                             </div>
+                                             <i className={`fas fa-chevron-${isOpen ? 'up' : 'down'} text-gray-400`}></i>
+                                         </div>
+                                         
+                                         {isOpen && (
+                                             <div className="p-2 bg-white dark:bg-gray-900 space-y-2 animate-fade-in border-t border-gray-100 dark:border-gray-800">
+                                                 {items.map(item => (
+                                                     <HistoryItemCard key={item.id} item={item} showBin={false} isSelected={false} onToggleDelete={onToggleDelete} onDeletePermanently={onDeletePermanently} isAdmin={isAdmin} currentUser={currentUser} onEditItem={onEditItem} />
+                                                 ))}
+                                             </div>
+                                         )}
+                                     </div>
+                                 );
+                             })
+                        }
                     </div>
                 </div>
             );
-        };
+        }
 
-        function DashboardScreen({ onNavigate, data, onOpenMenu }) {
+        // --- DEMAIS TELAS (Dashboard, Admin, Forms, Scanner, etc) ---
+
+        function DashboardScreen({ data, onOpenMenu }) {
             const [currentMonthStr, setCurrentMonthStr] = useState(new Date().toISOString().slice(0, 7));
 
-            // FUNÇÃO PARA CALCULAR O STATUS DE VENCIMENTO
             const checkExpiration = (dateStr) => {
                 if (!dateStr || dateStr.length !== 7) return { status: 'OK', text: 'N/A' };
                 const [mm, yyyy] = dateStr.split('/');
@@ -457,8 +546,7 @@
             const dashboardStats = useMemo(() => {
                 if (!Array.isArray(data)) return { monthStats: {}, expirations: [] };
 
-                // 1. ESTATÍSTICAS DO MÊS ATUAL
-                const monthData = data.filter(i => !i.deleted && i.created_at?.startsWith(currentMonthStr));
+                const monthData = data.filter(i => !i.deleted && i.created_at && i.created_at.startsWith(currentMonthStr));
                 const monthStats = { total: monthData.length, ok: 0, irregular: 0, ronda_ok: 0, ronda_falha: 0 };
 
                 monthData.forEach(item => {
@@ -474,7 +562,6 @@
                     }
                 });
 
-                // 2. ALERTAS DE VENCIMENTO (Apenas o registro mais recente de cada equipamento)
                 const latestInspections = {};
                 data.forEach(item => {
                     if (item.deleted || item.type === 'RONDA') return;
@@ -501,7 +588,6 @@
                     }
                 });
 
-                // Ordenar para mostrar Vencidos primeiro
                 expirations.sort((a, b) => {
                     const aIsVencido = (a.recharge?.status === 'VENCIDO' || a.hydro?.status === 'VENCIDO');
                     const bIsVencido = (b.recharge?.status === 'VENCIDO' || b.hydro?.status === 'VENCIDO');
@@ -522,22 +608,16 @@
             const rondaOkPct = rondaTotal > 0 ? (monthStats.ronda_ok / rondaTotal) * 100 : 0;
             const rondaFalhaPct = rondaTotal > 0 ? (monthStats.ronda_falha / rondaTotal) * 100 : 0;
 
-            const formatMonthDisplay = (yyyy_mm) => {
-                try {
-                    const [year, month] = yyyy_mm.split('-');
-                    const date = new Date(parseInt(year), parseInt(month) - 1);
-                    return date.toLocaleString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase();
-                } catch(e) { return yyyy_mm; }
-            };
-
             return (
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black relative">
                     <div className="bg-teal-700 text-white p-4 shadow-md flex items-center justify-between sticky top-0 z-20">
                         <div className="flex items-center gap-4">
-                            <button onClick={() => onNavigate('adminMenu')} className="w-8 h-8 flex items-center justify-center bg-white/20 rounded-full active:scale-95"><i className="fas fa-arrow-left"></i></button>
-                            <h2 className="text-lg font-black tracking-wide"><i className="fas fa-chart-pie mr-2"></i> DASHBOARD</h2>
+                            <h2 className="text-lg font-black tracking-wide flex items-center gap-2">
+                                <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center p-1"><LogoImage className="w-full h-full object-contain" /></div>
+                                TR FIRE Dashboard
+                            </h2>
                         </div>
-                        <button onClick={onOpenMenu} className="text-xl active:scale-95 p-1 focus:outline-none"><i className="fas fa-bars"></i></button>
+                        <button type="button" onClick={onOpenMenu} className="text-2xl active:scale-95 p-1 focus:outline-none"><i className="fas fa-bars"></i></button>
                     </div>
 
                     <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-12">
@@ -545,7 +625,7 @@
                         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-5">
                             <h3 className="text-sm font-black text-gray-500 dark:text-gray-400 mb-4 uppercase flex justify-between items-center">
                                 Inspeções Realizadas 
-                                <span className="bg-teal-100 text-teal-800 px-2 py-0.5 rounded text-xs">{formatMonthDisplay(currentMonthStr)}</span>
+                                <span className="bg-teal-100 text-teal-800 px-2 py-0.5 rounded text-xs">{formatMonthFolder(currentMonthStr)}</span>
                             </h3>
                             
                             {/* Gráfico Equipamentos */}
@@ -628,19 +708,35 @@
             );
         };
 
+        function AdminMenuScreen({ onNavigate, onOpenMenu }) {
+            return (
+                <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 animate-fade-in relative">
+                    <div className="absolute top-4 left-4"><button type="button" onClick={() => onNavigate('dashboard')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm active:scale-95 focus:outline-none"><i className="fas fa-arrow-left"></i></button></div>
+                    <div className="absolute top-4 right-4"><button type="button" onClick={onOpenMenu} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm active:scale-95 focus:outline-none"><i className="fas fa-bars"></i></button></div>
+                    <div className="mt-16 text-center mb-8"><h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">ADMINISTRAÇÃO</h2></div>
+                    <div className="w-full space-y-4">
+                        <button type="button" onClick={() => onNavigate('accessControl')} className="w-full py-4 bg-purple-600 text-white rounded-xl font-bold shadow-lg focus:outline-none">ACESSOS</button>
+                        <button type="button" onClick={() => onNavigate('unitRegister')} className="w-full py-4 bg-gray-600 text-white rounded-xl font-bold shadow-lg focus:outline-none">UNIDADES</button>
+                        <button type="button" onClick={() => onNavigate('roundLocRegister')} className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold shadow-lg focus:outline-none">LOCAIS DE RONDA</button>
+                        <button type="button" onClick={() => onNavigate('userRegister')} className="w-full py-4 bg-gray-700 text-white rounded-xl font-bold shadow-lg focus:outline-none">BOMBEIROS</button>
+                    </div>
+                </div>
+            );
+        };
+
         function AccessControlScreen({ onNavigate, usersList, onUpdatePermissions }) {
              const [selectedUser, setSelectedUser] = useState(null);
              const togglePermission = (permId) => { if(!selectedUser) return; const current = selectedUser.permissions || []; const next = current.includes(permId) ? current.filter(p=>p!==permId) : [...current, permId]; setSelectedUser({...selectedUser, permissions: next}); onUpdatePermissions(selectedUser.id, next); };
              return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 animate-fade-in relative">
-                    <div className="absolute top-4 left-4"><button onClick={() => selectedUser ? setSelectedUser(null) : onNavigate('adminMenu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
+                    <div className="absolute top-4 left-4"><button type="button" onClick={() => selectedUser ? setSelectedUser(null) : onNavigate('adminMenu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm focus:outline-none"><i className="fas fa-arrow-left"></i></button></div>
                     <div className="mt-16 text-center mb-6"><h2 className="text-xl font-black dark:text-white">CONTROLE DE ACESSO</h2></div>
                     {!selectedUser ? (
-                        <div className="space-y-3">{usersList && usersList.filter(u=>u.name!=='ADMIN').map(u=>(<div key={u.id} onClick={()=>setSelectedUser(u)} className="bg-gray-100 p-4 rounded-xl font-bold">{u.name}</div>))}</div>
+                        <div className="space-y-3">{usersList && usersList.filter(u=>u.name!=='ADMIN').map(u=>(<div key={u.id} onClick={()=>setSelectedUser(u)} className="bg-gray-100 p-4 rounded-xl font-bold cursor-pointer">{u.name}</div>))}</div>
                     ) : (
                         <div className="space-y-3">
                             {['EXTINTOR','HIDRANTE','HISTORICO','RONDA'].map(p=>(
-                                <div key={p} onClick={()=>togglePermission(p)} className={`p-4 rounded-xl font-bold border-2 ${selectedUser.permissions?.includes(p)?'border-green-500 bg-green-50 text-green-700':'border-gray-200 bg-gray-50 text-gray-400'}`}>{p}</div>
+                                <div key={p} onClick={()=>togglePermission(p)} className={`p-4 rounded-xl font-bold border-2 cursor-pointer ${selectedUser.permissions?.includes(p)?'border-green-500 bg-green-50 text-green-700':'border-gray-200 bg-gray-50 text-gray-400'}`}>{p}</div>
                             ))}
                         </div>
                     )}
@@ -648,67 +744,7 @@
              );
         };
 
-        function MenuScreen({ onNavigate, responsibleName, currentUnit, onStartInspection, usersList, userRole, isOnline, onOpenMenu }) {
-            const isAdmin = userRole === 'ADMIN';
-
-            const userPerms = useMemo(() => {
-                if (!usersList || usersList.length === 0) return ['EXTINTOR', 'HIDRANTE', 'HISTORICO']; 
-                const user = usersList.find(u => u.name === responsibleName);
-                return user?.permissions || ['EXTINTOR', 'HIDRANTE', 'HISTORICO'];
-            }, [usersList, responsibleName]);
-            
-            const hasAccess = (perm) => isAdmin || userPerms.includes(perm);
-            
-            const handleLogout = () => { localStorage.removeItem('trfire_user'); localStorage.removeItem('trfire_role'); window.location.reload(); };
-
-            const [currentDate, setCurrentDate] = useState(new Date());
-            useEffect(() => {
-                const timer = setInterval(() => setCurrentDate(new Date()), 1000);
-                return () => clearInterval(timer);
-            }, []);
-
-            return (
-                <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 animate-fade-in relative">
-                    <div className="absolute top-0 left-0 w-full bg-gray-100 dark:bg-gray-800 p-2 px-4 flex justify-between items-center text-xs text-gray-500 dark:text-gray-400 z-10 shadow-sm">
-                        <div className="flex items-center gap-3">
-                            <button onClick={onOpenMenu} className="text-xl text-gray-700 dark:text-white py-1 pr-2 active:scale-95 focus:outline-none"><i className="fas fa-bars"></i></button>
-                            <div><span>Olá, <b>{responsibleName}</b></span><br/><span className="text-[10px]">{currentUnit}</span></div>
-                        </div>
-                        <div className="flex gap-2 items-center">
-                            {isOnline ? 
-                                <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-1 rounded shadow-sm"><i className="fas fa-wifi mr-1"></i>ONLINE</span> : 
-                                <span className="text-[10px] font-bold bg-red-100 text-red-700 px-2 py-1 rounded animate-pulse shadow-sm"><i className="fas fa-wifi-slash mr-1"></i>OFFLINE</span>
-                            }
-                        </div>
-                    </div>
-                    <div className="flex-1 flex flex-col items-center justify-center space-y-6 mt-6">
-                        <div className="flex flex-col items-center justify-center gap-1">
-                            <div className="w-32 h-32"><LogoImage className="w-full h-full object-contain filter drop-shadow-xl" /></div>
-                            <h2 className="text-2xl font-extrabold tracking-tight mt-2 text-brand-red dark:text-white">TR FIRE</h2>
-                            <p className="text-brand-orange text-lg font-bold tracking-widest">INSPEÇÕES</p>
-                            
-                            <div className="text-center mt-2 space-y-1">
-                                <p className="text-xs text-gray-500 dark:text-gray-400 font-sans font-medium capitalize">
-                                    {currentDate.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                                </p>
-                                <p className="text-sm text-gray-600 dark:text-gray-300 font-sans font-bold tracking-wide">
-                                    {currentDate.toLocaleTimeString('pt-BR')}
-                                </p>
-                            </div>
-                        </div>
-                        <div className="w-full space-y-3 pb-4">
-                            {hasAccess('RONDA') && <button onClick={() => onNavigate('roundsLocation')} className="w-full py-4 bg-brand-blue text-white rounded-xl font-bold shadow-lg">RONDA DIÁRIA</button>}
-                            {hasAccess('EXTINTOR') && <button onClick={() => onStartInspection('EXTINTOR')} className="w-full py-4 bg-brand-red text-white rounded-xl font-bold shadow-lg">EXTINTORES</button>}
-                            {hasAccess('HIDRANTE') && <button onClick={() => onStartInspection('HIDRANTE')} className="w-full py-4 bg-brand-orange text-white rounded-xl font-bold shadow-lg">HIDRANTES</button>}
-                            {hasAccess('HISTORICO') && <button onClick={() => onNavigate('list')} className="w-full py-4 bg-gray-800 text-white rounded-xl font-bold shadow-lg">HISTÓRICO</button>}
-                            {isAdmin && <button onClick={() => onNavigate('adminMenu')} className="w-full py-4 bg-cyan-700 text-white rounded-xl font-bold shadow-lg">PARÂMETROS ADMIN</button>}
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        function RoundsLocationScreen({ onNavigate, onSelectLocation, db, responsibleName, roundLocationsList, onOpenMenu }) {
+        function RoundsLocationScreen({ onNavigate, onSelectLocation, db, roundLocationsList, onOpenMenu }) {
             const [shiftInfo, setShiftInfo] = useState({ name: '', start: null, end: null, isNight: false });
             const [tick, setTick] = useState(0); 
             const [selectedLocation, setSelectedLocation] = useState(null); 
@@ -740,6 +776,7 @@
                 if (!shiftInfo.start || !db) return false;
                 return db.some(item => {
                     if (item.type !== 'RONDA' || item.deleted) return false;
+                    if (!item.created_at) return false;
                     const itemDate = new Date(item.created_at);
                     return item.sector === location && itemDate >= shiftInfo.start && itemDate <= shiftInfo.end;
                 });
@@ -766,6 +803,7 @@
 
                 const isDone = db.some(item => {
                     if (item.type !== 'RONDA' || item.deleted) return false;
+                    if (!item.created_at) return false;
                     const itemDate = new Date(item.created_at);
                     return item.sector === location && itemDate >= start && itemDate <= end;
                 });
@@ -806,15 +844,15 @@
 
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-3 animate-fade-in relative">
-                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate('menu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm active:scale-95"><i className="fas fa-arrow-left"></i></button></div>
-                    <div className="absolute top-4 right-4"><button onClick={onOpenMenu} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm active:scale-95"><i className="fas fa-bars"></i></button></div>
+                    <div className="absolute top-4 left-4"><button type="button" onClick={() => onNavigate('dashboard')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm active:scale-95 focus:outline-none"><i className="fas fa-arrow-left"></i></button></div>
+                    <div className="absolute top-4 right-4"><button type="button" onClick={onOpenMenu} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm active:scale-95 focus:outline-none"><i className="fas fa-bars"></i></button></div>
                     <div className="mt-16 text-center mb-6"><h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">LOCAIS DE RONDA</h2></div>
                     <div className="flex-1 overflow-y-auto space-y-3 pb-6">
                         {roundLocationsList.map(loc => {
                             const done = isLocationDone(loc.name);
                             const activeInfo = getActiveRoundInfo(loc.name);
                             return (
-                                <button key={loc.id} onClick={() => handleLocationClick(loc.name)} className={`w-full py-4 bg-white dark:bg-gray-800 border-2 ${done ? 'border-green-500' : 'border-gray-100 dark:border-gray-700 hover:border-blue-500'} text-gray-700 dark:text-white rounded-2xl text-lg font-bold shadow-sm flex items-center justify-between px-4`}>
+                                <button type="button" key={loc.id} onClick={() => handleLocationClick(loc.name)} className={`w-full py-4 bg-white dark:bg-gray-800 border-2 ${done ? 'border-green-500' : 'border-gray-100 dark:border-gray-700 hover:border-blue-500'} text-gray-700 dark:text-white rounded-2xl text-lg font-bold shadow-sm flex items-center justify-between px-4 focus:outline-none`}>
                                     <div className="flex flex-col items-start">
                                         <span>{loc.name}</span>
                                         <span className={`text-[10px] font-bold uppercase mt-1 ${done ? 'text-green-500' : 'text-orange-500'}`}>{done ? 'Realizado' : 'Pendente'}</span>
@@ -838,7 +876,7 @@
                     {selectedLocation && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={() => setSelectedLocation(null)}>
                             <div className="bg-white dark:bg-gray-900 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative" onClick={e => e.stopPropagation()}>
-                                <button onClick={() => setSelectedLocation(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><i className="fas fa-times text-xl"></i></button>
+                                <button type="button" onClick={() => setSelectedLocation(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 focus:outline-none"><i className="fas fa-times text-xl"></i></button>
                                 <h3 className="text-xl font-black text-center mb-2 dark:text-white">{selectedLocation}</h3>
                                 <p className="text-center text-blue-600 font-bold text-sm mb-6 uppercase">{shiftInfo.name}</p>
                                 <div className="space-y-4">
@@ -876,6 +914,20 @@
             );
         };
 
+        function ColorSelect({ label, val, field, onChange, invert=false }) { 
+            let bgClass = "bg-white dark:bg-gray-800"; let textClass = "text-gray-700 dark:text-gray-200"; 
+            if(val === true) { bgClass = invert ? "bg-red-100 dark:bg-red-900 border-red-500" : "bg-green-100 dark:bg-green-900 border-green-500"; textClass = invert ? "text-red-700 dark:text-red-100" : "text-green-700 dark:text-green-100"; } 
+            else if(val === false) { bgClass = invert ? "bg-green-100 dark:bg-green-900 border-green-500" : "bg-red-100 dark:bg-red-900 border-red-500"; textClass = invert ? "text-green-700 dark:text-green-100" : "text-red-700 dark:text-red-100"; } 
+            return (
+                <div className={`p-3 rounded-xl border ${val !== null ? 'border-2' : 'border-gray-200 dark:border-gray-700'} ${bgClass} shadow-sm transition-colors w-full`}>
+                    <p className={`font-bold mb-1 text-xs ${val !== null ? textClass : 'text-gray-500 dark:text-gray-400'}`}>{label}</p>
+                    <select value={val === null ? '' : (val ? 'true' : 'false')} onChange={(e) => onChange(field, e.target.value)} className={`w-full bg-transparent font-bold focus:outline-none ${textClass} appearance-none`}>
+                        <option value="">Selecionar...</option><option value="true">Sim</option><option value="false">Não</option>
+                    </select>
+                </div>
+            ); 
+        }
+
         function ScannerScreen({ onNavigate, onScanSuccess, db, inspectionType, showAlert }) {
             const scannerRef = useRef(null);
             useEffect(() => {
@@ -886,7 +938,6 @@
                     scanner.stop().then(() => {
                         scanner.clear();
                         
-                        // PARSING INTELIGENTE DE QR CODE (JSON OU TEXTO)
                         let data = { equipmentId: decodedText, equipmentName: decodedText };
                         try { 
                             const parsed = JSON.parse(decodedText); 
@@ -897,8 +948,8 @@
 
                         if (inspectionType !== 'RONDA') {
                             const currentMonth = new Date().toISOString().slice(0, 7); 
-                            const isDuplicate = db.some(item => !item.deleted && (item.equipmentId || '').toString() === data.equipmentId.toString() && item.created_at.startsWith(currentMonth));
-                            if (isDuplicate) { showAlert(`⚠️ EQUIPAMENTO JÁ VISTORIADO!\n\nEste código já foi registrado em ${new Date().toLocaleString('pt-BR', { month: 'long' })}.\nNova leitura permitida apenas no mês seguinte.`, "warning"); onNavigate('menu'); return; }
+                            const isDuplicate = db.some(item => !item.deleted && item.created_at && (item.equipmentId || '').toString() === data.equipmentId.toString() && item.created_at.startsWith(currentMonth));
+                            if (isDuplicate) { showAlert(`⚠️ EQUIPAMENTO JÁ VISTORIADO!\n\nEste código já foi registrado neste mês.`, "warning"); onNavigate(`category_${inspectionType}`); return; }
                         }
                         onScanSuccess(data);
                     }).catch(err => console.error(err));
@@ -906,89 +957,16 @@
                 return () => { if (scanner.isScanning) scanner.stop().catch(()=>{}); };
             }, [db, inspectionType]);
 
+            const handleGoBack = () => {
+                if (inspectionType === 'RONDA') onNavigate('roundsLocation');
+                else onNavigate(`category_${inspectionType}`);
+            }
+
             return (
                 <div className="flex flex-col h-full bg-black relative">
-                    <div className="absolute top-4 left-4 z-20"><button onClick={() => onNavigate('menu')} className="text-white bg-black/40 w-10 h-10 rounded-full flex items-center justify-center"><i className="fas fa-arrow-left"></i></button></div>
-                    <div className="flex-1 flex flex-col items-center justify-center bg-gray-900"><div id="reader" className="w-full max-w-md bg-black"></div><p className="text-white/60 text-sm mt-4">Aponte para o QR Code</p></div>
-                    <div className="p-4 bg-white dark:bg-brand-dark rounded-t-3xl z-10 safe-area-bottom">
-                        {/* REMOVIDO BOTÃO MANUAL CONFORME SOLICITADO */}
-                    </div>
-                </div>
-            );
-        };
-
-        function RoundsFormScreen({ initialData, onNavigate, onSave, responsibleName, roundLocation, currentUnit, showAlert }) {
-            const savedForm = useMemo(() => {
-                const saved = localStorage.getItem('trfire_temp_round');
-                return saved ? JSON.parse(saved) : null;
-            }, []);
-
-             const [isSaving, setIsSaving] = useState(false);
-             const [form, setForm] = useState(() => {
-                 if (initialData && initialData.id) {
-                     return { ...initialData }; 
-                 }
-                 return savedForm || { type: 'RONDA', sector: roundLocation, equipmentName: initialData?.equipmentName || '', moduleLocation: '', status: '', photo: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false };
-             });
-             const fileInputRef = useRef(null);
-             
-             useEffect(() => {
-                 localStorage.setItem('trfire_temp_round', JSON.stringify(form));
-             }, [form]);
-
-             const handlePhotoChange = (e) => { 
-                const file = e.target.files[0]; 
-                if (file) { 
-                    const reader = new FileReader(); 
-                    reader.onload = (event) => { 
-                        const img = new Image(); 
-                        img.onload = () => { 
-                            const canvas = document.createElement('canvas'); 
-                            const ctx = canvas.getContext('2d'); 
-                            const MAX = 400; 
-                            let width = img.width; let height = img.height; 
-                            if (width > height) { if (width > MAX) { height *= MAX / width; width = MAX; } } else { if (height > MAX) { width *= MAX / height; height = MAX; } } 
-                            canvas.width = width; canvas.height = height; ctx.drawImage(img, 0, 0, width, height); 
-                            setForm(prev => ({ ...prev, photo: canvas.toDataURL('image/jpeg', 0.5) })); 
-                        }; 
-                        img.src = event.target.result; 
-                    }; 
-                    reader.readAsDataURL(file); 
-                } 
-             };
-             const save = async () => { 
-                 if (!form.moduleLocation || !form.photo) return showAlert("Preencha tudo.", "warning"); 
-                 setIsSaving(true); 
-                 const success = await onSave(form); 
-                 setIsSaving(false);
-                 if(success) localStorage.removeItem('trfire_temp_round');
-             };
-             return (
-                <div className="flex flex-col h-full bg-gray-50 dark:bg-black">
-                    <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('roundsLocation')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">Ronda</h2><button onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold" type="button">{isSaving ? '...' : 'SALVAR'}</button></div>
-                    <div className="flex-1 overflow-y-auto p-2 space-y-4">
-                        <div className="bg-white p-4 rounded-xl space-y-4">
-                            <input value={form.equipmentName} disabled className="w-full bg-gray-100 p-3 rounded font-bold" />
-                            <div className="mt-2">
-                                <label className="text-xs font-bold text-gray-500 dark:text-gray-400 block mb-1">Condições ? *</label>
-                                <select value={form.moduleLocation} onChange={e=>setForm({...form, moduleLocation:e.target.value})} className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 uppercase appearance-none">
-                                    <option value="">Selecione...</option>
-                                    {ROUND_CONDITIONS.map(o=><option key={o} value={o}>{o}</option>)}
-                                </select>
-                            </div>
-                            <div className="mt-2">
-                                <label className="text-xs font-bold text-gray-500 dark:text-gray-400 block mb-1">Status</label>
-                                <select value={form.status} onChange={e=>setForm({...form, status:e.target.value})} className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 appearance-none">
-                                    <option value="">Status...</option>
-                                    <option value="Conforme">Conforme</option>
-                                    <option value="Não Conforme">Não Conforme</option>
-                                </select>
-                            </div>
-                            <div onClick={()=>fileInputRef.current.click()} className="w-full h-32 border-2 border-dashed rounded flex items-center justify-center text-gray-400 cursor-pointer mt-4">{form.photo ? <img src={form.photo} className="h-full object-cover"/> : <i className="fas fa-camera text-2xl"></i>}</div>
-                            <input type="file" ref={fileInputRef} onChange={handlePhotoChange} className="hidden" accept="image/*" capture="environment" />
-                            <textarea value={form.obs} onChange={e=>setForm({...form, obs:e.target.value})} placeholder="Obs..." className="w-full p-3 bg-gray-100 rounded h-24 mt-4" />
-                        </div>
-                    </div>
+                    <div className="absolute top-4 left-4 z-20"><button type="button" onClick={handleGoBack} className="text-white bg-black/40 w-10 h-10 rounded-full flex items-center justify-center focus:outline-none"><i className="fas fa-arrow-left"></i></button></div>
+                    <div className="flex-1 flex flex-col items-center justify-center bg-gray-900"><div id="reader" className="w-full max-w-md bg-black"></div><p className="text-white/60 text-sm mt-4">Aponte para o QR Code ({inspectionType})</p></div>
+                    <div className="p-4 bg-white dark:bg-brand-dark rounded-t-3xl z-10 safe-area-bottom"></div>
                 </div>
             );
         };
@@ -1060,7 +1038,7 @@
 
              return (
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black">
-                    <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('menu')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">{inspectionType}</h2><button onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold" type="button">{isSaving ? '...' : 'SALVAR'}</button></div>
+                    <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button type="button" onClick={() => onNavigate(`category_${inspectionType}`)} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full focus:outline-none"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">{inspectionType}</h2><button type="button" onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold focus:outline-none">{isSaving ? '...' : 'SALVAR'}</button></div>
                     <div className="flex-1 overflow-y-auto p-2 space-y-4">
                         <div className="bg-white p-4 rounded-xl space-y-4">
                             <input value={form.equipmentName} onChange={e=>setForm({...form, equipmentName:e.target.value})} className="w-full bg-gray-100 p-3 rounded font-bold" />
@@ -1079,18 +1057,11 @@
             );
         };
 
-        const ListScreen = ({ data, onNavigate, onToggleDelete, onDeletePermanently, onImportData, currentUser, showAlert, showConfirm, userRole, onEditItem }) => {
+        const ListScreen = ({ data, onNavigate, onToggleDelete, onDeletePermanently, currentUser, showAlert, showConfirm, userRole, onEditItem, onOpenMenu }) => {
             const [showFilter, setShowFilter] = useState(false);
-            const [showPdfModal, setShowPdfModal] = useState(false); 
-            const [showBackupModal, setShowBackupModal] = useState(false);
             const [showBin, setShowBin] = useState(false);
             const [filters, setFilters] = useState({ startDate: '', endDate: '', type: '', responsible: '', moduleLocation: '' });
-            const [expandedSections, setExpandedSections] = useState({}); 
             const [selectedIds, setSelectedIds] = useState(new Set()); 
-            const fileInputRef = useRef(null);
-            const [viewMonth, setViewMonth] = useState(new Date().toISOString().slice(0, 7));
-            const [pdfMonth, setPdfMonth] = useState(new Date().toISOString().slice(0, 7)); 
-            
             const [openMonths, setOpenMonths] = useState({});
             const [openCategories, setOpenCategories] = useState({});
             
@@ -1100,17 +1071,6 @@
 
             const toggleMonth = (m) => setOpenMonths(prev => ({...prev, [m]: !prev[m]}));
             const toggleCategory = (key) => setOpenCategories(prev => ({...prev, [key]: !prev[key]}));
-
-            const formatMonthFolder = (yyyy_mm) => {
-                if(!yyyy_mm) return "DATA INVÁLIDA";
-                try {
-                    const [year, month] = yyyy_mm.split('-');
-                    const date = new Date(parseInt(year), parseInt(month) - 1);
-                    return date.toLocaleString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase();
-                } catch(e) { return yyyy_mm; }
-            };
-            
-            const formatMonthDisplay = formatMonthFolder;
 
             const deletedData = Array.isArray(data) ? data.filter(item => item.deleted).sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)) : [];
             
@@ -1133,6 +1093,7 @@
             const groupedStructure = useMemo(() => {
                 const struct = {};
                 activeData.forEach(item => {
+                    if (!item.created_at) return;
                     const monthKey = item.created_at.slice(0, 7); 
                     if (!struct[monthKey]) struct[monthKey] = { EXTINTOR: [], HIDRANTE: [], RONDA: [] };
                     const type = item.type || 'EXTINTOR';
@@ -1142,7 +1103,6 @@
             }, [activeData]);
 
             const sortedMonths = Object.keys(groupedStructure).sort().reverse();
-            const displayList = showBin ? deletedData : activeData; 
             const responsibles = useMemo(() => { const unique = new Set(); if (Array.isArray(data)) { data.forEach(item => { if (item && item.responsible) unique.add(item.responsible); }); } return [...unique]; }, [data]);
             const handleSelectAll = () => { if (showBin) { if (selectedIds.size === deletedData.length) setSelectedIds(new Set()); else setSelectedIds(new Set(deletedData.map(i => i.id))); } else { if (selectedIds.size === activeData.length) setSelectedIds(new Set()); else setSelectedIds(new Set(activeData.map(i => i.id))); } };
             const toggleSelection = (id) => { const newSet = new Set(selectedIds); if (newSet.has(id)) newSet.delete(id); else newSet.add(id); setSelectedIds(newSet); };
@@ -1151,87 +1111,20 @@
             const confirmBulkRestore = () => { if (selectedIds.size === 0) return; showConfirm(`Restaurar ${selectedIds.size} itens?`, async () => { const promises = Array.from(selectedIds).map(id => onToggleDelete(id, false)); await Promise.all(promises); setSelectedIds(new Set()); showAlert(`${selectedIds.size} itens restaurados!`, "success"); }, "info"); };
             const confirmBulkDelete = () => { if (selectedIds.size === 0) return; showConfirm(`EXCLUIR ${selectedIds.size} itens?`, async () => { const promises = Array.from(selectedIds).map(id => onDeletePermanently(id)); const results = await Promise.all(promises); const success = results.filter(r => r).length; setSelectedIds(new Set()); if(results.length - success > 0) showAlert(`${success} excluídos. Falha em ${results.length - success}.`, "warning"); else showAlert(`${success} itens excluídos!`, "success"); }, "error"); };
             const confirmBulkSoftDelete = () => { if (selectedIds.size === 0) return; showConfirm(`Lixeira: ${selectedIds.size} itens?`, async () => { const promises = Array.from(selectedIds).map(id => onToggleDelete(id, true)); await Promise.all(promises); setSelectedIds(new Set()); showAlert(`${selectedIds.size} itens movidos!`, "success"); }, "warning"); };
-            const handleExport = () => { const jsonString = JSON.stringify(data, null, 2); const blob = new Blob([jsonString], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup_trfire_${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); setShowBackupModal(false); };
-            const handleFileImport = (e) => { const file = e.target.files[0]; if(!file) return; const reader = new FileReader(); reader.onload = (ev) => { try { const json = JSON.parse(ev.target.result); onImportData(json); setShowBackupModal(false); } catch(err) { showAlert("Erro JSON.", "error"); } }; reader.readAsText(file); e.target.value = null; };
-            
-            const generateSpecificPDF = async (type) => { 
-                if (type === 'RONDA' && !isAdmin) { return showAlert("Acesso Negado: Apenas Administradores podem gerar relatórios de Ronda.", "error"); }
-                setShowPdfModal(false); 
-                const reportData = activeData.filter(item => { return (item.type || (type === 'RONDA' ? '' : 'EXTINTOR')) === type && item.created_at.slice(0, 7) === pdfMonth; });
-                if(reportData.length === 0) return showAlert(`Sem dados de ${type} em ${formatMonthFolder(pdfMonth)}.`, "warning"); 
-                const doc = new jsPDF({ orientation: "landscape" }); doc.setFillColor(243, 244, 246); doc.rect(0, 0, 297, 40, 'F'); doc.setTextColor(33, 33, 33); doc.setFontSize(22); let title = ""; if (type === 'EXTINTOR') title = "CHECK-LIST EXTINTORES MENSAL"; else if (type === 'HIDRANTE') title = "CHECK-LIST HIDRANTES MENSAL"; else if (type === 'RONDA') title = "RELATÓRIO DE RONDAS PREVENTIVAS"; doc.text(title, 14, 25); doc.setFontSize(10); doc.setTextColor(100, 100, 100); doc.text(`Mês de Referência: ${formatMonthFolder(pdfMonth)} | Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 35); doc.setFontSize(9); doc.setTextColor(33, 33, 33); doc.text("Parque Logístico: AERO GRU I", 280, 28, { align: "right" }); doc.text("Empresa: Vilella Assessoria em Segurança do Trabalho", 280, 35, { align: "right" }); 
-                const monthObj = new Date(pdfMonth + '-02'); const monthStr = monthObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase().replace('.', ''); const yearStr = monthObj.getFullYear(); const typeStr = type === 'EXTINTOR' ? 'Extintores' : (type === 'HIDRANTE' ? 'Hidrantes' : 'Rondas');
-                const uniqueResponsibles = [...new Set(reportData.map(i => i.responsible).filter(Boolean))]; const responsibleLabel = uniqueResponsibles.length === 1 ? uniqueResponsibles[0] : "Equipe"; const userStr = responsibleLabel.replace(/\s+/g, '-'); const fileName = `TRFIRE_Relatorio_${monthStr}-${yearStr}_${typeStr}_${userStr}.pdf`;
-                let body = []; let head = []; 
-                if (type === 'EXTINTOR') { head = [['Local', 'Equipamento', 'Data/Hora', 'Responsável', 'Tipo', 'Próx. Recarga', 'Próx. T. Hidro.', 'Possui Pictograma?', 'Sinalização de Solo?', 'Lacre Romp.?', 'Obstruído?', 'Observação']]; body = reportData.map(i => [ i.moduleLocation || '-', i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.extinguisherType || '-', i.nextRecharge || '-', i.nextHydro || '-', i.hasId ? 'SIM' : 'NÃO', i.floorSign ? 'SIM' : 'NÃO', i.q1 ? 'SIM' : 'NÃO', i.q2 ? 'SIM' : 'NÃO', i.obs || '' ]); } 
-                else if (type === 'HIDRANTE') { head = [['Local', 'Equipamento', 'Data/Hora', 'Responsável', 'Equip. Completo?', 'Desobstruído?', 'Lacre Romp.?', 'Próx. T. Hidro.', 'Observação']]; body = reportData.map(i => [ i.moduleLocation || '-', i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.h_complete ? 'SIM' : 'NÃO', i.h_unobstructed ? 'NÃO' : 'SIM', i.h_seal_broken ? 'SIM' : 'NÃO', i.nextHydro || '-', i.obs || '' ]); } 
-                else if (type === 'RONDA') { head = [['Local', 'Área Técnica', 'Data/Hora', 'Responsável', 'Condições', 'Status', 'Observação']]; body = reportData.map(i => [ i.sector || '-', i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.moduleLocation || '-', i.status || '-', i.obs || '' ]); } 
-                doc.autoTable({ head: head, body: body, startY: 45, theme: 'grid', headStyles: { fillColor: [224, 224, 224], textColor: [0, 0, 0], fontStyle: 'bold', lineWidth: 0.1, lineColor: [200, 200, 200] }, styles: { fontSize: 7, textColor: [50, 50, 50], lineColor: [230, 230, 230], lineWidth: 0.1, overflow: 'linebreak' }, alternateRowStyles: { fillColor: [255, 255, 255] } }); 
-                if (type === 'EXTINTOR') { let finalY = doc.lastAutoTable.finalY + 10; const counts = {}; reportData.forEach(item => { const t = item.extinguisherType || 'Indefinido'; counts[t] = (counts[t] || 0) + 1; }); if (finalY > 150) { doc.addPage(); finalY = 20; } doc.setFontSize(12); doc.setTextColor(33, 33, 33); doc.text("Resumo Quantitativo:", 14, finalY); const summaryBody = Object.entries(counts).map(([t, c]) => [t, c]); doc.autoTable({ head: [['Tipo', 'Quantidade']], body: summaryBody, startY: finalY + 5, theme: 'striped', tableWidth: 'wrap', styles: { fontSize: 9 } }); }
-                doc.save(fileName); 
-            };
-
-            const renderItem = (item) => {
-                const isHid = item.type === 'HIDRANTE';
-                const isRonda = item.type === 'RONDA';
-                const isSelected = selectedIds.has(item.id);
-                let statusColor = 'bg-gray-100 text-gray-700';
-                let statusText = '---';
-                if (isRonda) { 
-                    if(item.status === 'NÃO REALIZADA') { statusColor = 'bg-red-500 text-white border-red-600'; statusText = 'TAREFA NÃO REALIZADA'; } 
-                    else { statusColor = item.status === 'Conforme' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = item.status === 'Conforme' ? 'CONFORME' : 'NÃO CONFORME'; }
-                } else if (isHid) { statusColor = (item.h_complete && item.h_unobstructed && !item.h_seal_broken) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = (item.h_complete && item.h_unobstructed && !item.h_seal_broken) ? 'OK' : 'IRREGULAR'; } else { statusColor = (!item.q1 && !item.q2) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = (!item.q1) ? 'OK' : 'VIOLADO'; }
-                
-                const canDelete = isAdmin || (item.responsible === currentUser && !isRonda);
-
-                return (
-                    <div key={item.id} className={`p-4 rounded-xl shadow-sm border-l-4 flex justify-between items-center transition-all mb-2 ${showBin ? (isSelected ? 'bg-red-100 border-red-600' : 'bg-red-50 dark:bg-red-900/10 border-red-500 opacity-80') : 'bg-white dark:bg-gray-800 border-brand-red'}`}>
-                        <div className="flex items-center gap-3">
-                            {(isAdmin || showBin) && <div onClick={() => toggleSelection(item.id)} className={`w-6 h-6 rounded border-2 flex items-center justify-center cursor-pointer transition-colors ${selectedIds.has(item.id)?'bg-red-600 border-red-600 text-white':'border-red-300 bg-white'}`}>{selectedIds.has(item.id) && <i className="fas fa-check text-xs"></i>}</div>}
-                            <div>
-                                <span className="font-bold text-sm flex items-center gap-2">
-                                    {item.equipmentName}
-                                    {item.pendingSync && <i className="fas fa-cloud-upload-alt text-brand-orange text-xs" title="Sincronização pendente"></i>}
-                                </span>
-                                <span className="text-xs text-gray-500 font-bold block mt-0.5">{formatDate(item.created_at)} | {item.responsible}</span>
-                                {isRonda && <div className="text-xs text-gray-400 mt-1">Local: {item.sector} {item.moduleLocation ? `| ${item.moduleLocation}` : ''}</div>}
-                            </div>
-                            {(item.photo || item.hasPhoto) && <div className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-1 rounded flex items-center gap-1"><i className="fas fa-camera"></i></div>}
-                        </div>
-                        <div className="flex flex-col items-end gap-2">
-                            {showBin ? (
-                                <div className="flex gap-2">
-                                    <i onClick={() => onToggleDelete(item.id, false)} className="fas fa-trash-restore text-green-500 cursor-pointer"></i>
-                                    {isAdmin && <i onClick={() => onDeletePermanently(item.id)} className="fas fa-times text-red-500 cursor-pointer"></i>}
-                                </div>
-                            ) : (
-                                <div className="flex flex-col items-end">
-                                     <div className="flex items-center gap-2">
-                                        <span className={`inline-block text-[10px] px-2 py-0.5 rounded font-bold ${statusColor}`}>{statusText}</span>
-                                        {isAdmin && (
-                                            <button onClick={(e) => { e.stopPropagation(); onEditItem(item); }} className="w-8 h-8 flex items-center justify-center text-blue-500 hover:text-blue-700 transition-colors">
-                                                <i className="fas fa-pen"></i>
-                                            </button>
-                                        )}
-                                     </div>
-                                     {canDelete && <i onClick={() => onToggleDelete(item.id, true)} className="fas fa-trash text-red-300 cursor-pointer mt-1"></i>}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                );
-            };
 
             return (
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black relative">
-                    <div className="bg-red-900 text-white p-3 shadow-md flex justify-between items-center sticky top-0 z-20">
-                        <div className="flex items-center gap-2">{showBin ? (<button onClick={()=>setShowBin(false)} className="bg-white/20 px-3 py-1 rounded text-xs">VOLTAR</button>) : (<button onClick={()=>onNavigate('menu')} className="bg-orange-500 px-3 py-1 rounded text-xs font-bold shadow-sm">NOVA LEITURA</button>)}<span className="text-xs ml-2 font-bold">{showBin ? 'Lixeira' : 'Histórico'}</span></div>
-                        <div className="flex gap-3 items-center">
-                            {showBin && isAdmin && <button onClick={handleEmptyBin} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-xs font-bold shadow-sm">ESVAZIAR</button>}
-                            {!showBin && (<><i onClick={() => setShowFilter(!showFilter)} className="fas fa-filter text-lg text-yellow-400 cursor-pointer active:scale-95"></i><i onClick={() => setShowPdfModal(true)} className="fas fa-file-pdf text-lg cursor-pointer active:scale-95"></i>{isAdmin && <i onClick={() => setShowBackupModal(true)} className="fas fa-cloud-download-alt text-lg text-blue-300 cursor-pointer active:scale-95"></i>}</>)}
-                            <i onClick={() => setShowBin(!showBin)} className={`fas ${showBin ? 'fa-list' : 'fa-trash'} text-lg cursor-pointer active:scale-95`}></i>
+                    <div className="bg-gray-800 text-white p-3 shadow-md flex justify-between items-center sticky top-0 z-20">
+                        <div className="flex items-center gap-2">
+                            {showBin ? (<button type="button" onClick={()=>setShowBin(false)} className="bg-white/20 px-3 py-1 rounded text-xs focus:outline-none">VOLTAR</button>) : (<button type="button" onClick={()=>onNavigate('dashboard')} className="bg-white/20 w-8 h-8 rounded-full flex items-center justify-center shadow-sm focus:outline-none"><i className="fas fa-arrow-left"></i></button>)}
+                            <span className="text-sm font-bold uppercase tracking-wider ml-2">{showBin ? 'Lixeira' : 'Histórico Geral'}</span>
+                        </div>
+                        <div className="flex gap-4 items-center">
+                            {showBin && isAdmin && <button type="button" onClick={handleEmptyBin} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-xs font-bold shadow-sm focus:outline-none">ESVAZIAR</button>}
+                            {!showBin && (<button type="button" onClick={() => setShowFilter(!showFilter)} className="fas fa-filter text-lg text-yellow-400 cursor-pointer active:scale-95 focus:outline-none"></button>)}
+                            <button type="button" onClick={() => setShowBin(!showBin)} className={`fas ${showBin ? 'fa-list' : 'fa-trash'} text-lg cursor-pointer active:scale-95 text-red-400 focus:outline-none`}></button>
                             <div className="w-px h-6 bg-white/30 mx-1"></div>
-                            <i onClick={onOpenMenu} className="fas fa-bars text-xl cursor-pointer active:scale-95 p-1 focus:outline-none"></i>
+                            <button type="button" onClick={onOpenMenu} className="fas fa-bars text-xl cursor-pointer active:scale-95 focus:outline-none"></button>
                         </div>
                     </div>
                     {/* Toolbar */}
@@ -1239,21 +1132,20 @@
                         <div className="bg-gray-200 dark:bg-gray-800 p-2 flex justify-between items-center px-4">
                             <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{selectedIds.size} selecionados</span>
                             <div className="flex gap-2">
-                                <button onClick={handleSelectAll} className="text-blue-600 text-xs font-bold mr-2">TODOS</button>
-                                {showBin ? (<><button onClick={confirmBulkRestore} className="text-green-600 text-xs font-bold">RESTAURAR</button><button onClick={confirmBulkDelete} className="text-red-600 text-xs font-bold">EXCLUIR</button></>) : (<button onClick={confirmBulkSoftDelete} className="text-red-600 text-xs font-bold">LIXEIRA</button>)}
+                                <button type="button" onClick={handleSelectAll} className="text-blue-600 text-xs font-bold mr-2 focus:outline-none">TODOS</button>
+                                {showBin ? (<><button type="button" onClick={confirmBulkRestore} className="text-green-600 text-xs font-bold focus:outline-none">RESTAURAR</button><button type="button" onClick={confirmBulkDelete} className="text-red-600 text-xs font-bold focus:outline-none">EXCLUIR</button></>) : (<button type="button" onClick={confirmBulkSoftDelete} className="text-red-600 text-xs font-bold focus:outline-none">LIXEIRA</button>)}
                             </div>
                         </div>
                     )}
                     {/* Modais */}
-                    {showFilter && !showBin && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowFilter(false)}><div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-2xl w-64 border border-gray-200 dark:border-gray-700" onClick={e => e.stopPropagation()}><h3 className="font-bold mb-3 dark:text-white text-sm uppercase">Filtrar por</h3><div className="space-y-3"><div><label className="text-xs text-gray-500 block mb-1">De</label><input type="date" value={filters.startDate} onChange={e=>setFilters({...filters, startDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Até</label><input type="date" value={filters.endDate} onChange={e=>setFilters({...filters, endDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Tipo</label><select value={filters.type} onChange={e=>setFilters({...filters, type: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option><option value="EXTINTOR">Extintor</option><option value="HIDRANTE">Hidrante</option><option value="RONDA">Ronda</option></select></div><div><label className="text-xs text-gray-500 block mb-1">Responsável</label><select value={filters.responsible} onChange={e=>setFilters({...filters, responsible: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{responsibles.map(r => <option key={r} value={r}>{r}</option>)}</select></div><div><label className="text-xs text-gray-500 block mb-1">Módulo/Local</label><select value={filters.moduleLocation} onChange={e=>setFilters({...filters, moduleLocation: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{LOCATION_OPTIONS.map(l => <option key={l} value={l}>{l}</option>)}</select></div><div className="flex gap-2 pt-2"><button onClick={() => { setFilters({startDate:'', endDate:'', type:'', responsible:'', moduleLocation:''}); setViewMonth(new Date().toISOString().slice(0, 7)); }} className="flex-1 py-1 text-xs font-bold text-gray-500 bg-gray-200 dark:bg-gray-700 rounded">Limpar</button><button onClick={() => setShowFilter(false)} className="flex-1 py-1 text-xs font-bold text-white bg-brand-red rounded">Fechar</button></div></div></div></div>)}
-                    {showPdfModal && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm animate-fade-in text-center"><h3 className="text-lg font-bold mb-2 dark:text-white">Gerar Relatório</h3><div className="mb-6"><label className="text-xs text-gray-500 block mb-1">Selecione o Mês</label><input type="month" value={pdfMonth} onChange={(e) => setPdfMonth(e.target.value)} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white font-bold text-center" /></div><div className="space-y-3"><button onClick={() => generateSpecificPDF('EXTINTOR')} className="w-full py-3 bg-brand-red text-white font-bold rounded-xl shadow-md active:scale-95">Relatório de EXTINTORES</button><button onClick={() => generateSpecificPDF('HIDRANTE')} className="w-full py-3 bg-brand-orange text-white font-bold rounded-xl shadow-md active:scale-95">Relatório de HIDRANTES</button><button onClick={() => generateSpecificPDF('RONDA')} className="w-full py-3 bg-brand-blue text-white font-bold rounded-xl shadow-md active:scale-95">Relatório de RONDAS</button><button onClick={() => setShowPdfModal(false)} className="w-full py-3 bg-gray-200 text-gray-700 font-bold rounded-xl mt-2">Cancelar</button></div></div></div>)}
-                    {showBackupModal && isAdmin && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm animate-fade-in text-center"><h3 className="text-lg font-bold mb-4 dark:text-white flex items-center justify-center gap-2"><i className="fas fa-database text-blue-500"></i> Backup & Restauração</h3><div className="space-y-3"><button onClick={handleExport} className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2"><i className="fas fa-download"></i> EXPORTAR TUDO</button><div className="relative"><input type="file" ref={fileInputRef} onChange={handleFileImport} accept=".json" className="hidden" /><button onClick={() => fileInputRef.current.click()} className="w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2"><i className="fas fa-upload"></i> IMPORTAR DADOS</button></div><button onClick={() => setShowBackupModal(false)} className="w-full py-3 bg-gray-200 text-gray-700 font-bold rounded-xl mt-4">Fechar</button></div></div></div>)}
+                    {showFilter && !showBin && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowFilter(false)}><div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-2xl w-64 border border-gray-200 dark:border-gray-700" onClick={e => e.stopPropagation()}><h3 className="font-bold mb-3 dark:text-white text-sm uppercase">Filtrar por</h3><div className="space-y-3"><div><label className="text-xs text-gray-500 block mb-1">De</label><input type="date" value={filters.startDate} onChange={e=>setFilters({...filters, startDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Até</label><input type="date" value={filters.endDate} onChange={e=>setFilters({...filters, endDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Tipo</label><select value={filters.type} onChange={e=>setFilters({...filters, type: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option><option value="EXTINTOR">Extintor</option><option value="HIDRANTE">Hidrante</option><option value="RONDA">Ronda</option></select></div><div><label className="text-xs text-gray-500 block mb-1">Responsável</label><select value={filters.responsible} onChange={e=>setFilters({...filters, responsible: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{responsibles.map(r => <option key={r} value={r}>{r}</option>)}</select></div><div><label className="text-xs text-gray-500 block mb-1">Módulo/Local</label><select value={filters.moduleLocation} onChange={e=>setFilters({...filters, moduleLocation: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{LOCATION_OPTIONS.map(l => <option key={l} value={l}>{l}</option>)}</select></div><div className="flex gap-2 pt-2"><button type="button" onClick={() => { setFilters({startDate:'', endDate:'', type:'', responsible:'', moduleLocation:''}); }} className="flex-1 py-1 text-xs font-bold text-gray-500 bg-gray-200 dark:bg-gray-700 rounded focus:outline-none">Limpar</button><button type="button" onClick={() => setShowFilter(false)} className="flex-1 py-1 text-xs font-bold text-white bg-brand-red rounded focus:outline-none">Fechar</button></div></div></div></div>)}
                     
                     <div className="flex-1 overflow-y-auto p-3 space-y-2">
                         {showBin ? (
-                             deletedData.length === 0 ? <div className="text-center text-gray-500 mt-10">Lixeira vazia.</div> : deletedData.map(item => renderItem(item))
+                             deletedData.length === 0 ? <div className="text-center text-gray-500 mt-10">Lixeira vazia.</div> : deletedData.map(item => (
+                                 <HistoryItemCard key={item.id} item={item} showBin={true} isSelected={selectedIds.has(item.id)} toggleSelection={toggleSelection} onToggleDelete={onToggleDelete} onDeletePermanently={onDeletePermanently} isAdmin={isAdmin} currentUser={currentUser} />
+                             ))
                         ) : (
-                             // HISTÓRICO ORGANIZADO POR MÊS (SEM FILTRO DE MES ISOLADO)
                              sortedMonths.length === 0 ? <div className="text-center text-gray-500 mt-10">Nenhum registro encontrado.</div> : 
                              sortedMonths.map(monthKey => {
                                  const isOpen = openMonths[monthKey];
@@ -1262,7 +1154,7 @@
                                  
                                  return (
                                      <div key={monthKey} className="mb-2 bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-                                         <button onClick={() => toggleMonth(monthKey)} className="w-full flex justify-between items-center p-4 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 transition-colors">
+                                         <button type="button" onClick={() => toggleMonth(monthKey)} className="w-full flex justify-between items-center p-4 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 transition-colors focus:outline-none">
                                              <div className="flex items-center gap-3">
                                                  <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center"><i className={`fas ${isOpen ? 'fa-folder-open' : 'fa-folder'}`}></i></div>
                                                  <div className="text-left"><span className="block font-bold text-gray-800 dark:text-white">{formatMonthFolder(monthKey)}</span><span className="text-xs text-gray-500">{count} itens</span></div>
@@ -1271,10 +1163,10 @@
                                          </button>
                                          
                                          {isOpen && (
-                                             <div className="p-2 bg-white dark:bg-gray-900 space-y-2 animate-fade-in">
-                                                 {monthData.EXTINTOR.length > 0 && (<div className="border-l-4 border-brand-red pl-2 ml-2"><button onClick={() => toggleCategory(`${monthKey}-EXT`)} className="w-full flex justify-between items-center py-2 text-brand-red font-bold text-sm"><span><i className="fas fa-fire-extinguisher mr-2"></i>EXTINTORES ({monthData.EXTINTOR.length})</span><i className={`fas fa-chevron-${openCategories[`${monthKey}-EXT`] ? 'up' : 'down'}`}></i></button>{openCategories[`${monthKey}-EXT`] && <div className="space-y-2 mt-1">{monthData.EXTINTOR.map(item => renderItem(item))}</div>}</div>)}
-                                                 {monthData.HIDRANTE.length > 0 && (<div className="border-l-4 border-brand-orange pl-2 ml-2"><button onClick={() => toggleCategory(`${monthKey}-HID`)} className="w-full flex justify-between items-center py-2 text-brand-orange font-bold text-sm"><span><i className="fas fa-faucet mr-2"></i>HIDRANTES ({monthData.HIDRANTE.length})</span><i className={`fas fa-chevron-${openCategories[`${monthKey}-HID`] ? 'up' : 'down'}`}></i></button>{openCategories[`${monthKey}-HID`] && <div className="space-y-2 mt-1">{monthData.HIDRANTE.map(item => renderItem(item))}</div>}</div>)}
-                                                 {monthData.RONDA.length > 0 && (<div className="border-l-4 border-brand-blue pl-2 ml-2"><button onClick={() => toggleCategory(`${monthKey}-RND`)} className="w-full flex justify-between items-center py-2 text-brand-blue font-bold text-sm"><span><i className="fas fa-clipboard-check mr-2"></i>RONDAS ({monthData.RONDA.length})</span><i className={`fas fa-chevron-${openCategories[`${monthKey}-RND`] ? 'up' : 'down'}`}></i></button>{openCategories[`${monthKey}-RND`] && <div className="space-y-2 mt-1">{monthData.RONDA.map(item => renderItem(item))}</div>}</div>)}
+                                             <div className="p-2 bg-white dark:bg-gray-900 space-y-2 animate-fade-in border-t border-gray-100 dark:border-gray-800">
+                                                 {monthData.EXTINTOR.length > 0 && (<div className="border-l-4 border-brand-red pl-2 ml-2"><button type="button" onClick={() => toggleCategory(`${monthKey}-EXT`)} className="w-full flex justify-between items-center py-2 text-brand-red font-bold text-sm focus:outline-none"><span><i className="fas fa-fire-extinguisher mr-2"></i>EXTINTORES ({monthData.EXTINTOR.length})</span><i className={`fas fa-chevron-${openCategories[`${monthKey}-EXT`] ? 'up' : 'down'}`}></i></button>{openCategories[`${monthKey}-EXT`] && <div className="space-y-2 mt-1">{monthData.EXTINTOR.map(item => <HistoryItemCard key={item.id} item={item} showBin={false} isSelected={selectedIds.has(item.id)} toggleSelection={toggleSelection} onToggleDelete={onToggleDelete} isAdmin={isAdmin} currentUser={currentUser} onEditItem={onEditItem} />)}</div>}</div>)}
+                                                 {monthData.HIDRANTE.length > 0 && (<div className="border-l-4 border-brand-orange pl-2 ml-2"><button type="button" onClick={() => toggleCategory(`${monthKey}-HID`)} className="w-full flex justify-between items-center py-2 text-brand-orange font-bold text-sm focus:outline-none"><span><i className="fas fa-faucet mr-2"></i>HIDRANTES ({monthData.HIDRANTE.length})</span><i className={`fas fa-chevron-${openCategories[`${monthKey}-HID`] ? 'up' : 'down'}`}></i></button>{openCategories[`${monthKey}-HID`] && <div className="space-y-2 mt-1">{monthData.HIDRANTE.map(item => <HistoryItemCard key={item.id} item={item} showBin={false} isSelected={selectedIds.has(item.id)} toggleSelection={toggleSelection} onToggleDelete={onToggleDelete} isAdmin={isAdmin} currentUser={currentUser} onEditItem={onEditItem} />)}</div>}</div>)}
+                                                 {monthData.RONDA.length > 0 && (<div className="border-l-4 border-brand-blue pl-2 ml-2"><button type="button" onClick={() => toggleCategory(`${monthKey}-RND`)} className="w-full flex justify-between items-center py-2 text-brand-blue font-bold text-sm focus:outline-none"><span><i className="fas fa-clipboard-check mr-2"></i>RONDAS ({monthData.RONDA.length})</span><i className={`fas fa-chevron-${openCategories[`${monthKey}-RND`] ? 'up' : 'down'}`}></i></button>{openCategories[`${monthKey}-RND`] && <div className="space-y-2 mt-1">{monthData.RONDA.map(item => <HistoryItemCard key={item.id} item={item} showBin={false} isSelected={selectedIds.has(item.id)} toggleSelection={toggleSelection} onToggleDelete={onToggleDelete} isAdmin={isAdmin} currentUser={currentUser} onEditItem={onEditItem} />)}</div>}</div>)}
                                              </div>
                                          )}
                                      </div>
@@ -1290,22 +1182,32 @@
         // APP COMPONENT (Main)
         // =========================================================================
         function App() {
-            // ... (useState Initializer changed to support immediate logout check) ...
             const [page, setPage] = useState(() => {
                 const user = localStorage.getItem('trfire_user');
                 const storedLastActivity = parseInt(localStorage.getItem('trfire_last_activity') || '0');
                 const now = Date.now();
-                const TIMEOUT_MS = 10 * 60 * 1000; // 10 min
+                const TIMEOUT_MS = 10 * 60 * 1000;
 
-                // If user exists BUT time has passed, force logout immediately
                 if (user && (now - storedLastActivity > TIMEOUT_MS)) {
-                    localStorage.removeItem('trfire_user');
-                    localStorage.removeItem('trfire_unit');
-                    localStorage.removeItem('trfire_role');
+                    try {
+                        localStorage.removeItem('trfire_user');
+                        localStorage.removeItem('trfire_unit');
+                        localStorage.removeItem('trfire_role');
+                    } catch(e){}
                     return 'responsible';
                 }
                 
-                return user ? 'menu' : 'responsible';
+                let savedPage = null;
+                try { savedPage = localStorage.getItem('trfire_current_page'); } catch(e){}
+                
+                if (user) {
+                    // Evita travamento se o cache antigo pedir 'menu' que não existe mais
+                    if (savedPage && savedPage !== 'responsible' && savedPage !== 'menu') {
+                        return savedPage;
+                    }
+                    return 'dashboard';
+                }
+                return 'responsible';
             });
             const [responsible, setResponsible] = useState(localStorage.getItem('trfire_user') || '');
             const [currentUnit, setCurrentUnit] = useState(localStorage.getItem('trfire_unit') || '');
@@ -1322,36 +1224,36 @@
             const [lastActivity, setLastActivity] = useState(Date.now());
             const [deferredPrompt, setDeferredPrompt] = useState(null);
             
-            // Controle de estado do Menu Lateral
             const [isMenuOpen, setIsMenuOpen] = useState(false);
+            const [isReportOpen, setIsReportOpen] = useState(false);
+            const [isBackupOpen, setIsBackupOpen] = useState(false);
 
-            // NOVO: Loading state para evitar renderização sem dados
             const [loading, setLoading] = useState(true);
             const [isOnline, setIsOnline] = useState(navigator.onLine);
 
             const showAlert = (message, type = 'info', onCloseAction = null) => { setNotification({ isOpen: true, message, type, isConfirmation: false, onConfirm: null, onCloseAction }); };
             const showConfirm = (message, onConfirmAction, type = 'warning') => { setNotification({ isOpen: true, message, type, isConfirmation: true, onConfirm: onConfirmAction }); };
             const closeNotification = () => { if(notification.onCloseAction) notification.onCloseAction(); setNotification({ ...notification, isOpen: false, onCloseAction: null }); };
-            const navigateTo = (newPage) => { try { window.history.pushState({ page: newPage }, "", `?page=${newPage}`); } catch (e) { } localStorage.setItem('trfire_current_page', newPage); setPage(newPage); };
+            
+            // NAVEGAÇÃO SEGURA (Simples mudança de State)
+            const navigateTo = (newPage) => { 
+                try { localStorage.setItem('trfire_current_page', newPage); } catch (e) { console.warn("Aviso LocalStorage:", e); }
+                setPage(newPage); 
+            };
             
             useEffect(() => { 
                 const handleOnline = () => { setIsOnline(true); showAlert("Conexão restabelecida! Sincronizando dados...", "success"); };
-                const handleOffline = () => { setIsOnline(false); showAlert("Sem internet! O App continuará funcionando offline. Não atualize a página.", "warning"); };
+                const handleOffline = () => { setIsOnline(false); showAlert("Sem internet! O App continuará funcionando offline.", "warning"); };
                 window.addEventListener('online', handleOnline);
                 window.addEventListener('offline', handleOffline);
                 return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
             }, []);
 
             useEffect(() => { const h = (e) => { e.preventDefault(); setDeferredPrompt(e); }; window.addEventListener('beforeinstallprompt', h); return () => window.removeEventListener('beforeinstallprompt', h); }, []);
-            const handleInstallClick = () => { if (deferredPrompt) { deferredPrompt.prompt(); setDeferredPrompt(null); } else { showAlert("Instale via menu do navegador.", "info"); } };
-            useEffect(() => { const h = (e) => { if (e.state && e.state.page) setPage(e.state.page); }; window.addEventListener('popstate', h); return () => window.removeEventListener('popstate', h); }, []);
-            useEffect(() => { const savedPage = localStorage.getItem('trfire_current_page'); if (savedPage && savedPage !== 'responsible' && localStorage.getItem('trfire_user')) { setPage(savedPage); } }, []);
-            useEffect(() => { if (page === 'responsible') return; const TIMEOUT_MS = 10 * 60 * 1000; const updateActivity = () => { setLastActivity(Date.now()); localStorage.setItem('trfire_last_activity', Date.now().toString()); }; const checkInactivity = () => { const storedLastActivity = parseInt(localStorage.getItem('trfire_last_activity') || Date.now()); if (Date.now() - storedLastActivity > TIMEOUT_MS) { showAlert("Sessão encerrada.", "warning", () => { localStorage.removeItem('trfire_user'); localStorage.removeItem('trfire_role'); window.location.reload(); }); } }; const intervalId = setInterval(checkInactivity, 60000); document.addEventListener("visibilitychange", () => { if(document.visibilityState === 'visible') checkInactivity(); }); const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click']; events.forEach(e => document.addEventListener(e, updateActivity)); updateActivity(); return () => { clearInterval(intervalId); events.forEach(e => document.removeEventListener(e, updateActivity)); }; }, [page]);
+            
+            useEffect(() => { if (page === 'responsible') return; const TIMEOUT_MS = 10 * 60 * 1000; const updateActivity = () => { setLastActivity(Date.now()); try { localStorage.setItem('trfire_last_activity', Date.now().toString()); }catch(e){} }; const checkInactivity = () => { const storedLastActivity = parseInt(localStorage.getItem('trfire_last_activity') || Date.now()); if (Date.now() - storedLastActivity > TIMEOUT_MS) { showAlert("Sessão encerrada.", "warning", () => { localStorage.removeItem('trfire_user'); localStorage.removeItem('trfire_role'); window.location.reload(); }); } }; const intervalId = setInterval(checkInactivity, 60000); document.addEventListener("visibilitychange", () => { if(document.visibilityState === 'visible') checkInactivity(); }); const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click']; events.forEach(e => document.addEventListener(e, updateActivity)); updateActivity(); return () => { clearInterval(intervalId); events.forEach(e => document.removeEventListener(e, updateActivity)); }; }, [page]);
 
             async function checkAndGenerateMissedRounds(currentDb) {
-                // REMOVIDA RESTRIÇÃO DE ADMIN
-                // if (localStorage.getItem('trfire_role') !== 'ADMIN') return;
-                
                 if (!dbFirestore) return;
                 const now = new Date();
                 const currentHour = now.getHours();
@@ -1365,7 +1267,7 @@
                 let responsibleName = null;
                 try { const shiftLogDoc = await dbFirestore.collection("shift_logs").doc(shiftId).get(); if (shiftLogDoc.exists) { responsibleName = shiftLogDoc.data().responsible; } else { return; } } catch (e) { console.error(e); return; }
                 const locationsToCheck = roundLocationsList.length > 0 ? roundLocationsList.map(l => l.name) : DEFAULT_ROUND_LOCATIONS;
-                for (const loc of locationsToCheck) { const hasInspection = currentDb.some(item => { if (item.type !== 'RONDA' || item.deleted || item.sector !== loc) return false; const itemDate = new Date(item.created_at); return itemDate >= targetRange.start && itemDate <= targetRange.end; }); const safeLocId = loc.replace(/[^a-zA-Z0-9]/g, ''); const autoDocId = `AUTO_${targetRange.id}_${safeLocId}`; const alreadyAutoRegistered = currentDb.some(item => item.id === autoDocId); if (!hasInspection && !alreadyAutoRegistered) { try { await dbFirestore.collection("inspections").doc(autoDocId).set({ type: 'RONDA', sector: loc, equipmentName: 'AUDITORIA AUTOMÁTICA', status: 'NÃO REALIZADA', auto: true, obs: `Inspeção não realizada. Turno supervisionado por: ${responsibleName}`, responsible: responsibleName, created_at: targetRange.end.toISOString(), deleted: false }); } catch (e) { console.error(e); } } }
+                for (const loc of locationsToCheck) { const hasInspection = currentDb.some(item => { if (item.type !== 'RONDA' || item.deleted || item.sector !== loc) return false; if (!item.created_at) return false; const itemDate = new Date(item.created_at); return itemDate >= targetRange.start && itemDate <= targetRange.end; }); const safeLocId = loc.replace(/[^a-zA-Z0-9]/g, ''); const autoDocId = `AUTO_${targetRange.id}_${safeLocId}`; const alreadyAutoRegistered = currentDb.some(item => item.id === autoDocId); if (!hasInspection && !alreadyAutoRegistered) { try { await dbFirestore.collection("inspections").doc(autoDocId).set({ type: 'RONDA', sector: loc, equipmentName: 'AUDITORIA AUTOMÁTICA', status: 'NÃO REALIZADA', auto: true, obs: `Inspeção não realizada. Turno supervisionado por: ${responsibleName}`, responsible: responsibleName, created_at: targetRange.end.toISOString(), deleted: false }); } catch (e) { console.error(e); } } }
             }
             
             async function checkAndCleanupTrash(currentDb) {
@@ -1382,16 +1284,11 @@
                 const unsub1 = q.onSnapshot({ includeMetadataChanges: true }, s => { 
                     const d=[]; s.forEach(doc=>d.push({id:doc.id, pendingSync: doc.metadata.hasPendingWrites, ...doc.data()})); 
                     setDb(d); 
-                    
-                    // AUDITORIA AGORA É ACIONADA PARA QUALQUER USUÁRIO LOGADO
-                    // (Removido o if isAdmin para garantir que a auditoria aconteça sempre que alguém abrir o app)
                     checkAndGenerateMissedRounds(d); 
-                    
                     checkAndCleanupTrash(d); 
                     setLoading(false); 
                 }, err => {
                     console.error("Erro ao ler inspeções:", err);
-                    // Não setamos loading false aqui para forçar retry ou mostrar erro noutro lugar se crítico
                 });
                 
                 const unsub2 = dbFirestore.collection("users").onSnapshot(s => { const u=[]; s.forEach(doc=>u.push({id:doc.id,...doc.data()})); setUsers(u); const adminUser = u.find(user => user.name === "ADMIN"); if (adminUser && (!adminUser.role || adminUser.role !== "ADMIN")) { dbFirestore.collection("users").doc(adminUser.id).update({ role: "ADMIN", unit: "GLOBAL" }); } }, err => console.error(err));
@@ -1402,9 +1299,11 @@
 
             const handleSave = async (d) => { 
                 try { 
-                    // Sem await para evitar travamento da UI em modo offline
                     dbFirestore.collection("inspections").add({...d, unit: currentUnit}).catch(e => console.error("Offline Save:", e)); 
-                    setPage('list'); 
+                    
+                    if(d.type === 'RONDA') navigateTo('roundsLocation');
+                    else navigateTo(`category_${d.type}`);
+                    
                     if (!navigator.onLine) { showAlert("Salvo LOCALMENTE! Sincronização pendente.", "warning"); }
                     return true; 
                 } catch(e){ 
@@ -1421,19 +1320,13 @@
             const handleUpdateRoundLocation = async (id, d) => dbFirestore.collection("round_locations").doc(id).update(d).catch(e=>console.error(e));
             const handleDeleteRoundLocation = async (id) => dbFirestore.collection("round_locations").doc(id).delete().catch(e=>console.error(e));
             
-            // FIX: OPTIMISTIC UPDATE FOR SOFT DELETE
             const onToggleDelete = async (id, status) => { 
                 if(!dbFirestore) return; 
-                
-                // 1. Optimistic Update (Immediate Feedback)
                 setDb(prev => prev.map(item => item.id === id ? { ...item, deleted: status, deleted_at: status ? new Date().toISOString() : null } : item));
-
                 try { 
                     const docRef = dbFirestore.collection("inspections").doc(id); 
                     const updateData = { deleted: status };
                     if (status) { updateData.deleted_at = new Date().toISOString(); } else { updateData.deleted_at = null; }
-                    
-                    // Sem await para não travar offline
                     docRef.update(updateData).catch(e => console.error("Offline Update:", e)); 
                     if (!navigator.onLine) { showAlert("Movido para a lixeira LOCALMENTE.", "info"); }
                 } catch (e) { 
@@ -1441,15 +1334,10 @@
                 } 
             };
             
-            // FIX: OPTIMISTIC UPDATE FOR PERMANENT DELETE (COMPAT SYNTAX)
             const onDeletePermanently = async (id) => {
                 if(!dbFirestore) return false;
-                
-                // 1. Optimistic Update (Remove from local state immediately)
                 setDb(prev => prev.filter(item => item.id !== id));
-                
                 try {
-                    // Sem await para não travar offline
                     dbFirestore.collection("inspections").doc(id).delete().catch(e => console.error("Offline Delete:", e));
                     if (!navigator.onLine) { showAlert("Exclusão agendada LOCALMENTE.", "info"); }
                     return true;
@@ -1463,13 +1351,15 @@
             const onImportData = (j) => { j.forEach(i=>dbFirestore.collection("inspections").add(i).catch(e=>console.error(e))); };
             
             const handleLogin = (name, unitName, role, showWelcome = true) => { 
-                localStorage.setItem('trfire_user', name); 
-                localStorage.setItem('trfire_unit', unitName); 
-                localStorage.setItem('trfire_role', role); 
+                try {
+                    localStorage.setItem('trfire_user', name); 
+                    localStorage.setItem('trfire_unit', unitName); 
+                    localStorage.setItem('trfire_role', role); 
+                } catch(e){}
                 setResponsible(name); 
                 setCurrentUnit(unitName); 
                 setUserRole(role); 
-                setPage('menu');
+                setPage('dashboard');
                 if(showWelcome) showAlert(`Bem-vindo, ${name}!\nPerfil: ${role}`, "welcome");
 
                 if (dbFirestore) {
@@ -1487,38 +1377,40 @@
             };
 
             const handleStartInspection = (t) => { 
-                // Clear old temp data when starting fresh
-                localStorage.removeItem('trfire_temp_form');
-                localStorage.removeItem('trfire_temp_round');
+                try {
+                    localStorage.removeItem('trfire_temp_form');
+                    localStorage.removeItem('trfire_temp_round');
+                } catch(e){}
                 setScanRes(null);
                 setInspectionType(t); 
-                navigateTo('scan'); // Use navigateTo to save page state
+                navigateTo('scan');
             };
             const handleRoundStart = (l) => { 
-                localStorage.removeItem('trfire_temp_form');
-                localStorage.removeItem('trfire_temp_round');
+                try {
+                    localStorage.removeItem('trfire_temp_form');
+                    localStorage.removeItem('trfire_temp_round');
+                } catch(e){}
                 setScanRes(null);
                 setRoundLocation(l); 
                 setInspectionType('RONDA'); 
-                navigateTo('scan'); // Use navigateTo to save page state
+                navigateTo('scan');
             };
             
             const performLogout = () => {
-                localStorage.removeItem('trfire_user');
-                localStorage.removeItem('trfire_role');
-                localStorage.removeItem('trfire_unit');
+                try {
+                    localStorage.removeItem('trfire_user');
+                    localStorage.removeItem('trfire_role');
+                    localStorage.removeItem('trfire_unit');
+                    localStorage.removeItem('trfire_current_page');
+                } catch(e){}
                 window.location.reload();
             };
 
-            // NEW: Handle Edit Item
             const handleEditItem = (item) => {
-                // Set the item as "scan result" so the form picks it up as initialData
                 setScanRes(item);
                 setInspectionType(item.type);
-                
-                // Determine page
                 if (item.type === 'RONDA') {
-                    setRoundLocation(item.sector); // For rounds, we need sector set
+                    setRoundLocation(item.sector); 
                     navigateTo('roundsForm');
                 } else {
                     navigateTo('form');
@@ -1527,7 +1419,6 @@
 
             if (authError) return <AuthErrorScreen error={authError} />;
 
-            // TELA DE LOADING GLOBAL
             if (loading && !authError) {
                 return (
                     <div className="flex flex-col h-screen w-full items-center justify-center bg-gray-100 dark:bg-gray-900">
@@ -1546,11 +1437,16 @@
                     )}
                     <NotificationModal isOpen={notification.isOpen} message={notification.message} type={notification.type} isConfirmation={notification.isConfirmation} onClose={closeNotification} onConfirm={notification.onConfirm} />
                     
+                    <ReportModal isOpen={isReportOpen} onClose={() => setIsReportOpen(false)} data={db} showAlert={showAlert} isAdmin={userRole === 'ADMIN'} />
+                    <BackupModal isOpen={isBackupOpen} onClose={() => setIsBackupOpen(false)} data={db} onImportData={onImportData} showAlert={showAlert} />
+
                     <GlobalSidebar 
                         isOpen={isMenuOpen} 
                         onClose={() => setIsMenuOpen(false)} 
                         onNavigate={navigateTo} 
-                        onStartInspection={handleStartInspection} 
+                        onOpenReport={() => setIsReportOpen(true)}
+                        onOpenBackup={() => setIsBackupOpen(true)}
+                        usersList={users}
                         userRole={userRole} 
                         responsibleName={responsible} 
                         currentUnit={currentUnit} 
@@ -1558,21 +1454,21 @@
                     />
 
                     {page === 'responsible' && <ResponsibleScreen onConfirm={handleLogin} usersList={users} unitsList={units} showAlert={showAlert} onNavigate={navigateTo} isOnline={isOnline} />}
-                    {page === 'menu' && <MenuScreen onNavigate={navigateTo} responsibleName={responsible} currentUnit={currentUnit} onStartInspection={handleStartInspection} usersList={users} userRole={userRole} isOnline={isOnline} onOpenMenu={() => setIsMenuOpen(true)} />}
+                    {page === 'dashboard' && <DashboardScreen data={db} onOpenMenu={() => setIsMenuOpen(true)} />}
                     {page === 'adminMenu' && <AdminMenuScreen onNavigate={navigateTo} onOpenMenu={() => setIsMenuOpen(true)} />}
-                    {page === 'dashboard' && <DashboardScreen onNavigate={navigateTo} data={db} onOpenMenu={() => setIsMenuOpen(true)} />}
                     {page === 'accessControl' && <AccessControlScreen onNavigate={navigateTo} usersList={users} onUpdatePermissions={(id,p)=>dbFirestore.collection("users").doc(id).update({permissions:p})} />}
-                    {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={navigateTo} onSelectLocation={handleRoundStart} db={db} responsibleName={responsible} roundLocationsList={roundLocationsList} onOpenMenu={() => setIsMenuOpen(true)} />}
+                    {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={navigateTo} onSelectLocation={handleRoundStart} db={db} roundLocationsList={roundLocationsList} onOpenMenu={() => setIsMenuOpen(true)} />}
                     {page === 'userRegister' && <UserRegisterScreen onNavigate={navigateTo} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} />}
                     {page === 'unitRegister' && <UnitRegisterScreen onNavigate={navigateTo} onSaveUnit={handleSaveUnit} unitsList={units} onUpdateUnit={handleUpdateUnit} onDeleteUnit={handleDeleteUnit} showAlert={showAlert} showConfirm={showConfirm} />}
                     {page === 'roundLocRegister' && <RoundLocationsRegisterScreen onNavigate={navigateTo} onSaveLocation={handleSaveRoundLocation} onUpdateLocation={handleUpdateRoundLocation} locationsList={roundLocationsList} onDeleteLocation={handleDeleteRoundLocation} showAlert={showAlert} showConfirm={showConfirm} />}
-                    {page === 'scan' && <ScannerScreen onNavigate={(t) => {
-                         const nextPage = t === 'menu' && inspectionType === 'RONDA' ? 'roundsLocation' : t;
-                         navigateTo(nextPage);
-                    }} onScanSuccess={(d)=>{setScanRes(d); navigateTo(inspectionType === 'RONDA' ? 'roundsForm' : 'form')}} db={db} inspectionType={inspectionType} showAlert={showAlert} />}
+                    
+                    {page.startsWith('category_') && <CategoryScreen type={page.split('_')[1]} db={db} onStartInspection={handleStartInspection} onToggleDelete={onToggleDelete} onDeletePermanently={onDeletePermanently} currentUser={responsible} userRole={userRole} onEditItem={handleEditItem} onOpenMenu={() => setIsMenuOpen(true)} />}
+
+                    {page === 'scan' && <ScannerScreen onNavigate={navigateTo} onScanSuccess={(d)=>{setScanRes(d); navigateTo(inspectionType === 'RONDA' ? 'roundsForm' : 'form')}} db={db} inspectionType={inspectionType} showAlert={showAlert} />}
                     {page === 'form' && <FormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} onSave={handleSave} inspectionType={inspectionType} showAlert={showAlert} />}
                     {page === 'roundsForm' && <RoundsFormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} roundLocation={roundLocation} onSave={handleSave} currentUnit={currentUnit} showAlert={showAlert} />}
-                    {page === 'list' && <ListScreen data={db} onNavigate={navigateTo} onToggleDelete={onToggleDelete} onDeletePermanently={onDeletePermanently} onImportData={onImportData} currentUser={responsible} userRole={userRole} showAlert={showAlert} showConfirm={showConfirm} onEditItem={handleEditItem} onOpenMenu={() => setIsMenuOpen(true)} />}
+                    
+                    {page === 'list' && <ListScreen data={db} onNavigate={navigateTo} onToggleDelete={onToggleDelete} onDeletePermanently={onDeletePermanently} currentUser={responsible} userRole={userRole} showAlert={showAlert} showConfirm={showConfirm} onEditItem={handleEditItem} onOpenMenu={() => setIsMenuOpen(true)} />}
                     {page === 'adminSetup' && <UserRegisterScreen onNavigate={navigateTo} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} backDestination="responsible" />}
                 </ErrorBoundary>
             );
@@ -1581,8 +1477,6 @@
         const rootElement = document.getElementById('root');
         if (rootElement) {
             const root = ReactDOM.createRoot(rootElement);
-            // Renderização direta no final do ficheiro
-            // Assegurando que todas as 'functions' (hoisted) estão disponíveis
             root.render(<App />);
         } else {
             console.error("ERRO CRÍTICO: Elemento #root não encontrado no DOM.");

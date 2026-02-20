@@ -3,17 +3,19 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO MESTRE V85.0 (Telas Dedicadas por Categoria)
+    VERSÃO MESTRE V86.0 (Sublocais em Extintores e Hidrantes)
     ============================================================================
     RESUMO DAS ALTERAÇÕES:
-    1. TELAS DE CATEGORIA:
-       - Adicionado 'EquipmentCategoryScreen'.
-       - Ao clicar em Extintores ou Hidrantes, abre-se uma tela com o botão 
-         de QR Code no topo e o histórico em pastas abaixo.
+    1. SUBLOCAIS DINÂMICOS:
+       - Nova coleção no Firebase 'sub_locations'.
+       - Campo 'subLocation' adicionado ao formulário de Extintores e Hidrantes.
+       - Lista suspensa que se habilita apenas após selecionar o Local principal.
+       - Botão de cadastro "+ CADASTRAR NOVO SUBLOCAL" direto na lista.
        
-    2. NAVEGAÇÃO:
-       - O Scanner e o Formulário agora retornam para a tela da categoria
-         após cancelar ou salvar a inspeção.
+    2. VISUALIZAÇÃO GERAL:
+       - Painéis de Histórico, Categoria e Dashboard atualizados para mostrar 
+         "Local - Sublocal".
+       - Relatório em PDF atualizado para exibir as duas informações juntas.
     ============================================================================
     -->
 
@@ -267,14 +269,25 @@
                     <div className="absolute bottom-2 w-full text-center space-y-1"><div className="text-white/90 text-[10px] text-center mb-0.5 leading-tight font-medium"><p>Copyright © 2026 Fire Personality ME</p><p>Todos os direitos reservados</p><p>(Thawillys Rocha)</p></div><p className="text-white/40 text-[10px]">Versão Beta 1.5</p></div>
                 </div>
             );
-        };
+        }
 
-        function SidebarMenu({ isOpen, onClose, onNavigate, responsibleName, currentUnit, userRole, usersList, onOpenCategory }) {
+        function SidebarMenu({ isOpen, onClose, onNavigate, responsibleName, currentUnit, userRole, usersList, unitsList, onOpenCategory }) {
             if (!isOpen) return null;
             
             const isAdmin = ['ADMIN', 'SUPERVISOR', 'COORDENADOR'].includes(userRole);
             const userPerms = usersList?.find(u => u.name === responsibleName)?.permissions || ['EXTINTOR', 'HIDRANTE', 'HISTORICO'];
-            const hasAccess = (perm) => isAdmin || userPerms.includes(perm);
+            
+            const unitObj = unitsList?.find(u => u.name === currentUnit);
+            const unitModules = unitObj?.modules || ['EXTINTOR', 'HIDRANTE', 'RONDA'];
+
+            const hasAccess = (perm) => {
+                const userHasPerm = isAdmin || userPerms.includes(perm);
+                const unitHasPerm = currentUnit === 'GLOBAL' || unitModules.includes(perm);
+                if (['EXTINTOR', 'HIDRANTE', 'RONDA'].includes(perm)) {
+                    return userHasPerm && unitHasPerm;
+                }
+                return userHasPerm;
+            };
             
             const handleNav = (target, type = null) => {
                 onClose();
@@ -305,13 +318,18 @@
                                 <div className="w-10 flex justify-center"><i className="fas fa-chart-pie text-brand-orange text-lg"></i></div> Dashboard
                             </button>
                             
+                            {(hasAccess('RONDA') || hasAccess('EXTINTOR') || hasAccess('HIDRANTE')) && (
+                                <div className="pt-4 pb-2 px-3">
+                                    <p className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">Módulos</p>
+                                </div>
+                            )}
+
                             {hasAccess('RONDA') && (
                                 <button onClick={()=>handleNav('roundsLocation')} className="w-full flex items-center p-3 text-left text-gray-700 dark:text-gray-200 font-bold hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors">
                                     <div className="w-10 flex justify-center"><i className="fas fa-clipboard-check text-brand-blue text-lg"></i></div> Ronda Diária
                                 </button>
                             )}
                             
-                            {/* Mudança: Agora chamamos onOpenCategory ('EXTINTOR' e 'HIDRANTE') */}
                             {hasAccess('EXTINTOR') && (
                                 <button onClick={()=>handleNav('equipmentCategory', 'EXTINTOR')} className="w-full flex items-center p-3 text-left text-gray-700 dark:text-gray-200 font-bold hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors">
                                     <div className="w-10 flex justify-center"><i className="fas fa-fire-extinguisher text-brand-red text-lg"></i></div> Extintores
@@ -323,7 +341,13 @@
                                     <div className="w-10 flex justify-center"><i className="fas fa-faucet text-brand-orange text-lg"></i></div> Hidrantes
                                 </button>
                             )}
-                            
+
+                            {(hasAccess('HISTORICO') || isAdmin) && (
+                                <div className="pt-4 pb-2 px-3 mt-2 border-t border-gray-100 dark:border-gray-800">
+                                    <p className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">Gestão</p>
+                                </div>
+                            )}
+
                             {hasAccess('HISTORICO') && (
                                 <button onClick={()=>handleNav('list')} className="w-full flex items-center p-3 text-left text-gray-700 dark:text-gray-200 font-bold hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors">
                                     <div className="w-10 flex justify-center"><i className="fas fa-history text-gray-500 text-lg"></i></div> Histórico Geral
@@ -331,11 +355,9 @@
                             )}
                             
                             {isAdmin && (
-                                <div className="pt-2 mt-2 border-t border-gray-200 dark:border-gray-800">
-                                    <button onClick={()=>handleNav('adminMenu')} className="w-full flex items-center p-3 text-left text-gray-700 dark:text-gray-200 font-bold hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors">
-                                        <div className="w-10 flex justify-center"><i className="fas fa-cogs text-cyan-600 text-lg"></i></div> Parâmetros Admin
-                                    </button>
-                                </div>
+                                <button onClick={()=>handleNav('adminMenu')} className="w-full flex items-center p-3 text-left text-gray-700 dark:text-gray-200 font-bold hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors">
+                                    <div className="w-10 flex justify-center"><i className="fas fa-cogs text-cyan-600 text-lg"></i></div> Parâmetros Admin
+                                </button>
                             )}
                         </div>
                         
@@ -480,7 +502,7 @@
                                             </div>
                                             <div>
                                                 <p className="font-bold text-sm text-gray-800 dark:text-white">{eq.equipmentName}</p>
-                                                <p className="text-[10px] text-gray-500 uppercase font-bold mt-0.5"><i className="fas fa-map-marker-alt mr-1"></i> {eq.moduleLocation || 'LOCAL NÃO INFORMADO'}</p>
+                                                <p className="text-[10px] text-gray-500 uppercase font-bold mt-0.5"><i className="fas fa-map-marker-alt mr-1"></i> {eq.moduleLocation || 'LOCAL NÃO INFORMADO'} {eq.subLocation ? ` - ${eq.subLocation}` : ''}</p>
                                             </div>
                                         </div>
                                         <span className={`text-[9px] font-black px-2 py-1.5 rounded-lg uppercase tracking-wider ${eq.alertType === 'VENCIDO' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
@@ -495,7 +517,6 @@
             )
         }
 
-        // --- NOVA TELA: CATEGORIA ESPECÍFICA (Extintores / Hidrantes) ---
         function EquipmentCategoryScreen({ db, inspectionType, onNavigate, onStartScan, currentUser, userRole, onEditItem, onToggleDelete, showConfirm }) {
             const isAdmin = ['ADMIN', 'SUPERVISOR', 'COORDENADOR'].includes(userRole);
             const [openMonths, setOpenMonths] = useState({});
@@ -528,7 +549,6 @@
 
             const sortedMonths = Object.keys(groupedStructure).sort().reverse();
 
-            // Abrir automaticamente a pasta do primeiro mês se houver
             useEffect(() => {
                 if (sortedMonths.length > 0 && Object.keys(openMonths).length === 0) {
                     setOpenMonths({ [sortedMonths[0]]: true });
@@ -563,6 +583,7 @@
                             <div>
                                 <span className="font-bold text-sm block dark:text-white">{item.equipmentName}</span>
                                 <span className="text-xs text-gray-500 font-bold block mt-0.5">{formatDate(item.created_at)} | {item.responsible}</span>
+                                <span className="text-[10px] text-gray-400 font-bold block mt-0.5"><i className="fas fa-map-marker-alt mr-1"></i> {item.moduleLocation || 'LOCAL NÃO INFORMADO'} {item.subLocation ? ` - ${item.subLocation}` : ''}</span>
                             </div>
                             {(item.photo || item.hasPhoto) && <div className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-1 rounded flex items-center gap-1"><i className="fas fa-camera"></i></div>}
                         </div>
@@ -654,20 +675,75 @@
         };
 
         function UnitRegisterScreen({ onNavigate, onSaveUnit, unitsList, onUpdateUnit, onDeleteUnit, showAlert, showConfirm }) {
-            const [newUnit, setNewUnit] = useState({ name: '', address: '' });
+            const [newUnit, setNewUnit] = useState({ name: '', address: '', modules: ['EXTINTOR', 'HIDRANTE', 'RONDA'] });
             const [editingId, setEditingId] = useState(null);
+
+            const toggleModule = (mod) => {
+                setNewUnit(prev => {
+                    const mods = prev.modules || [];
+                    return { ...prev, modules: mods.includes(mod) ? mods.filter(m => m !== mod) : [...mods, mod] };
+                });
+            };
+
             const handleSave = async () => {
                 if (!newUnit.name) return showAlert("Preencha nome.", "warning");
                 if (editingId) { await onUpdateUnit(editingId, newUnit); setEditingId(null); showAlert("Atualizado!", "success"); } 
                 else { await onSaveUnit(newUnit); showAlert("Cadastrado!", "success"); }
-                setNewUnit({ name: '', address: '' });
+                setNewUnit({ name: '', address: '', modules: ['EXTINTOR', 'HIDRANTE', 'RONDA'] });
             };
-            const handleEditClick = (u) => { setEditingId(u.id); setNewUnit({ name: u.name, address: u.address }); };
+            const handleEditClick = (u) => { setEditingId(u.id); setNewUnit({ name: u.name, address: u.address, modules: u.modules || ['EXTINTOR', 'HIDRANTE', 'RONDA'] }); };
+            
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 overflow-y-auto">
                     <div className="absolute top-4 left-4"><button onClick={() => onNavigate('adminMenu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
-                    <div className="mt-16 space-y-4"><input value={newUnit.name} onChange={e => setNewUnit({...newUnit, name: e.target.value.toUpperCase()})} placeholder="NOME UNIDADE" className="w-full p-4 bg-gray-100 rounded-xl font-bold" /><input value={newUnit.address} onChange={e => setNewUnit({...newUnit, address: e.target.value})} placeholder="ENDEREÇO" className="w-full p-4 bg-gray-100 rounded-xl font-bold" /><button onClick={handleSave} className="w-full py-4 bg-brand-orange text-white rounded-xl font-bold">SALVAR</button></div>
-                    <div className="mt-8 space-y-2">{unitsList && unitsList.map(u => (<div key={u.id} className="p-4 border rounded-xl flex justify-between"><div><b>{u.name}</b><br/><span className="text-xs">{u.address}</span></div><div><button onClick={() => handleEditClick(u)} className="mr-2 text-blue-500"><i className="fas fa-pen"></i></button><button onClick={()=>showConfirm("Excluir?", ()=>onDeleteUnit(u.id), "error")} className="text-red-500"><i className="fas fa-trash"></i></button></div></div>))}</div>
+                    
+                    <div className="mt-16 space-y-4">
+                        <input value={newUnit.name} onChange={e => setNewUnit({...newUnit, name: e.target.value.toUpperCase()})} placeholder="NOME DA UNIDADE" className="w-full p-4 bg-gray-100 dark:bg-gray-800 border-2 border-transparent focus:border-brand-orange outline-none dark:text-white rounded-xl font-bold" />
+                        <input value={newUnit.address} onChange={e => setNewUnit({...newUnit, address: e.target.value})} placeholder="ENDEREÇO" className="w-full p-4 bg-gray-100 dark:bg-gray-800 border-2 border-transparent focus:border-brand-orange outline-none dark:text-white rounded-xl font-bold" />
+                        
+                        <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
+                            <label className="text-[10px] font-black text-gray-500 dark:text-gray-400 mb-3 block uppercase tracking-wider">Módulos Permitidos na Unidade</label>
+                            <div className="space-y-2">
+                                {['EXTINTOR', 'HIDRANTE', 'RONDA'].map(mod => (
+                                    <label key={mod} className="flex items-center justify-between bg-white dark:bg-gray-900 p-4 rounded-xl shadow-sm cursor-pointer border border-gray-100 dark:border-gray-700 active:scale-95 transition-transform">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${mod === 'EXTINTOR' ? 'bg-red-50 text-red-500' : mod === 'HIDRANTE' ? 'bg-orange-50 text-orange-500' : 'bg-blue-50 text-blue-500'}`}>
+                                                <i className={`fas ${mod === 'EXTINTOR' ? 'fa-fire-extinguisher' : mod === 'HIDRANTE' ? 'fa-faucet' : 'fa-clipboard-check'}`}></i>
+                                            </div>
+                                            <span className="font-bold text-gray-700 dark:text-gray-200 text-sm">{mod === 'RONDA' ? 'Ronda Diária' : (mod === 'EXTINTOR' ? 'Extintores' : 'Hidrantes')}</span>
+                                        </div>
+                                        <input type="checkbox" checked={newUnit.modules?.includes(mod)} onChange={() => toggleModule(mod)} className="w-5 h-5 text-brand-orange rounded border-gray-300 focus:ring-brand-orange bg-gray-100 dark:bg-gray-800" />
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
+                        <button onClick={handleSave} className="w-full py-4 bg-brand-orange text-white rounded-xl font-bold shadow-lg active:scale-95 transition-transform">SALVAR</button>
+                    </div>
+
+                    <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700 space-y-3">
+                        <h3 className="font-bold text-gray-500 mb-4 text-xs uppercase">Unidades Cadastradas ({unitsList.length})</h3>
+                        {unitsList && unitsList.map(u => (
+                            <div key={u.id} className="p-4 border border-gray-200 dark:border-gray-700 rounded-xl flex justify-between bg-white dark:bg-gray-800 shadow-sm">
+                                <div>
+                                    <b className="dark:text-white block text-sm">{u.name}</b>
+                                    <span className="text-xs text-gray-500 block mb-2">{u.address || 'Sem endereço'}</span>
+                                    
+                                    <div className="flex gap-1.5 flex-wrap">
+                                        {(u.modules || ['EXTINTOR', 'HIDRANTE', 'RONDA']).map(m => (
+                                            <span key={m} className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase ${m === 'EXTINTOR' ? 'bg-red-100 text-red-700' : m === 'HIDRANTE' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                                                {m}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="flex flex-col gap-2 justify-center ml-2">
+                                    <button onClick={() => handleEditClick(u)} className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-100"><i className="fas fa-pen text-xs"></i></button>
+                                    <button onClick={()=>showConfirm("Excluir?", ()=>onDeleteUnit(u.id), "error")} className="w-8 h-8 rounded-full bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100"><i className="fas fa-trash text-xs"></i></button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             );
         };
@@ -950,7 +1026,6 @@
 
             return (
                 <div className="flex flex-col h-full bg-black relative">
-                    {/* Alterado para mandar 'menu' genérico que será interceptado pelo App para retornar à categoryScreen correta */}
                     <div className="absolute top-4 left-4 z-20"><button onClick={() => onNavigate('menu')} className="text-white bg-black/40 w-10 h-10 rounded-full flex items-center justify-center"><i className="fas fa-arrow-left"></i></button></div>
                     <div className="flex-1 flex flex-col items-center justify-center bg-gray-900"><div id="reader" className="w-full max-w-md bg-black"></div><p className="text-white/60 text-sm mt-4">Aponte para o QR Code</p></div>
                     <div className="p-4 bg-white dark:bg-brand-dark rounded-t-3xl z-10 safe-area-bottom"></div>
@@ -1034,7 +1109,7 @@
             );
         };
 
-        const FormScreen = ({ initialData, onNavigate, onSave, responsibleName, inspectionType, showAlert }) => {
+        const FormScreen = ({ initialData, onNavigate, onSave, responsibleName, inspectionType, showAlert, subLocationsList, onSaveSubLocation }) => {
              const savedForm = useMemo(() => {
                 const saved = localStorage.getItem('trfire_temp_form');
                 return saved ? JSON.parse(saved) : null;
@@ -1045,10 +1120,48 @@
                  if (initialData && initialData.id) {
                      return { ...initialData }; 
                  }
-                 return savedForm || { type: inspectionType, equipmentId: initialData?.equipmentId, equipmentName: initialData?.equipmentName, moduleLocation: '', hasId: null, floorSign: null, q1: null, q2: null, nextRecharge: '', h_complete: null, h_unobstructed: null, h_seal_broken: null, nextHydro: '', photo: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false, extinguisherType: '' };
+                 return savedForm || { type: inspectionType, equipmentId: initialData?.equipmentId, equipmentName: initialData?.equipmentName, moduleLocation: '', subLocation: '', hasId: null, floorSign: null, q1: null, q2: null, nextRecharge: '', h_complete: null, h_unobstructed: null, h_seal_broken: null, nextHydro: '', photo: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false, extinguisherType: '' };
              });
+             
              const fileInputRef = useRef(null);
              
+             // --- NOVO: GERENCIAMENTO DE SUBLOCAL ---
+             const [isAddingSubLoc, setIsAddingSubLoc] = useState(false);
+             const [newSubLocName, setNewSubLocName] = useState('');
+             const [isSavingSubLoc, setIsSavingSubLoc] = useState(false);
+
+             const handleSubLocationChange = (e) => {
+                 if (e.target.value === 'ADD_NEW') {
+                     setNewSubLocName('');
+                     setIsAddingSubLoc(true);
+                 } else {
+                     setForm({...form, subLocation: e.target.value});
+                 }
+             };
+
+             const saveNewSubLoc = async () => {
+                 const nameUpper = newSubLocName.trim().toUpperCase();
+                 if (!nameUpper) return showAlert("Digite o nome do sublocal.", "warning");
+                 
+                 if ((subLocationsList || []).some(sl => sl.mainLocation === form.moduleLocation && sl.name === nameUpper)) {
+                     return showAlert("Este sublocal já existe neste local.", "warning");
+                 }
+
+                 setIsSavingSubLoc(true);
+                 const saved = await onSaveSubLocation(form.moduleLocation, nameUpper);
+                 setIsSavingSubLoc(false);
+                 if (saved) {
+                     setForm({...form, subLocation: saved.name});
+                     setIsAddingSubLoc(false);
+                     showAlert("Sublocal cadastrado com sucesso!", "success");
+                 } else {
+                     showAlert("Erro ao salvar sublocal.", "error");
+                 }
+             };
+
+             const filteredSubLocs = (subLocationsList || []).filter(sl => sl.mainLocation === form.moduleLocation).sort((a,b) => a.name.localeCompare(b.name));
+             // ------------------------------------------
+
              useEffect(() => {
                  localStorage.setItem('trfire_temp_form', JSON.stringify(form));
              }, [form]);
@@ -1100,15 +1213,45 @@
              const handleSelectChange = (field, value) => { const boolVal = value === '' ? null : (value === 'true'); setForm(prev => ({...prev, [field]: boolVal})); };
 
              return (
-                <div className="flex flex-col h-full bg-gray-50 dark:bg-black">
+                <div className="flex flex-col h-full bg-gray-50 dark:bg-black relative">
                     <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('menu')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">{inspectionType}</h2><button onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold" type="button">{isSaving ? '...' : 'SALVAR'}</button></div>
+                    
+                    {/* MODAL DE NOVO SUBLOCAL */}
+                    {isAddingSubLoc && (
+                        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm shadow-2xl">
+                                <h3 className="font-bold mb-1 dark:text-white text-lg">Novo Sublocal</h3>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 font-bold uppercase"><i className="fas fa-map-marker-alt mr-1"></i> Pertence a: {form.moduleLocation}</p>
+                                <input value={newSubLocName} onChange={e=>setNewSubLocName(e.target.value.toUpperCase())} className="w-full p-4 bg-gray-100 dark:bg-gray-700 dark:text-white rounded-xl mb-4 font-bold border-2 border-transparent focus:border-brand-orange outline-none" placeholder="Ex: CORREDOR 1" />
+                                <div className="flex gap-2">
+                                    <button onClick={()=>setIsAddingSubLoc(false)} className="flex-1 py-3 bg-gray-200 text-gray-700 rounded-xl font-bold active:scale-95">Cancelar</button>
+                                    <button onClick={saveNewSubLoc} disabled={isSavingSubLoc} className="flex-1 py-3 bg-brand-orange text-white rounded-xl font-bold active:scale-95">{isSavingSubLoc ? 'Aguarde...' : 'Cadastrar'}</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="flex-1 overflow-y-auto p-2 space-y-4">
-                        <div className="bg-white p-4 rounded-xl space-y-4">
+                        <div className="bg-white p-4 rounded-xl space-y-4 shadow-sm border border-gray-100">
                             <input value={form.equipmentName} onChange={e=>setForm({...form, equipmentName:e.target.value})} className="w-full bg-gray-100 p-3 rounded font-bold" />
-                            <div className="grid grid-cols-2 gap-2">
-                                <select value={form.moduleLocation} onChange={e=>setForm({...form, moduleLocation:e.target.value})} className="w-full p-3 bg-gray-100 rounded font-bold"><option value="">Local...</option>{LOCATION_OPTIONS.map(o=><option key={o} value={o}>{o}</option>)}</select>
+                            
+                            <div className={`grid gap-2 ${inspectionType === 'EXTINTOR' ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                                <select value={form.moduleLocation} onChange={e=>{setForm({...form, moduleLocation:e.target.value, subLocation: ''})}} className="w-full p-3 bg-gray-100 rounded font-bold outline-none border-2 border-transparent focus:border-brand-orange">
+                                    <option value="">Local (Obrigatório)...</option>
+                                    {LOCATION_OPTIONS.map(o=><option key={o} value={o}>{o}</option>)}
+                                </select>
                                 {inspectionType === 'EXTINTOR' && <select value={form.extinguisherType} onChange={e=>setForm({...form, extinguisherType:e.target.value})} className="w-full p-3 bg-gray-100 rounded font-bold"><option value="">Tipo...</option>{EXTINGUISHER_TYPES.map(t=><option key={t} value={t}>{t}</option>)}</select>}
                             </div>
+
+                            {form.moduleLocation && (
+                                <div className="animate-fade-in border-l-4 border-brand-orange pl-2">
+                                    <select value={form.subLocation || ''} onChange={handleSubLocationChange} className="w-full p-3 bg-orange-50 text-brand-orange rounded font-bold border border-orange-200 outline-none">
+                                        <option value="">Selecionar Sublocal (Opcional)...</option>
+                                        <option value="ADD_NEW" className="font-black bg-brand-orange text-white">➕ CADASTRAR NOVO SUBLOCAL</option>
+                                        {filteredSubLocs.map(sl => <option key={sl.id} value={sl.name} className="text-gray-800">{sl.name}</option>)}
+                                    </select>
+                                </div>
+                            )}
 
                             {inspectionType === 'EXTINTOR' ? (<><div className="grid grid-cols-2 gap-2"><ColorSelect label="1. Placa Sinal.?" field="hasId" val={form.hasId} onChange={handleSelectChange} /><ColorSelect label="2. Pintura Solo?" field="floorSign" val={form.floorSign} onChange={handleSelectChange} /></div><div className="grid grid-cols-2 gap-2"><ColorSelect label="3. Lacre Rompido?" field="q1" val={form.q1} onChange={handleSelectChange} invert={true} /><ColorSelect label="4. Obstruído?" field="q2" val={form.q2} onChange={handleSelectChange} invert={true} /></div><div className="grid grid-cols-2 gap-2"><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">Próx. Recarga</label><input type="tel" value={form.nextRecharge} onChange={e=>setForm({...form, nextRecharge: handleDateInput(e.target.value)})} placeholder="MMAAAA" className="w-full bg-transparent font-bold dark:text-white"/></div><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">Teste Hidro.</label><input type="tel" value={form.nextHydro} onChange={e=>setForm({...form, nextHydro: handleDateInput(e.target.value)})} placeholder="MMAAAA" className="w-full bg-transparent font-bold dark:text-white"/></div></div></>) : (<><div className="grid grid-cols-2 gap-2"><ColorSelect label="1. Completo?" field="h_complete" val={form.h_complete} onChange={handleSelectChange} /><ColorSelect label="2. Desobstruído?" field="h_unobstructed" val={form.h_unobstructed} onChange={handleSelectChange} /></div><div className="grid grid-cols-2 gap-2"><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">3. Teste Hidro.</label><input type="tel" value={form.nextHydro} onChange={e=>setForm({...form, nextHydro: handleDateInput(e.target.value)})} placeholder="MMAAAA" className="w-full bg-transparent font-bold dark:text-white"/></div><ColorSelect label="4. Lacre Rompido?" field="h_seal_broken" val={form.h_seal_broken} onChange={handleSelectChange} invert={true} /></div></>)}
                             <div onClick={()=>fileInputRef.current.click()} className="w-full h-32 border-2 border-dashed rounded flex items-center justify-center text-gray-400 cursor-pointer">{form.photo ? <img src={form.photo} className="h-full object-cover"/> : <i className="fas fa-camera text-2xl"></i>}</div>
@@ -1188,7 +1331,7 @@
             const handleEmptyBin = () => { if (!isAdmin) return showAlert("Apenas Administradores podem esvaziar a lixeira.", "error"); if (deletedData.length === 0) return showAlert("A lixeira já está vazia.", "info"); showConfirm(`ATENÇÃO: Deseja apagar PERMANENTEMENTE todos os ${deletedData.length} itens da lixeira? Esta ação não pode ser desfeita.`, async () => { const promises = deletedData.map(item => onDeletePermanently(item.id)); const results = await Promise.all(promises); const successCount = results.filter(r => r === true).length; const failCount = results.length - successCount; if(failCount > 0) { showAlert(`Atenção: ${successCount} apagados. ${failCount} falharam. Verifique sua conexão.`, "warning"); } else { showAlert("Lixeira esvaziada com sucesso!", "success"); } }, "error"); };
             const confirmBulkRestore = () => { if (selectedIds.size === 0) return; showConfirm(`Restaurar ${selectedIds.size} itens?`, async () => { const promises = Array.from(selectedIds).map(id => onToggleDelete(id, false)); await Promise.all(promises); setSelectedIds(new Set()); showAlert(`${selectedIds.size} itens restaurados!`, "success"); }, "info"); };
             const confirmBulkDelete = () => { if (selectedIds.size === 0) return; showConfirm(`EXCLUIR ${selectedIds.size} itens?`, async () => { const promises = Array.from(selectedIds).map(id => onDeletePermanently(id)); const results = await Promise.all(promises); const success = results.filter(r => r).length; setSelectedIds(new Set()); if(results.length - success > 0) showAlert(`${success} excluídos. Falha em ${results.length - success}.`, "warning"); else showAlert(`${success} itens excluídos!`, "success"); }, "error"); };
-            const confirmBulkSoftDelete = () => { if (selectedIds.size === 0) return; showConfirm(`Lixeira: ${selectedIds.size} itens?`, async () => { const promises = Array.from(selectedIds).map(id => onToggleDelete(id, true)); await Promise.all(promises); setSelectedIds(new Set()); showAlert(`${selectedIds.size} itens movidos!`, "success"); }, "warning"); };
+            const confirmBulkSoftDelete = () => { if (selectedIds.size === 0) return; showConfirm(`Lixeira: ${selectedIds.size} itens?`, async () => { const promises = Array.from(selectedIds).map(id => onToggleDelete(id, true)); await Promise.all(promises); setSelectedIds(new Set()); showAlert(`${selectedIds.size} items movidos!`, "success"); }, "warning"); };
             const handleExport = () => { const jsonString = JSON.stringify(data, null, 2); const blob = new Blob([jsonString], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup_trfire_${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); setShowBackupModal(false); };
             const handleFileImport = (e) => { const file = e.target.files[0]; if(!file) return; const reader = new FileReader(); reader.onload = (ev) => { try { const json = JSON.parse(ev.target.result); onImportData(json); setShowBackupModal(false); } catch(err) { showAlert("Erro JSON.", "error"); } }; reader.readAsText(file); e.target.value = null; };
             
@@ -1201,8 +1344,8 @@
                 const monthObj = new Date(pdfMonth + '-02'); const monthStr = monthObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase().replace('.', ''); const yearStr = monthObj.getFullYear(); const typeStr = type === 'EXTINTOR' ? 'Extintores' : (type === 'HIDRANTE' ? 'Hidrantes' : 'Rondas');
                 const uniqueResponsibles = [...new Set(reportData.map(i => i.responsible).filter(Boolean))]; const responsibleLabel = uniqueResponsibles.length === 1 ? uniqueResponsibles[0] : "Equipe"; const userStr = responsibleLabel.replace(/\s+/g, '-'); const fileName = `TRFIRE_Relatorio_${monthStr}-${yearStr}_${typeStr}_${userStr}.pdf`;
                 let body = []; let head = []; 
-                if (type === 'EXTINTOR') { head = [['Local', 'Equipamento', 'Data/Hora', 'Responsável', 'Tipo', 'Próx. Recarga', 'Próx. T. Hidro.', 'Possui Pictograma?', 'Sinalização de Solo?', 'Lacre Romp.?', 'Obstruído?', 'Observação']]; body = reportData.map(i => [ i.moduleLocation || '-', i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.extinguisherType || '-', i.nextRecharge || '-', i.nextHydro || '-', i.hasId ? 'SIM' : 'NÃO', i.floorSign ? 'SIM' : 'NÃO', i.q1 ? 'SIM' : 'NÃO', i.q2 ? 'SIM' : 'NÃO', i.obs || '' ]); } 
-                else if (type === 'HIDRANTE') { head = [['Local', 'Equipamento', 'Data/Hora', 'Responsável', 'Equip. Completo?', 'Desobstruído?', 'Lacre Romp.?', 'Próx. T. Hidro.', 'Observação']]; body = reportData.map(i => [ i.moduleLocation || '-', i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.h_complete ? 'SIM' : 'NÃO', i.h_unobstructed ? 'NÃO' : 'SIM', i.h_seal_broken ? 'SIM' : 'NÃO', i.nextHydro || '-', i.obs || '' ]); } 
+                if (type === 'EXTINTOR') { head = [['Local', 'Equipamento', 'Data/Hora', 'Responsável', 'Tipo', 'Próx. Recarga', 'Próx. T. Hidro.', 'Possui Pictograma?', 'Sinalização de Solo?', 'Lacre Romp.?', 'Obstruído?', 'Observação']]; body = reportData.map(i => [ (i.moduleLocation || '-') + (i.subLocation ? ` - ${i.subLocation}` : ''), i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.extinguisherType || '-', i.nextRecharge || '-', i.nextHydro || '-', i.hasId ? 'SIM' : 'NÃO', i.floorSign ? 'SIM' : 'NÃO', i.q1 ? 'SIM' : 'NÃO', i.q2 ? 'SIM' : 'NÃO', i.obs || '' ]); } 
+                else if (type === 'HIDRANTE') { head = [['Local', 'Equipamento', 'Data/Hora', 'Responsável', 'Equip. Completo?', 'Desobstruído?', 'Lacre Romp.?', 'Próx. T. Hidro.', 'Observação']]; body = reportData.map(i => [ (i.moduleLocation || '-') + (i.subLocation ? ` - ${i.subLocation}` : ''), i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.h_complete ? 'SIM' : 'NÃO', i.h_unobstructed ? 'NÃO' : 'SIM', i.h_seal_broken ? 'SIM' : 'NÃO', i.nextHydro || '-', i.obs || '' ]); } 
                 else if (type === 'RONDA') { head = [['Local', 'Área Técnica', 'Data/Hora', 'Responsável', 'Condições', 'Status', 'Observação']]; body = reportData.map(i => [ i.sector || '-', i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.moduleLocation || '-', i.status || '-', i.obs || '' ]); } 
                 doc.autoTable({ head: head, body: body, startY: 45, theme: 'grid', headStyles: { fillColor: [224, 224, 224], textColor: [0, 0, 0], fontStyle: 'bold', lineWidth: 0.1, lineColor: [200, 200, 200] }, styles: { fontSize: 7, textColor: [50, 50, 50], lineColor: [230, 230, 230], lineWidth: 0.1, overflow: 'linebreak' }, alternateRowStyles: { fillColor: [255, 255, 255] } }); 
                 if (type === 'EXTINTOR') { let finalY = doc.lastAutoTable.finalY + 10; const counts = {}; reportData.forEach(item => { const t = item.extinguisherType || 'Indefinido'; counts[t] = (counts[t] || 0) + 1; }); if (finalY > 150) { doc.addPage(); finalY = 20; } doc.setFontSize(12); doc.setTextColor(33, 33, 33); doc.text("Resumo Quantitativo:", 14, finalY); const summaryBody = Object.entries(counts).map(([t, c]) => [t, c]); doc.autoTable({ head: [['Tipo', 'Quantidade']], body: summaryBody, startY: finalY + 5, theme: 'striped', tableWidth: 'wrap', styles: { fontSize: 9 } }); }
@@ -1230,6 +1373,7 @@
                                 <span className="font-bold text-sm block">{item.equipmentName}</span>
                                 <span className="text-xs text-gray-500 font-bold block mt-0.5">{formatDate(item.created_at)} | {item.responsible}</span>
                                 {isRonda && <div className="text-xs text-gray-400 mt-1">Local: {item.sector} {item.moduleLocation ? `| ${item.moduleLocation}` : ''}</div>}
+                                {!isRonda && <div className="text-[10px] text-gray-400 font-bold mt-1"><i className="fas fa-map-marker-alt mr-1"></i> {item.moduleLocation || 'LOCAL NÃO INFORMADO'} {item.subLocation ? `- ${item.subLocation}` : ''}</div>}
                             </div>
                             {(item.photo || item.hasPhoto) && <div className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-1 rounded flex items-center gap-1"><i className="fas fa-camera"></i></div>}
                         </div>
@@ -1282,7 +1426,7 @@
                             </div>
                         </div>
                     )}
-                    {/* Modais omitidos para brevidade mas inalterados */}
+                    {/* Modais */}
                     {showFilter && !showBin && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowFilter(false)}><div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-2xl w-64 border border-gray-200 dark:border-gray-700" onClick={e => e.stopPropagation()}><h3 className="font-bold mb-3 dark:text-white text-sm uppercase">Filtrar por</h3><div className="space-y-3"><div><label className="text-xs text-gray-500 block mb-1">De</label><input type="date" value={filters.startDate} onChange={e=>setFilters({...filters, startDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Até</label><input type="date" value={filters.endDate} onChange={e=>setFilters({...filters, endDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Tipo</label><select value={filters.type} onChange={e=>setFilters({...filters, type: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option><option value="EXTINTOR">Extintor</option><option value="HIDRANTE">Hidrante</option><option value="RONDA">Ronda</option></select></div><div><label className="text-xs text-gray-500 block mb-1">Responsável</label><select value={filters.responsible} onChange={e=>setFilters({...filters, responsible: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{responsibles.map(r => <option key={r} value={r}>{r}</option>)}</select></div><div><label className="text-xs text-gray-500 block mb-1">Módulo/Local</label><select value={filters.moduleLocation} onChange={e=>setFilters({...filters, moduleLocation: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{LOCATION_OPTIONS.map(l => <option key={l} value={l}>{l}</option>)}</select></div><div className="flex gap-2 pt-2"><button onClick={() => { setFilters({startDate:'', endDate:'', type:'', responsible:'', moduleLocation:''}); setViewMonth(new Date().toISOString().slice(0, 7)); }} className="flex-1 py-1 text-xs font-bold text-gray-500 bg-gray-200 dark:bg-gray-700 rounded">Limpar</button><button onClick={() => setShowFilter(false)} className="flex-1 py-1 text-xs font-bold text-white bg-brand-red rounded">Fechar</button></div></div></div></div>)}
                     {showPdfModal && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm animate-fade-in text-center"><h3 className="text-lg font-bold mb-2 dark:text-white">Gerar Relatório</h3><div className="mb-6"><label className="text-xs text-gray-500 block mb-1">Selecione o Mês</label><input type="month" value={pdfMonth} onChange={(e) => setPdfMonth(e.target.value)} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white font-bold text-center" /></div><div className="space-y-3"><button onClick={() => generateSpecificPDF('EXTINTOR')} className="w-full py-3 bg-brand-red text-white font-bold rounded-xl shadow-md active:scale-95">Relatório de EXTINTORES</button><button onClick={() => generateSpecificPDF('HIDRANTE')} className="w-full py-3 bg-brand-orange text-white font-bold rounded-xl shadow-md active:scale-95">Relatório de HIDRANTES</button><button onClick={() => generateSpecificPDF('RONDA')} className="w-full py-3 bg-brand-blue text-white font-bold rounded-xl shadow-md active:scale-95">Relatório de RONDAS</button><button onClick={() => setShowPdfModal(false)} className="w-full py-3 bg-gray-200 text-gray-700 font-bold rounded-xl mt-2">Cancelar</button></div></div></div>)}
                     {showBackupModal && isAdmin && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm animate-fade-in text-center"><h3 className="text-lg font-bold mb-4 dark:text-white flex items-center justify-center gap-2"><i className="fas fa-database text-blue-500"></i> Backup & Restauração</h3><div className="space-y-3"><button onClick={handleExport} className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2"><i className="fas fa-download"></i> EXPORTAR TUDO</button><div className="relative"><input type="file" ref={fileInputRef} onChange={handleFileImport} accept=".json" className="hidden" /><button onClick={() => fileInputRef.current.click()} className="w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2"><i className="fas fa-upload"></i> IMPORTAR DADOS</button></div><button onClick={() => setShowBackupModal(false)} className="w-full py-3 bg-gray-200 text-gray-700 font-bold rounded-xl mt-4">Fechar</button></div></div></div>)}
@@ -1351,6 +1495,7 @@
             const [users, setUsers] = useState([]);
             const [units, setUnits] = useState([]);
             const [roundLocationsList, setRoundLocationsList] = useState([]); 
+            const [subLocationsList, setSubLocationsList] = useState([]); 
             const [scanRes, setScanRes] = useState(null);
             const [notification, setNotification] = useState({ isOpen: false, message: '', type: 'info', isConfirmation: false, onConfirm: null });
             const [authError, setAuthError] = useState(null);
@@ -1396,8 +1541,6 @@
                     } 
                 } catch (e) { console.error(e); return; }
 
-                // --- CAMADA DE IMUNIDADE RETROATIVA ---
-                // Se o cargo não estiver no shift_logs (log antigo), nós buscamos ele
                 if (!shiftRole && responsibleName) {
                     if (responsibleName.toUpperCase() === 'ADMIN') {
                         shiftRole = 'ADMIN';
@@ -1409,12 +1552,10 @@
                     }
                 }
 
-                // Se identificarmos que o responsável é SUPER USER, abortamos a auditoria imediatamente!
                 const excludedRoles = ['ADMIN', 'SUPERVISOR', 'COORDENADOR'];
                 if (shiftRole && excludedRoles.includes(shiftRole.toUpperCase())) {
                     return;
                 }
-                // ---------------------------------------
 
                 const locationsToCheck = roundLocationsList.length > 0 ? roundLocationsList.map(l => l.name) : DEFAULT_ROUND_LOCATIONS;
                 for (const loc of locationsToCheck) { const hasInspection = currentDb.some(item => { if (item.type !== 'RONDA' || item.deleted || item.sector !== loc) return false; const itemDate = new Date(item.created_at); return itemDate >= targetRange.start && itemDate <= targetRange.end; }); const safeLocId = loc.replace(/[^a-zA-Z0-9]/g, ''); const autoDocId = `AUTO_${targetRange.id}_${safeLocId}`; const alreadyAutoRegistered = currentDb.some(item => item.id === autoDocId); if (!hasInspection && !alreadyAutoRegistered) { try { await dbFirestore.collection("inspections").doc(autoDocId).set({ type: 'RONDA', sector: loc, equipmentName: 'AUDITORIA AUTOMÁTICA', status: 'NÃO REALIZADA', auto: true, obs: `Inspeção não realizada. Turno supervisionado por: ${responsibleName}`, responsible: responsibleName, created_at: targetRange.end.toISOString(), deleted: false }); } catch (e) { console.error(e); } } }
@@ -1444,13 +1585,19 @@
                 const unsub2 = dbFirestore.collection("users").onSnapshot(s => { const u=[]; s.forEach(doc=>u.push({id:doc.id,...doc.data()})); setUsers(u); const adminUser = u.find(user => user.name === "ADMIN"); if (adminUser && (!adminUser.role || adminUser.role !== "ADMIN")) { dbFirestore.collection("users").doc(adminUser.id).update({ role: "ADMIN", unit: "GLOBAL" }); } }, err => console.error(err));
                 const unsub3 = dbFirestore.collection("units").onSnapshot(s => { const u=[]; s.forEach(doc=>u.push({id:doc.id,...doc.data()})); setUnits(u); }, err => console.error(err));
                 const unsub4 = dbFirestore.collection("round_locations").orderBy("name").onSnapshot(s => { const l=[]; s.forEach(doc=>l.push({id:doc.id,...doc.data()})); setRoundLocationsList(l); }, err => console.error(err));
-                return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
+                
+                // NOVA CHAMADA: Busca de Sublocais em tempo real
+                const unsub5 = dbFirestore.collection("sub_locations").onSnapshot(s => { 
+                    const sl=[]; s.forEach(doc=>sl.push({id:doc.id,...doc.data()})); 
+                    setSubLocationsList(sl); 
+                }, err => console.error(err));
+                
+                return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); };
             }, [firebaseUser]);
 
             const handleSave = async (d) => { 
                 try { 
                     await dbFirestore.collection("inspections").add({...d, unit: currentUnit}); 
-                    // Alterado: Redireciona de volta para a tela de categoria se for Extintor/Hidrante
                     if (d.type === 'EXTINTOR' || d.type === 'HIDRANTE') {
                         setInspectionType(d.type);
                         setPage('equipmentCategory');
@@ -1462,6 +1609,22 @@
                     return true; 
                 } catch(e){ return false; } 
             };
+            
+            // FUNÇÃO PARA SALVAR O SUBLOCAL NO BANCO DE DADOS FIREBASE
+            const handleSaveSubLocation = async (mainLocation, subLocName) => {
+                if (!dbFirestore) return null;
+                try {
+                    const docRef = await dbFirestore.collection("sub_locations").add({
+                        mainLocation: mainLocation,
+                        name: subLocName
+                    });
+                    return { id: docRef.id, mainLocation, name: subLocName };
+                } catch(e) {
+                    console.error("Erro ao salvar sublocal:", e);
+                    return null;
+                }
+            };
+            
             const handleSaveUser = async (d) => dbFirestore.collection("users").add(d);
             const handleUpdateUser = async (id, d) => dbFirestore.collection("users").doc(id).update(d);
             const handleDeleteUser = async (id) => dbFirestore.collection("users").doc(id).delete();
@@ -1501,7 +1664,6 @@
                 setUserRole(role); 
                 setPage('menu'); 
 
-                // Impede que ADMIN, SUPERVISOR ou COORDENADOR entrem no log de turnos da auditoria
                 const excludedRoles = ['ADMIN', 'SUPERVISOR', 'COORDENADOR'];
                 if (dbFirestore && !excludedRoles.includes(role.toUpperCase())) {
                     const now = new Date();
@@ -1513,7 +1675,6 @@
                     else if (currentHour >= 18 && currentHour <= 23) shiftId = `NOTURNO_1_${getLocalISODate(now)}`;
                     else shiftId = `NOTURNO_2_${getLocalISODate(now)}`;
                     
-                    // Adicionado o 'role' no salvamento para agilizar as validações futuras
                     dbFirestore.collection("shift_logs").doc(shiftId).set({ responsible: name, role: role, unit: unitName, timestamp: new Date().toISOString() }, { merge: true }).catch(console.error);
                 }
             };
@@ -1526,7 +1687,6 @@
                 navigateTo('scan'); 
             };
             
-            // Função para abrir a tela da Categoria
             const handleOpenCategory = (t) => {
                 setInspectionType(t);
                 navigateTo('equipmentCategory');
@@ -1573,8 +1733,9 @@
                         currentUnit={currentUnit} 
                         userRole={userRole} 
                         usersList={users} 
-                        onOpenCategory={handleOpenCategory} // Usado nos botões do menu lateral
-                        onStartInspection={handleStartInspection} // Usado nas rondas
+                        unitsList={units}
+                        onOpenCategory={handleOpenCategory} 
+                        onStartInspection={handleStartInspection} 
                     />
 
                     <NotificationModal isOpen={notification.isOpen} message={notification.message} type={notification.type} isConfirmation={notification.isConfirmation} onClose={closeNotification} onConfirm={notification.onConfirm} />
@@ -1584,7 +1745,6 @@
                     {page === 'adminMenu' && <AdminMenuScreen onNavigate={navigateTo} onOpenMenu={() => setIsMenuOpen(true)} />}
                     {page === 'accessControl' && <AccessControlScreen onNavigate={navigateTo} usersList={users} onUpdatePermissions={(id,p)=>dbFirestore.collection("users").doc(id).update({permissions:p})} />}
                     
-                    {/* NOVA TELA DE CATEGORIA */}
                     {page === 'equipmentCategory' && <EquipmentCategoryScreen db={db} inspectionType={inspectionType} onNavigate={navigateTo} onStartScan={handleStartInspection} currentUser={responsible} userRole={userRole} onEditItem={handleEditItem} onToggleDelete={onToggleDelete} showConfirm={showConfirm} />}
 
                     {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={navigateTo} onSelectLocation={handleRoundStart} db={db} responsibleName={responsible} roundLocationsList={roundLocationsList} onOpenMenu={() => setIsMenuOpen(true)} />}
@@ -1593,7 +1753,6 @@
                     {page === 'roundLocRegister' && <RoundLocationsRegisterScreen onNavigate={navigateTo} onSaveLocation={handleSaveRoundLocation} onUpdateLocation={handleUpdateRoundLocation} locationsList={roundLocationsList} onDeleteLocation={handleDeleteRoundLocation} showAlert={showAlert} showConfirm={showConfirm} />}
                     
                     {page === 'scan' && <ScannerScreen onNavigate={(t) => {
-                         // Lógica de "Voltar" ajustada para retornar à categoria de onde veio
                          let nextPage = t;
                          if (t === 'menu') {
                              if (inspectionType === 'RONDA') nextPage = 'roundsLocation';
@@ -1602,11 +1761,11 @@
                          navigateTo(nextPage);
                     }} onScanSuccess={(d)=>{setScanRes(d); navigateTo(inspectionType === 'RONDA' ? 'roundsForm' : 'form')}} db={db} inspectionType={inspectionType} showAlert={showAlert} />}
                     
+                    {/* Passagem do SubLocationList e OnSave para o Formulário */}
                     {page === 'form' && <FormScreen initialData={scanRes} onNavigate={(t) => {
-                        // Ao clicar voltar no formulário, retorna para a Categoria
                         if (t === 'menu') navigateTo('equipmentCategory');
                         else navigateTo(t);
-                    }} responsibleName={responsible} onSave={handleSave} inspectionType={inspectionType} showAlert={showAlert} />}
+                    }} responsibleName={responsible} onSave={handleSave} inspectionType={inspectionType} showAlert={showAlert} subLocationsList={subLocationsList} onSaveSubLocation={handleSaveSubLocation} />}
                     
                     {page === 'roundsForm' && <RoundsFormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} roundLocation={roundLocation} onSave={handleSave} currentUnit={currentUnit} showAlert={showAlert} />}
                     {page === 'list' && <ListScreen data={db} onNavigate={navigateTo} onToggleDelete={onToggleDelete} onDeletePermanently={onDeletePermanently} onImportData={onImportData} currentUser={responsible} userRole={userRole} showAlert={showAlert} showConfirm={showConfirm} onEditItem={handleEditItem} onOpenMenu={() => setIsMenuOpen(true)} />}

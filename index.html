@@ -3,14 +3,17 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO MESTRE V88.0 (18/02/2026) - MENU CORRIGIDO E TELA DE EXTINTORES
+    VERSÃO MESTRE V85.0 (Telas Dedicadas por Categoria)
     ============================================================================
-    RESUMO DO SISTEMA:
-    1. ARQUITETURA: Firebase SDK Compat (v8) + Offline Persistence.
-    2. NAVEGAÇÃO & UI:
-       - Menu Sidebar refeito com <div> interativas para evitar bloqueio de touch.
-       - Tela específica de Categoria (Extintores) com Botão Gigante de Scanner.
-       - Formatação de pastas de histórico ajustada (Ex: Janeiro-2026).
+    RESUMO DAS ALTERAÇÕES:
+    1. TELAS DE CATEGORIA:
+       - Adicionado 'EquipmentCategoryScreen'.
+       - Ao clicar em Extintores ou Hidrantes, abre-se uma tela com o botão 
+         de QR Code no topo e o histórico em pastas abaixo.
+       
+    2. NAVEGAÇÃO:
+       - O Scanner e o Formulário agora retornam para a tela da categoria
+         após cancelar ou salvar a inspeção.
     ============================================================================
     -->
 
@@ -60,6 +63,7 @@
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
+    <!-- Firebase Compat Scripts -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
@@ -76,11 +80,13 @@
         #reader { width: 100%; height: 100%; overflow: hidden; background: black; }
         #reader video { object-fit: cover; width: 100% !important; height: 100% !important; }
         .animate-fade-in { animation: fadeIn 0.3s ease-out; }
-        @keyframes fadeInLeft { from { transform: translateX(-100%); } to { transform: translateX(0); } }
-        .animate-fade-in-left { animation: fadeInLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
         .toggle-checkbox:checked { right: 0; border-color: #F57C00; }
         .toggle-checkbox:checked + .toggle-label { background-color: #F57C00; }
+        
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideInLeft { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+        .animate-slide-in-left { animation: slideInLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+        
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #888; border-radius: 3px; }
@@ -121,11 +127,7 @@
             else { app = firebase.app(); }
             dbFirestore = firebase.firestore();
             auth = firebase.auth();
-            
-            dbFirestore.enablePersistence({ synchronizeTabs: true })
-                .catch((err) => { console.warn("Aviso Persistência Offline:", err.code); });
-
-            console.log("Firebase Compat Conectado (V88.0).");
+            console.log("Firebase Compat Conectado.");
         } catch (error) { console.error("Erro Firebase:", error); }
 
         const LOGO_SRC = "logo.png"; 
@@ -133,8 +135,7 @@
         const LOCATION_OPTIONS = ["ANJUN", "AZUL CARGO", "AREAS COMUNS", "EQ. RESERVA", "LATAM", "MELI", "POWER SOURCE", "TOTAL EXP."];
         const EXTINGUISHER_TYPES = ["ABC- 4KG", "ABC- 6KG", "AGUA- 10LT", "AVD- 9LT", "CO²- 6KG", "EM- 9LT", "PÓ BC- 4KG", "PÓ BC- 6KG", "PÓ BC- 8KG", "PÓ BC- 12KG"];
         const DEFAULT_ROUND_LOCATIONS = ["CASA DE BOMBAS / G-100", "TANQUE DE DIESEL / G-100", "RTI / G-100", "GERADOR / G-100", "CASA DE BOMBAS / G-200", "TANQUE DE DIESEL / G-200", "RTI / G-200", "GERADOR / G-200", "GERADOR / G-300"];
-        const ROUND_AREAS = ["G-100", "G-200", "G-300"];
-        const ROUND_CONDITIONS = ["QDC - Automatico", "QDC - Manual", "Tanque - 100% Cheio", "Tanque Abaixo do Nivel", "Painel Op. Normalmente", "Painel Com Falhas"];
+        const ROUND_CONDITIONS = [ "QDC - Automatico", "QDC - Manual", "Tanque - 100% Cheio", "Tanque Abaixo do Nivel", "Painel Op. Normalmente", "Painel Com Falhas" ];
         
         const formatDate = (dateStr) => { 
             if (!dateStr) return '-'; 
@@ -142,27 +143,35 @@
             catch(e) { return '-'; }
         };
 
-        // FORMATAÇÃO DE MÊS SOLICITADA (Ex: Janeiro-2026)
-        const formatMonthFolder = (yyyy_mm) => {
-            if(!yyyy_mm) return "DATA INVÁLIDA";
-            try {
-                const [year, month] = yyyy_mm.split('-');
-                const date = new Date(parseInt(year), parseInt(month) - 1);
-                const monthStr = date.toLocaleString('pt-BR', { month: 'long' });
-                // Primeira letra maiúscula + Ano
-                return `${monthStr.charAt(0).toUpperCase() + monthStr.slice(1)}-${year}`;
-            } catch(e) { return yyyy_mm; }
-        };
+        const checkExpiration = (dateStr) => {
+            if (!dateStr) return 'OK';
+            let clean = dateStr.replace(/\D/g, '');
+            if (clean.length < 6) return 'OK';
+            let month = parseInt(clean.slice(0, 2), 10);
+            let year = parseInt(clean.slice(2, 6), 10);
+            if (isNaN(month) || isNaN(year)) return 'OK';
+            
+            let expDate = new Date(year, month, 0, 23, 59, 59);
+            let now = new Date();
+            
+            if (now > expDate) return 'VENCIDO';
+            
+            let diffTime = expDate - now;
+            let diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
+            if (diffDays <= 30) return 'A_VENCER';
+            return 'OK';
+        }
 
         const LogoImage = ({ className }) => (<img src={LOGO_SRC} onError={(e) => {e.target.onerror = null; e.target.src=FALLBACK_LOGO}} alt="Logo" className={className} />);
 
-        // --- COMPONENTES GLOBAIS ---
+        // --- COMPONENTES ---
 
         class ErrorBoundary extends React.Component {
             constructor(props) { super(props); this.state = { hasError: false, error: null }; }
             static getDerivedStateFromError(error) { return { hasError: true, error }; }
             render() {
-                if (this.state.hasError) return <div className="flex flex-col items-center justify-center h-screen bg-red-50 p-6 text-center text-red-800 font-bold">Algo correu mal na tela.<br/>Por favor, atualize a página.</div>;
+                if (this.state.hasError) return <div className="flex flex-col items-center justify-center h-screen bg-red-50 p-6 text-center text-red-800 font-bold">Algo correu mal.<br/>Reinicie o app.</div>;
                 return this.props.children;
             }
         }
@@ -172,7 +181,7 @@
             const colors = { error: 'bg-red-500', success: 'bg-green-500', warning: 'bg-yellow-500', info: 'bg-blue-500', welcome: 'bg-brand-orange' };
             const icon = { error: 'fa-times', success: 'fa-check', warning: 'fa-exclamation', info: 'fa-info', welcome: 'fa-user-check' };
             return (
-                <div className="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center p-4 animate-fade-in">
+                <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 animate-fade-in">
                     <div className="bg-white dark:bg-gray-800 p-6 rounded-3xl w-full max-w-sm text-center shadow-2xl border border-gray-100 dark:border-gray-700">
                         <div className={`w-16 h-16 rounded-full ${colors[type] || colors.info} flex items-center justify-center mx-auto mb-4 shadow-lg`}><i className={`fas ${icon[type] || icon.info} text-3xl text-white`}></i></div>
                         <h3 className="text-xl font-black text-gray-800 dark:text-white mb-2 uppercase">{isConfirmation ? 'Confirmação' : (type === 'welcome' ? 'Bem-vindo!' : (type === 'error' ? 'Atenção' : 'Sucesso'))}</h3>
@@ -197,205 +206,21 @@
             );
         }
 
-        function GlobalSidebar({ isOpen, onClose, onNavigate, onOpenReport, onOpenBackup, usersList, responsibleName, currentUnit, userRole, handleLogout }) {
-            if (!isOpen) return null;
-            const isAdmin = userRole === 'ADMIN';
-
-            const userPerms = useMemo(() => {
-                if (!usersList || usersList.length === 0) return ['EXTINTOR', 'HIDRANTE', 'HISTORICO', 'RONDA']; 
-                const user = usersList.find(u => u.name === responsibleName);
-                return user?.permissions || ['EXTINTOR', 'HIDRANTE', 'HISTORICO'];
-            }, [usersList, responsibleName]);
-            
-            const hasAccess = (perm) => isAdmin || userPerms.includes(perm);
-
-            // COMPONENTE DO MENU BLINDADO PARA PREVIEW
-            const MenuItem = ({ icon, text, onClick, colorClass = "text-gray-700 dark:text-gray-200" }) => (
-                <div 
-                    onClick={() => {
-                        onClick();
-                        onClose();
-                    }} 
-                    className="w-full flex items-center gap-4 px-6 py-4 hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700 text-left border-b border-gray-100 dark:border-gray-800 cursor-pointer select-none"
-                >
-                    <div className={`w-6 text-center ${colorClass}`}><i className={`fas ${icon} text-lg`}></i></div>
-                    <span className={`font-bold ${colorClass}`}>{text}</span>
-                </div>
-            );
-
+        function ColorSelect({ label, val, field, onChange, invert=false }) { 
+            let bgClass = "bg-white dark:bg-gray-800"; let textClass = "text-gray-700 dark:text-gray-200"; 
+            if(val === true) { bgClass = invert ? "bg-red-100 dark:bg-red-900 border-red-500" : "bg-green-100 dark:bg-green-900 border-green-500"; textClass = invert ? "text-red-700 dark:text-red-100" : "text-green-700 dark:text-green-100"; } 
+            else if(val === false) { bgClass = invert ? "bg-green-100 dark:bg-green-900 border-green-500" : "bg-red-100 dark:bg-red-900 border-red-500"; textClass = invert ? "text-green-700 dark:text-green-100" : "text-red-700 dark:text-red-100"; } 
             return (
-                <div className="fixed inset-0 z-[100] flex">
-                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose}></div>
-                    
-                    <div className="relative w-72 bg-white dark:bg-gray-900 h-full flex flex-col shadow-2xl animate-fade-in-left" onClick={(e) => e.stopPropagation()}>
-                        <div className="p-6 bg-brand-red text-white flex flex-col items-center justify-center relative">
-                            <div onClick={onClose} className="absolute top-4 right-4 text-white/80 hover:text-white p-2 cursor-pointer"><i className="fas fa-times text-xl"></i></div>
-                            <div className="w-20 h-20 bg-white rounded-full p-3 flex items-center justify-center shadow-lg mb-3">
-                                <LogoImage className="w-full h-full object-contain" />
-                            </div>
-                            <h2 className="font-black text-xl tracking-tight">TR FIRE</h2>
-                            <div className="text-center mt-2 w-full bg-black/20 rounded-xl py-2 px-3">
-                                <p className="text-sm font-bold truncate">{responsibleName}</p>
-                                <p className="text-[10px] text-white/80 uppercase font-bold tracking-wider">{currentUnit} | {userRole}</p>
-                            </div>
-                        </div>
-                        
-                        <div className="flex-1 overflow-y-auto py-2 flex flex-col">
-                            <MenuItem icon="fa-chart-pie" text="Página Inicial (Dashboard)" colorClass="text-teal-600 dark:text-teal-400" onClick={() => onNavigate('dashboard')} />
-                            
-                            {hasAccess('EXTINTOR') && <MenuItem icon="fa-fire-extinguisher" text="Extintores" colorClass="text-brand-red" onClick={() => onNavigate('category_EXTINTOR')} />}
-                            {hasAccess('HIDRANTE') && <MenuItem icon="fa-faucet" text="Hidrantes" colorClass="text-brand-orange" onClick={() => onNavigate('category_HIDRANTE')} />}
-                            {hasAccess('RONDA') && <MenuItem icon="fa-clipboard-check" text="Ronda Diária" colorClass="text-brand-blue" onClick={() => onNavigate('roundsLocation')} />}
-                            
-                            {hasAccess('HISTORICO') && <MenuItem icon="fa-history" text="Histórico Geral" onClick={() => onNavigate('list')} />}
-                            
-                            <div className="mt-4 mb-1 px-6 text-xs font-black text-gray-400 uppercase tracking-wider">Documentos & Dados</div>
-                            <MenuItem icon="fa-file-pdf" text="Gerar Relatórios" colorClass="text-yellow-600 dark:text-yellow-400" onClick={() => onOpenReport()} />
-                            {isAdmin && <MenuItem icon="fa-cloud-download-alt" text="Backup de Dados" colorClass="text-blue-500" onClick={() => onOpenBackup()} />}
-                            
-                            {isAdmin && (
-                                <>
-                                    <div className="mt-4 mb-1 px-6 text-xs font-black text-gray-400 uppercase tracking-wider">Gestão</div>
-                                    <MenuItem icon="fa-cog" text="Administração" colorClass="text-purple-600 dark:text-purple-400" onClick={() => onNavigate('adminMenu')} />
-                                </>
-                            )}
-                        </div>
-                        
-                        <div className="p-4 border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
-                            <div onClick={() => { onClose(); handleLogout(); }} className="w-full py-3.5 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-black rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform cursor-pointer">
-                                <i className="fas fa-sign-out-alt"></i> ENCERRAR SESSÃO
-                            </div>
-                        </div>
-                    </div>
+                <div className={`p-3 rounded-xl border ${val !== null ? 'border-2' : 'border-gray-200 dark:border-gray-700'} ${bgClass} shadow-sm transition-colors w-full`}>
+                    <p className={`font-bold mb-1 text-xs ${val !== null ? textClass : 'text-gray-500 dark:text-gray-400'}`}>{label}</p>
+                    <select value={val === null ? '' : (val ? 'true' : 'false')} onChange={(e) => onChange(field, e.target.value)} className={`w-full bg-transparent font-bold focus:outline-none ${textClass} appearance-none`}>
+                        <option value="">Selecionar...</option><option value="true">Sim</option><option value="false">Não</option>
+                    </select>
                 </div>
-            );
+            ); 
         }
 
-        // --- COMPONENTES REUTILIZÁVEIS ---
-
-        function HistoryItemCard({ item, showBin, isSelected, toggleSelection, onToggleDelete, onDeletePermanently, isAdmin, currentUser, onEditItem }) {
-            const isHid = item.type === 'HIDRANTE';
-            const isRonda = item.type === 'RONDA';
-            let statusColor = 'bg-gray-100 text-gray-700';
-            let statusText = '---';
-            if (isRonda) { 
-                if(item.status === 'NÃO REALIZADA') { statusColor = 'bg-red-500 text-white border-red-600'; statusText = 'TAREFA NÃO REALIZADA'; } 
-                else { statusColor = item.status === 'Conforme' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = item.status === 'Conforme' ? 'CONFORME' : 'NÃO CONFORME'; }
-            } else if (isHid) { statusColor = (item.h_complete && item.h_unobstructed && !item.h_seal_broken) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = (item.h_complete && item.h_unobstructed && !item.h_seal_broken) ? 'OK' : 'IRREGULAR'; } else { statusColor = (!item.q1 && !item.q2) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = (!item.q1) ? 'OK' : 'VIOLADO'; }
-            
-            const canDelete = isAdmin || (item.responsible === currentUser && !isRonda);
-
-            return (
-                <div className={`p-4 rounded-xl shadow-sm border-l-4 flex justify-between items-center transition-all mb-2 ${showBin ? (isSelected ? 'bg-red-100 border-red-600' : 'bg-red-50 dark:bg-red-900/10 border-red-500 opacity-80') : 'bg-white dark:bg-gray-800 border-brand-red'}`}>
-                    <div className="flex items-center gap-3">
-                        {(isAdmin || showBin) && toggleSelection && <div onClick={() => toggleSelection(item.id)} className={`w-6 h-6 rounded border-2 flex items-center justify-center cursor-pointer transition-colors ${isSelected ? 'bg-red-600 border-red-600 text-white':'border-red-300 bg-white'}`}>{isSelected && <i className="fas fa-check text-xs"></i>}</div>}
-                        <div>
-                            <span className="font-bold text-sm flex items-center gap-2">
-                                {item.equipmentName}
-                                {item.pendingSync && <i className="fas fa-cloud-upload-alt text-brand-orange text-xs" title="Sincronização pendente"></i>}
-                            </span>
-                            <span className="text-xs text-gray-500 font-bold block mt-0.5">{formatDate(item.created_at)} | {item.responsible}</span>
-                            {isRonda && <div className="text-xs text-gray-400 mt-1">Local: {item.sector} {item.moduleLocation ? `| ${item.moduleLocation}` : ''}</div>}
-                            {!isRonda && item.moduleLocation && <div className="text-[10px] text-gray-400 uppercase mt-0.5">{item.moduleLocation}</div>}
-                        </div>
-                        {(item.photo || item.hasPhoto) && <div className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-1 rounded flex items-center gap-1"><i className="fas fa-camera"></i></div>}
-                    </div>
-                    <div className="flex flex-col items-end gap-2">
-                        {showBin ? (
-                            <div className="flex gap-2">
-                                <button type="button" onClick={() => onToggleDelete(item.id, false)} className="fas fa-trash-restore text-green-500 cursor-pointer p-1 focus:outline-none"></button>
-                                {isAdmin && <button type="button" onClick={() => onDeletePermanently(item.id)} className="fas fa-times text-red-500 cursor-pointer p-1 focus:outline-none"></button>}
-                            </div>
-                        ) : (
-                            <div className="flex flex-col items-end">
-                                 <div className="flex items-center gap-2">
-                                    <span className={`inline-block text-[10px] px-2 py-0.5 rounded font-bold ${statusColor}`}>{statusText}</span>
-                                    {isAdmin && onEditItem && (
-                                        <button type="button" onClick={(e) => { e.stopPropagation(); onEditItem(item); }} className="w-8 h-8 flex items-center justify-center text-blue-500 hover:text-blue-700 transition-colors focus:outline-none">
-                                            <i className="fas fa-pen"></i>
-                                        </button>
-                                    )}
-                                 </div>
-                                 {canDelete && onToggleDelete && <button type="button" onClick={() => onToggleDelete(item.id, true)} className="fas fa-trash text-red-300 cursor-pointer mt-1 p-1 focus:outline-none"></button>}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            );
-        }
-
-        // --- MODAIS GLOBAIS (Relatório e Backup) ---
-
-        function ReportModal({ isOpen, onClose, data, showAlert, isAdmin }) {
-            const [pdfMonth, setPdfMonth] = useState(new Date().toISOString().slice(0, 7));
-            
-            if (!isOpen) return null;
-
-            const generateSpecificPDF = async (type) => { 
-                if (type === 'RONDA' && !isAdmin) { return showAlert("Acesso Negado: Apenas Administradores podem gerar relatórios de Ronda.", "error"); }
-                
-                const activeData = data.filter(item => !item.deleted && item.created_at);
-                const reportData = activeData.filter(item => { return (item.type || (type === 'RONDA' ? '' : 'EXTINTOR')) === type && item.created_at.slice(0, 7) === pdfMonth; });
-                
-                if(reportData.length === 0) return showAlert(`Sem dados de ${type} em ${formatMonthFolder(pdfMonth)}.`, "warning"); 
-                
-                onClose();
-                
-                const doc = new jsPDF({ orientation: "landscape" }); doc.setFillColor(243, 244, 246); doc.rect(0, 0, 297, 40, 'F'); doc.setTextColor(33, 33, 33); doc.setFontSize(22); let title = ""; if (type === 'EXTINTOR') title = "CHECK-LIST EXTINTORES MENSAL"; else if (type === 'HIDRANTE') title = "CHECK-LIST HIDRANTES MENSAL"; else if (type === 'RONDA') title = "RELATÓRIO DE RONDAS PREVENTIVAS"; doc.text(title, 14, 25); doc.setFontSize(10); doc.setTextColor(100, 100, 100); doc.text(`Mês de Referência: ${formatMonthFolder(pdfMonth)} | Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 35); doc.setFontSize(9); doc.setTextColor(33, 33, 33); doc.text("Parque Logístico: AERO GRU I", 280, 28, { align: "right" }); doc.text("Empresa: Vilella Assessoria em Segurança do Trabalho", 280, 35, { align: "right" }); 
-                const monthObj = new Date(pdfMonth + '-02'); const monthStr = monthObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase().replace('.', ''); const yearStr = monthObj.getFullYear(); const typeStr = type === 'EXTINTOR' ? 'Extintores' : (type === 'HIDRANTE' ? 'Hidrantes' : 'Rondas');
-                const uniqueResponsibles = [...new Set(reportData.map(i => i.responsible).filter(Boolean))]; const responsibleLabel = uniqueResponsibles.length === 1 ? uniqueResponsibles[0] : "Equipe"; const userStr = responsibleLabel.replace(/\s+/g, '-'); const fileName = `TRFIRE_Relatorio_${monthStr}-${yearStr}_${typeStr}_${userStr}.pdf`;
-                let body = []; let head = []; 
-                if (type === 'EXTINTOR') { head = [['Local', 'Equipamento', 'Data/Hora', 'Responsável', 'Tipo', 'Próx. Recarga', 'Próx. T. Hidro.', 'Possui Pictograma?', 'Sinalização de Solo?', 'Lacre Romp.?', 'Obstruído?', 'Observação']]; body = reportData.map(i => [ i.moduleLocation || '-', i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.extinguisherType || '-', i.nextRecharge || '-', i.nextHydro || '-', i.hasId ? 'SIM' : 'NÃO', i.floorSign ? 'SIM' : 'NÃO', i.q1 ? 'SIM' : 'NÃO', i.q2 ? 'SIM' : 'NÃO', i.obs || '' ]); } 
-                else if (type === 'HIDRANTE') { head = [['Local', 'Equipamento', 'Data/Hora', 'Responsável', 'Equip. Completo?', 'Desobstruído?', 'Lacre Romp.?', 'Próx. T. Hidro.', 'Observação']]; body = reportData.map(i => [ i.moduleLocation || '-', i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.h_complete ? 'SIM' : 'NÃO', i.h_unobstructed ? 'NÃO' : 'SIM', i.h_seal_broken ? 'SIM' : 'NÃO', i.nextHydro || '-', i.obs || '' ]); } 
-                else if (type === 'RONDA') { head = [['Local', 'Área Técnica', 'Data/Hora', 'Responsável', 'Condições', 'Status', 'Observação']]; body = reportData.map(i => [ i.sector || '-', i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.moduleLocation || '-', i.status || '-', i.obs || '' ]); } 
-                doc.autoTable({ head: head, body: body, startY: 45, theme: 'grid', headStyles: { fillColor: [224, 224, 224], textColor: [0, 0, 0], fontStyle: 'bold', lineWidth: 0.1, lineColor: [200, 200, 200] }, styles: { fontSize: 7, textColor: [50, 50, 50], lineColor: [230, 230, 230], lineWidth: 0.1, overflow: 'linebreak' }, alternateRowStyles: { fillColor: [255, 255, 255] } }); 
-                if (type === 'EXTINTOR') { let finalY = doc.lastAutoTable.finalY + 10; const counts = {}; reportData.forEach(item => { const t = item.extinguisherType || 'Indefinido'; counts[t] = (counts[t] || 0) + 1; }); if (finalY > 150) { doc.addPage(); finalY = 20; } doc.setFontSize(12); doc.setTextColor(33, 33, 33); doc.text("Resumo Quantitativo:", 14, finalY); const summaryBody = Object.entries(counts).map(([t, c]) => [t, c]); doc.autoTable({ head: [['Tipo', 'Quantidade']], body: summaryBody, startY: finalY + 5, theme: 'striped', tableWidth: 'wrap', styles: { fontSize: 9 } }); }
-                doc.save(fileName); 
-            };
-
-            return (
-                <div className="fixed inset-0 bg-black/80 z-[110] flex items-center justify-center p-4">
-                    <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm animate-fade-in text-center shadow-2xl relative">
-                        <button type="button" onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-white focus:outline-none"><i className="fas fa-times text-xl"></i></button>
-                        <h3 className="text-lg font-black mb-2 dark:text-white">Gerar Relatório PDF</h3>
-                        <div className="mb-6"><label className="text-xs text-gray-500 block mb-1">Selecione o Mês</label><input type="month" value={pdfMonth} onChange={(e) => setPdfMonth(e.target.value)} className="w-full p-3 bg-gray-100 dark:bg-gray-700 rounded-xl text-sm dark:text-white font-bold text-center border-none outline-none" /></div>
-                        <div className="space-y-3">
-                            <button type="button" onClick={() => generateSpecificPDF('EXTINTOR')} className="w-full py-4 bg-brand-red text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2 focus:outline-none"><i className="fas fa-fire-extinguisher"></i> Relatório EXTINTORES</button>
-                            <button type="button" onClick={() => generateSpecificPDF('HIDRANTE')} className="w-full py-4 bg-brand-orange text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2 focus:outline-none"><i className="fas fa-faucet"></i> Relatório HIDRANTES</button>
-                            {isAdmin && <button type="button" onClick={() => generateSpecificPDF('RONDA')} className="w-full py-4 bg-brand-blue text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2 focus:outline-none"><i className="fas fa-clipboard-check"></i> Relatório RONDAS</button>}
-                        </div>
-                    </div>
-                </div>
-            );
-        }
-
-        function BackupModal({ isOpen, onClose, data, onImportData, showAlert }) {
-            const fileInputRef = useRef(null);
-            if (!isOpen) return null;
-
-            const handleExport = () => { const jsonString = JSON.stringify(data, null, 2); const blob = new Blob([jsonString], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup_trfire_${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); onClose(); };
-            const handleFileImport = (e) => { const file = e.target.files[0]; if(!file) return; const reader = new FileReader(); reader.onload = (ev) => { try { const json = JSON.parse(ev.target.result); onImportData(json); onClose(); showAlert("Dados importados com sucesso!", "success"); } catch(err) { showAlert("Erro JSON.", "error"); } }; reader.readAsText(file); e.target.value = null; };
-
-            return (
-                <div className="fixed inset-0 bg-black/80 z-[110] flex items-center justify-center p-4">
-                    <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm animate-fade-in text-center shadow-2xl relative">
-                        <button type="button" onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-white focus:outline-none"><i className="fas fa-times text-xl"></i></button>
-                        <h3 className="text-lg font-black mb-6 dark:text-white flex items-center justify-center gap-2"><i className="fas fa-database text-blue-500"></i> Backup & Restauração</h3>
-                        <div className="space-y-4">
-                            <button type="button" onClick={handleExport} className="w-full py-4 bg-blue-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2 focus:outline-none"><i className="fas fa-download"></i> EXPORTAR TUDO (.JSON)</button>
-                            <div className="relative">
-                                <input type="file" ref={fileInputRef} onChange={handleFileImport} accept=".json" className="hidden" />
-                                <button type="button" onClick={() => fileInputRef.current.click()} className="w-full py-4 bg-green-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2 focus:outline-none"><i className="fas fa-upload"></i> IMPORTAR DADOS</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            );
-        }
-
-        // --- TELAS DO APP ---
-
-        function ResponsibleScreen({ onConfirm, usersList, unitsList, showAlert, onNavigate, isOnline }) {
+        function ResponsibleScreen({ onConfirm, usersList, unitsList, showAlert, onNavigate }) {
             const [selectedName, setSelectedName] = useState("");
             const [selectedUnit, setSelectedUnit] = useState("");
             const [password, setPassword] = useState("");
@@ -411,57 +236,290 @@
             const handleLoginAttempt = () => {
                 const nameUpper = selectedName.toUpperCase().trim();
                 if (!nameUpper || !password) return; 
-                if (nameUpper !== "ADMIN" && !selectedUnit) { showAlert("Selecione uma Unidade.", "warning"); return; }
+                
                 if (!usersList || usersList.length === 0) { showAlert("A carregar usuários... Tente novamente.", "info"); return; }
                 const userFound = usersList.find(u => u.name === nameUpper);
                 if (!userFound) { showAlert("Usuário não cadastrado.", "error"); return; }
                 if (userFound.pass !== password) { showAlert("Senha incorreta.", "error"); return; }
-                if (nameUpper !== "ADMIN" && userFound.unit !== "GLOBAL" && userFound.unit !== selectedUnit) { showAlert("Usuário incorreto.", "error"); return; }
                 
                 const role = userFound.role || (userFound.name === 'ADMIN' ? 'ADMIN' : 'OPERACIONAL');
+                const isSuperUser = ['ADMIN', 'SUPERVISOR', 'COORDENADOR'].includes(role);
+
+                if (!isSuperUser && !selectedUnit) { showAlert("Selecione uma Unidade.", "warning"); return; }
+                if (!isSuperUser && userFound.unit !== "GLOBAL" && userFound.unit !== selectedUnit) { showAlert("Usuário incorreto.", "error"); return; }
                 
                 onConfirm(userFound.name, selectedUnit || "GLOBAL", role, true);
             };
-            const isButtonEnabled = selectedName && password && (selectedUnit || selectedName.toUpperCase().trim() === "ADMIN");
+            const isButtonEnabled = selectedName && password;
 
             return (
                 <div className="flex flex-col h-full bg-brand-red p-4 items-center justify-center animate-fade-in relative overflow-hidden">
                     <div onClick={handleLogoTap} className="w-28 h-28 mb-2 bg-white rounded-full p-4 shadow-2xl flex items-center justify-center cursor-pointer active:scale-95 transition-transform"><LogoImage className="w-full h-full object-contain" /></div>
                     <h1 className="text-white text-2xl font-extrabold tracking-tight mb-1 text-center">TR FIRE <span className="text-brand-orange">INSPEÇÕES</span></h1>
                     <p className="text-white/80 text-xs mb-2 font-medium">Sistema de Controle de Equipamentos</p>
-                    <div className={`flex items-center gap-2 mb-4 px-3 py-1 rounded-full ${isOnline ? 'bg-black/20' : 'bg-red-500/20 border border-red-500/50'}`}>
-                        <div className={`w-2 h-2 rounded-full animate-pulse ${isOnline ? 'bg-green-400' : 'bg-red-500'}`}></div>
-                        <p className="text-white/90 text-xs font-bold">{isOnline ? 'ONLINE' : 'MODO OFFLINE'}</p>
-                    </div>
+                    <div className="flex items-center gap-2 mb-4 bg-black/20 px-3 py-1 rounded-full"><div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div><p className="text-white/90 text-xs font-bold">ONLINE</p></div>
                     <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-2xl w-full max-w-sm space-y-4 mt-6">
                         <div><label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">Unidade</label><div className="relative"><select value={selectedUnit} onChange={(e) => { setSelectedUnit(e.target.value); }} className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white appearance-none font-bold text-gray-700 text-base"><option value="">{unitsList && unitsList.length > 0 ? "Selecione..." : "A carregar..."}</option>{unitsList && unitsList.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}</select></div></div>
                         <div><label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">Responsável</label><div className="relative"><input type="text" value={selectedName} onChange={(e) => setSelectedName(e.target.value.toUpperCase())} placeholder="Digite seu nome..." className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 text-base"/></div></div>
-                        <div><label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">Senha</label><div className="relative"><input type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Digite sua senha..." className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 text-base pr-12" /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 flex items-center px-4 text-gray-400 focus:outline-none"><i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i></button></div></div>
-                        <button type="button" onClick={handleLoginAttempt} disabled={!isButtonEnabled} className={`w-full py-4 rounded-xl text-lg font-bold shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 ${isButtonEnabled ? 'bg-brand-orange hover:bg-orange-600 text-white' : 'bg-gray-300 text-gray-500 cursor-not-allowed'} focus:outline-none`}>INICIAR INSPEÇÃO <i className="fas fa-arrow-right"></i></button>
+                        <div><label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">Senha</label><div className="relative"><input type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Digite sua senha..." className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 text-base pr-12" /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 flex items-center px-4 text-gray-400"><i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i></button></div></div>
+                        <button onClick={handleLoginAttempt} disabled={!isButtonEnabled} className={`w-full py-4 rounded-xl text-lg font-bold shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 ${isButtonEnabled ? 'bg-brand-orange hover:bg-orange-600 text-white' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}>INICIAR INSPEÇÃO <i className="fas fa-arrow-right"></i></button>
                     </div>
                     <div className="absolute bottom-2 w-full text-center space-y-1"><div className="text-white/90 text-[10px] text-center mb-0.5 leading-tight font-medium"><p>Copyright © 2026 Fire Personality ME</p><p>Todos os direitos reservados</p><p>(Thawillys Rocha)</p></div><p className="text-white/40 text-[10px]">Versão Beta 1.5</p></div>
                 </div>
             );
         };
 
-        // NOVA TELA: CATEGORIA UNIFICADA (Scanner + Histórico do Mês)
-        function CategoryScreen({ type, db, onStartInspection, onToggleDelete, onDeletePermanently, currentUser, userRole, onEditItem, onOpenMenu }) {
-            const isAdmin = userRole === 'ADMIN';
-            const [openMonths, setOpenMonths] = useState({});
+        function SidebarMenu({ isOpen, onClose, onNavigate, responsibleName, currentUnit, userRole, usersList, onOpenCategory }) {
+            if (!isOpen) return null;
             
-            const title = type === 'EXTINTOR' ? 'EXTINTORES' : 'HIDRANTES';
-            const headerColor = type === 'EXTINTOR' ? 'bg-brand-red' : 'bg-brand-orange';
-            const icon = type === 'EXTINTOR' ? 'fa-fire-extinguisher' : 'fa-faucet';
+            const isAdmin = ['ADMIN', 'SUPERVISOR', 'COORDENADOR'].includes(userRole);
+            const userPerms = usersList?.find(u => u.name === responsibleName)?.permissions || ['EXTINTOR', 'HIDRANTE', 'HISTORICO'];
+            const hasAccess = (perm) => isAdmin || userPerms.includes(perm);
+            
+            const handleNav = (target, type = null) => {
+                onClose();
+                if (type) {
+                    onOpenCategory(type);
+                } else {
+                    onNavigate(target);
+                }
+            };
+            
+            const handleLogout = () => { localStorage.removeItem('trfire_user'); localStorage.removeItem('trfire_role'); window.location.reload(); };
+
+            return (
+                <div className="fixed inset-0 z-[100] flex">
+                    <div className="absolute inset-0 bg-black/60 transition-opacity animate-fade-in" onClick={onClose}></div>
+                    
+                    <div className="relative w-[85%] max-w-sm bg-white dark:bg-gray-900 h-full shadow-2xl flex flex-col animate-slide-in-left">
+                        <div className="bg-brand-red p-6 text-white flex flex-col justify-end min-h-[160px] relative">
+                            <button onClick={onClose} className="absolute top-4 right-4 text-white/80 hover:text-white text-2xl"><i className="fas fa-times"></i></button>
+                            <div className="w-16 h-16 bg-white rounded-full p-2 mb-3 shadow"><LogoImage className="w-full h-full object-contain" /></div>
+                            <h2 className="text-xl font-black">TR FIRE</h2>
+                            <p className="text-sm font-bold opacity-90 mt-1">{responsibleName}</p>
+                            <p className="text-[10px] opacity-75">{currentUnit} | {userRole}</p>
+                        </div>
+                        
+                        <div className="flex-1 overflow-y-auto py-4 space-y-1 px-3">
+                            <button onClick={()=>handleNav('menu')} className="w-full flex items-center p-3 text-left text-gray-700 dark:text-gray-200 font-bold hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors">
+                                <div className="w-10 flex justify-center"><i className="fas fa-chart-pie text-brand-orange text-lg"></i></div> Dashboard
+                            </button>
+                            
+                            {hasAccess('RONDA') && (
+                                <button onClick={()=>handleNav('roundsLocation')} className="w-full flex items-center p-3 text-left text-gray-700 dark:text-gray-200 font-bold hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors">
+                                    <div className="w-10 flex justify-center"><i className="fas fa-clipboard-check text-brand-blue text-lg"></i></div> Ronda Diária
+                                </button>
+                            )}
+                            
+                            {/* Mudança: Agora chamamos onOpenCategory ('EXTINTOR' e 'HIDRANTE') */}
+                            {hasAccess('EXTINTOR') && (
+                                <button onClick={()=>handleNav('equipmentCategory', 'EXTINTOR')} className="w-full flex items-center p-3 text-left text-gray-700 dark:text-gray-200 font-bold hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors">
+                                    <div className="w-10 flex justify-center"><i className="fas fa-fire-extinguisher text-brand-red text-lg"></i></div> Extintores
+                                </button>
+                            )}
+                            
+                            {hasAccess('HIDRANTE') && (
+                                <button onClick={()=>handleNav('equipmentCategory', 'HIDRANTE')} className="w-full flex items-center p-3 text-left text-gray-700 dark:text-gray-200 font-bold hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors">
+                                    <div className="w-10 flex justify-center"><i className="fas fa-faucet text-brand-orange text-lg"></i></div> Hidrantes
+                                </button>
+                            )}
+                            
+                            {hasAccess('HISTORICO') && (
+                                <button onClick={()=>handleNav('list')} className="w-full flex items-center p-3 text-left text-gray-700 dark:text-gray-200 font-bold hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors">
+                                    <div className="w-10 flex justify-center"><i className="fas fa-history text-gray-500 text-lg"></i></div> Histórico Geral
+                                </button>
+                            )}
+                            
+                            {isAdmin && (
+                                <div className="pt-2 mt-2 border-t border-gray-200 dark:border-gray-800">
+                                    <button onClick={()=>handleNav('adminMenu')} className="w-full flex items-center p-3 text-left text-gray-700 dark:text-gray-200 font-bold hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors">
+                                        <div className="w-10 flex justify-center"><i className="fas fa-cogs text-cyan-600 text-lg"></i></div> Parâmetros Admin
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                        
+                        <div className="p-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
+                            <button onClick={handleLogout} className="w-full flex items-center justify-center p-3 text-red-600 font-bold hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors">
+                                <i className="fas fa-sign-out-alt mr-2"></i> Encerrar Sessão
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )
+        }
+
+        function DashboardScreen({ db, onOpenMenu, responsibleName }) {
+            const currentMonth = new Date().toISOString().slice(0, 7);
+            
+            const inspecionadosMes = useMemo(() => {
+                return db.filter(item => !item.deleted && item.created_at?.startsWith(currentMonth)).length;
+            }, [db, currentMonth]);
+
+            const stats = useMemo(() => {
+                const latestEquipments = {};
+                db.filter(item => !item.deleted && item.type !== 'RONDA' && item.equipmentId).forEach(item => {
+                    if (!latestEquipments[item.equipmentId] || new Date(item.created_at) > new Date(latestEquipments[item.equipmentId].created_at)) {
+                        latestEquipments[item.equipmentId] = item;
+                    }
+                });
+
+                let countOk = 0;
+                let countVencido = 0;
+                let countAVencer = 0;
+                let alertsList = [];
+
+                Object.values(latestEquipments).forEach(eq => {
+                    let stRecharge = eq.type === 'EXTINTOR' ? checkExpiration(eq.nextRecharge) : 'OK';
+                    let stHydro = checkExpiration(eq.nextHydro);
+                    
+                    let finalStatus = 'OK';
+                    if (stRecharge === 'VENCIDO' || stHydro === 'VENCIDO') finalStatus = 'VENCIDO';
+                    else if (stRecharge === 'A_VENCER' || stHydro === 'A_VENCER') finalStatus = 'A_VENCER';
+
+                    if (finalStatus === 'OK') countOk++;
+                    else if (finalStatus === 'VENCIDO') { 
+                        countVencido++; 
+                        alertsList.push({...eq, alertType: 'VENCIDO'}); 
+                    }
+                    else if (finalStatus === 'A_VENCER') { 
+                        countAVencer++; 
+                        alertsList.push({...eq, alertType: 'A_VENCER'}); 
+                    }
+                });
+
+                alertsList.sort((a,b) => {
+                    if (a.alertType === 'VENCIDO' && b.alertType !== 'VENCIDO') return -1;
+                    if (b.alertType === 'VENCIDO' && a.alertType !== 'VENCIDO') return 1;
+                    return 0;
+                });
+
+                return { countOk, countVencido, countAVencer, alerts: alertsList, total: countOk + countVencido + countAVencer };
+            }, [db]);
+
+            const pctOk = stats.total ? (stats.countOk / stats.total) * 100 : 0;
+            const pctAVencer = stats.total ? (stats.countAVencer / stats.total) * 100 : 0;
+            const pctVencido = stats.total ? (stats.countVencido / stats.total) * 100 : 0;
+
+            return (
+                <div className="flex flex-col h-full bg-gray-50 dark:bg-brand-dark overflow-y-auto animate-fade-in relative">
+                    <div className="bg-brand-red p-4 flex justify-between items-center text-white sticky top-0 z-20 shadow-md">
+                        <button onClick={onOpenMenu} className="w-10 h-10 flex items-center justify-start text-2xl active:scale-90 transition-transform"><i className="fas fa-bars"></i></button>
+                        <h1 className="font-black text-lg tracking-tight">GESTÃO & STATUS</h1>
+                        <div className="w-10"></div>
+                    </div>
+                    
+                    <div className="p-4 space-y-5 pb-8">
+                        <div>
+                            <p className="text-gray-500 dark:text-gray-400 text-xs font-bold uppercase tracking-wider mb-1">Bem-vindo(a) de volta,</p>
+                            <h2 className="text-xl font-black text-gray-800 dark:text-white">{responsibleName}</h2>
+                        </div>
+
+                        <div className="bg-white dark:bg-gray-800 rounded-3xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 flex items-center justify-between">
+                            <div>
+                                <p className="text-gray-500 dark:text-gray-400 text-xs font-bold uppercase mb-1">Inspecionados no Mês</p>
+                                <div className="flex items-baseline gap-2">
+                                    <h2 className="text-4xl font-black text-brand-blue">{inspecionadosMes}</h2>
+                                    <span className="text-xs text-gray-400 font-bold">leituras</span>
+                                </div>
+                            </div>
+                            <div className="w-14 h-14 bg-blue-50 dark:bg-blue-900/30 rounded-full flex items-center justify-center text-brand-blue text-2xl shadow-inner">
+                                <i className="fas fa-clipboard-check"></i>
+                            </div>
+                        </div>
+                        
+                        <div className="bg-white dark:bg-gray-800 rounded-3xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-gray-800 dark:text-white text-sm font-black uppercase tracking-wide">Situação Atual (Plantão)</h3>
+                                <span className="text-xs font-bold bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded text-gray-600 dark:text-gray-300">{stats.total} Ativos</span>
+                            </div>
+                            
+                            <div className="flex h-5 rounded-full overflow-hidden mb-4 bg-gray-100 dark:bg-gray-700 shadow-inner">
+                                {pctOk > 0 && <div style={{width: `${pctOk}%`}} className="bg-green-500 hover:opacity-80 transition-opacity"></div>}
+                                {pctAVencer > 0 && <div style={{width: `${pctAVencer}%`}} className="bg-yellow-400 hover:opacity-80 transition-opacity"></div>}
+                                {pctVencido > 0 && <div style={{width: `${pctVencido}%`}} className="bg-red-500 hover:opacity-80 transition-opacity"></div>}
+                                {stats.total === 0 && <div className="w-full bg-gray-200 dark:bg-gray-600"></div>}
+                            </div>
+                            
+                            <div className="grid grid-cols-3 gap-2 text-center mt-2">
+                                <div className="bg-green-50 dark:bg-green-900/10 p-2 rounded-xl">
+                                    <p className="text-[10px] text-gray-500 font-bold uppercase mb-0.5">OK</p>
+                                    <p className="text-green-600 font-black text-lg">{stats.countOk}</p>
+                                </div>
+                                <div className="bg-yellow-50 dark:bg-yellow-900/10 p-2 rounded-xl">
+                                    <p className="text-[10px] text-gray-500 font-bold uppercase mb-0.5">A Vencer</p>
+                                    <p className="text-yellow-600 font-black text-lg">{stats.countAVencer}</p>
+                                </div>
+                                <div className="bg-red-50 dark:bg-red-900/10 p-2 rounded-xl">
+                                    <p className="text-[10px] text-gray-500 font-bold uppercase mb-0.5">Vencidos</p>
+                                    <p className="text-red-600 font-black text-lg">{stats.countVencido}</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <div className="flex items-center gap-2 mb-3 px-1">
+                                <div className="w-8 h-8 rounded-full bg-brand-orange/20 flex items-center justify-center text-brand-orange animate-pulse">
+                                    <i className="fas fa-bell"></i>
+                                </div>
+                                <h3 className="text-gray-800 dark:text-white font-black text-base uppercase tracking-tight">Alertas do Sistema</h3>
+                            </div>
+                            
+                            <div className="space-y-3">
+                                {stats.alerts.length === 0 ? (
+                                    <div className="bg-gray-50 dark:bg-gray-800/50 rounded-2xl p-6 text-center border border-dashed border-gray-300 dark:border-gray-600">
+                                        <i className="fas fa-shield-alt text-3xl text-green-400 mb-2 opacity-50"></i>
+                                        <p className="text-gray-500 dark:text-gray-400 text-sm font-bold">Tudo em ordem!</p>
+                                        <p className="text-xs text-gray-400">Nenhum equipamento próximo do vencimento.</p>
+                                    </div>
+                                ) : stats.alerts.map((eq, idx) => (
+                                    <div key={idx} className={`p-4 rounded-2xl shadow-sm bg-white dark:bg-gray-800 border-l-4 flex justify-between items-center transition-all ${eq.alertType === 'VENCIDO' ? 'border-red-500' : 'border-yellow-400'}`}>
+                                        <div className="flex gap-3 items-center">
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${eq.alertType === 'VENCIDO' ? 'bg-red-50 text-red-500' : 'bg-yellow-50 text-yellow-600'}`}>
+                                                <i className={`fas ${eq.type === 'EXTINTOR' ? 'fa-fire-extinguisher' : 'fa-faucet'}`}></i>
+                                            </div>
+                                            <div>
+                                                <p className="font-bold text-sm text-gray-800 dark:text-white">{eq.equipmentName}</p>
+                                                <p className="text-[10px] text-gray-500 uppercase font-bold mt-0.5"><i className="fas fa-map-marker-alt mr-1"></i> {eq.moduleLocation || 'LOCAL NÃO INFORMADO'}</p>
+                                            </div>
+                                        </div>
+                                        <span className={`text-[9px] font-black px-2 py-1.5 rounded-lg uppercase tracking-wider ${eq.alertType === 'VENCIDO' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                            {eq.alertType === 'VENCIDO' ? 'VENCIDO' : 'A VENCER'}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )
+        }
+
+        // --- NOVA TELA: CATEGORIA ESPECÍFICA (Extintores / Hidrantes) ---
+        function EquipmentCategoryScreen({ db, inspectionType, onNavigate, onStartScan, currentUser, userRole, onEditItem, onToggleDelete, showConfirm }) {
+            const isAdmin = ['ADMIN', 'SUPERVISOR', 'COORDENADOR'].includes(userRole);
+            const [openMonths, setOpenMonths] = useState({});
+
+            const toggleMonth = (m) => setOpenMonths(prev => ({...prev, [m]: !prev[m]}));
+
+            const formatMonthFolder = (yyyy_mm) => {
+                if(!yyyy_mm) return "DATA INVÁLIDA";
+                try {
+                    const [year, month] = yyyy_mm.split('-');
+                    const date = new Date(parseInt(year), parseInt(month) - 1);
+                    return date.toLocaleString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase();
+                } catch(e) { return yyyy_mm; }
+            };
 
             const activeData = useMemo(() => {
                 if (!Array.isArray(db)) return [];
-                return db.filter(item => !item.deleted && item.type === type && item.created_at);
-            }, [db, type]);
+                return db.filter(item => !item.deleted && item.type === inspectionType);
+            }, [db, inspectionType]);
 
             const groupedStructure = useMemo(() => {
                 const struct = {};
                 activeData.forEach(item => {
-                    const monthKey = item.created_at.slice(0, 7); 
+                    const monthKey = item.created_at ? item.created_at.slice(0, 7) : 'UNKNOWN'; 
                     if (!struct[monthKey]) struct[monthKey] = [];
                     struct[monthKey].push(item);
                 });
@@ -469,256 +527,204 @@
             }, [activeData]);
 
             const sortedMonths = Object.keys(groupedStructure).sort().reverse();
-            const toggleMonth = (m) => setOpenMonths(prev => ({...prev, [m]: !prev[m]}));
+
+            // Abrir automaticamente a pasta do primeiro mês se houver
+            useEffect(() => {
+                if (sortedMonths.length > 0 && Object.keys(openMonths).length === 0) {
+                    setOpenMonths({ [sortedMonths[0]]: true });
+                }
+            }, [sortedMonths]);
+
+            const isExtintor = inspectionType === 'EXTINTOR';
+            const bgColorClass = isExtintor ? 'bg-brand-red' : 'bg-brand-orange';
+            const textColorClass = isExtintor ? 'text-brand-red' : 'text-brand-orange';
+            const lightBgClass = isExtintor ? 'bg-red-50 text-brand-red' : 'bg-orange-50 text-brand-orange';
+            const borderLightClass = isExtintor ? 'border-brand-red' : 'border-brand-orange';
+            const title = isExtintor ? 'Extintores' : 'Hidrantes';
+            const icon = isExtintor ? 'fa-fire-extinguisher' : 'fa-faucet';
+
+            const renderItem = (item) => {
+                const isHid = item.type === 'HIDRANTE';
+                let statusColor = 'bg-gray-100 text-gray-700';
+                let statusText = '---';
+                if (isHid) { 
+                    statusColor = (item.h_complete && item.h_unobstructed && !item.h_seal_broken) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; 
+                    statusText = (item.h_complete && item.h_unobstructed && !item.h_seal_broken) ? 'OK' : 'IRREGULAR'; 
+                } else { 
+                    statusColor = (!item.q1 && !item.q2) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; 
+                    statusText = (!item.q1) ? 'OK' : 'VIOLADO'; 
+                }
+                
+                const canDelete = isAdmin || (item.responsible === currentUser);
+
+                return (
+                    <div key={item.id} className={`p-4 rounded-xl shadow-sm border-l-4 ${borderLightClass} flex justify-between items-center transition-all mb-2 bg-white dark:bg-gray-800`}>
+                        <div className="flex items-center gap-3">
+                            <div>
+                                <span className="font-bold text-sm block dark:text-white">{item.equipmentName}</span>
+                                <span className="text-xs text-gray-500 font-bold block mt-0.5">{formatDate(item.created_at)} | {item.responsible}</span>
+                            </div>
+                            {(item.photo || item.hasPhoto) && <div className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-1 rounded flex items-center gap-1"><i className="fas fa-camera"></i></div>}
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                            <div className="flex items-center gap-2">
+                                <span className={`inline-block text-[10px] px-2 py-0.5 rounded font-bold ${statusColor}`}>{statusText}</span>
+                                {isAdmin && (
+                                    <button onClick={(e) => { e.stopPropagation(); onEditItem(item); }} className="w-8 h-8 flex items-center justify-center text-blue-500 hover:text-blue-700 transition-colors">
+                                        <i className="fas fa-pen"></i>
+                                    </button>
+                                )}
+                            </div>
+                            {canDelete && <i onClick={() => showConfirm("Mover para lixeira?", () => onToggleDelete(item.id, true), "warning")} className="fas fa-trash text-red-300 cursor-pointer mt-1"></i>}
+                        </div>
+                    </div>
+                );
+            };
 
             return (
-                <div className="flex flex-col h-full bg-gray-50 dark:bg-black relative">
-                    {/* Header Padrão */}
-                    <div className={`${headerColor} text-white p-4 shadow-md flex items-center justify-between sticky top-0 z-20`}>
-                        <h2 className="text-lg font-black tracking-wide flex items-center gap-2 uppercase">
-                            <i className={`fas ${icon}`}></i> {title}
-                        </h2>
-                        <button type="button" onClick={onOpenMenu} className="text-2xl active:scale-95 p-1 focus:outline-none"><i className="fas fa-bars"></i></button>
+                <div className="flex flex-col h-full bg-gray-50 dark:bg-brand-dark relative animate-fade-in">
+                    <div className={`${bgColorClass} p-4 flex justify-between items-center text-white sticky top-0 z-20 shadow-md`}>
+                        <button onClick={() => onNavigate('menu')} className="w-10 h-10 flex items-center justify-start text-xl active:scale-90 transition-transform"><i className="fas fa-arrow-left"></i></button>
+                        <h1 className="font-black text-lg tracking-tight uppercase"><i className={`fas ${icon} mr-2`}></i> {title}</h1>
+                        <div className="w-10"></div>
                     </div>
-
-                    {/* SEÇÃO DO BOTÃO GIGANTE DE SCANNER */}
-                    <div className="p-6 bg-white dark:bg-gray-900 shadow-sm z-10 border-b border-gray-100 dark:border-gray-800 flex flex-col items-center">
-                        <button type="button" onClick={() => onStartInspection(type)} className={`w-full max-w-sm py-6 ${headerColor} text-white rounded-3xl font-black text-xl shadow-xl flex flex-col items-center justify-center gap-3 active:scale-95 transition-transform focus:outline-none cursor-pointer`}>
-                            <i className="fas fa-qrcode text-5xl mb-1"></i> 
-                            <span>ESCANEAR QR-CODE</span>
+                    
+                    <div className="p-4 bg-white dark:bg-gray-900 shadow-sm z-10">
+                        <button onClick={() => onStartScan(inspectionType)} className={`w-full py-4 ${bgColorClass} text-white rounded-2xl font-black text-lg shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-3`}>
+                            <i className="fas fa-qrcode text-2xl"></i> NOVA LEITURA
                         </button>
-                        <p className="text-center text-sm text-gray-500 mt-4 font-medium">Toque acima para abrir a câmera e iniciar a inspeção.</p>
                     </div>
 
-                    {/* SEÇÃO DO HISTÓRICO EM PASTAS */}
-                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                        <h3 className="font-bold text-gray-400 text-xs uppercase mb-2">Histórico - {title}</h3>
-                        {sortedMonths.length === 0 ? <div className="text-center text-gray-500 mt-6 bg-white dark:bg-gray-800 p-6 rounded-2xl">Nenhuma inspeção encontrada.</div> : 
-                             sortedMonths.map(monthKey => {
-                                 const isOpen = openMonths[monthKey];
-                                 const items = groupedStructure[monthKey];
-                                 
-                                 return (
-                                     <div key={monthKey} className="mb-2 bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-                                         <div onClick={() => toggleMonth(monthKey)} className="w-full flex justify-between items-center p-4 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 transition-colors cursor-pointer select-none">
-                                             <div className="flex items-center gap-3">
-                                                 <div className={`w-10 h-10 rounded-full ${type === 'EXTINTOR' ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-600'} flex items-center justify-center`}><i className={`fas ${isOpen ? 'fa-folder-open' : 'fa-folder'}`}></i></div>
-                                                 <div className="text-left"><span className="block font-bold text-gray-800 dark:text-white">{formatMonthFolder(monthKey)}</span><span className="text-xs text-gray-500">{items.length} inspeções</span></div>
-                                             </div>
-                                             <i className={`fas fa-chevron-${isOpen ? 'up' : 'down'} text-gray-400`}></i>
-                                         </div>
-                                         
-                                         {isOpen && (
-                                             <div className="p-2 bg-white dark:bg-gray-900 space-y-2 animate-fade-in border-t border-gray-100 dark:border-gray-800">
-                                                 {items.map(item => (
-                                                     <HistoryItemCard key={item.id} item={item} showBin={false} isSelected={false} onToggleDelete={onToggleDelete} onDeletePermanently={onDeletePermanently} isAdmin={isAdmin} currentUser={currentUser} onEditItem={onEditItem} />
-                                                 ))}
-                                             </div>
-                                         )}
-                                     </div>
-                                 );
-                             })
+                    <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2 mt-2">
+                        <h3 className="text-gray-500 dark:text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Histórico Recente ({activeData.length})</h3>
+                        {sortedMonths.length === 0 ? <div className="text-center text-gray-500 mt-10">Nenhum registro encontrado.</div> : 
+                            sortedMonths.map(monthKey => {
+                                const isOpen = openMonths[monthKey] !== false; 
+                                const monthData = groupedStructure[monthKey];
+                                
+                                return (
+                                    <div key={monthKey} className="mb-2 bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                                        <button onClick={() => toggleMonth(monthKey)} className="w-full flex justify-between items-center p-4 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 transition-colors">
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-10 h-10 rounded-full ${lightBgClass} flex items-center justify-center`}><i className={`fas ${isOpen ? 'fa-folder-open' : 'fa-folder'}`}></i></div>
+                                                <div className="text-left"><span className="block font-bold text-gray-800 dark:text-white">{formatMonthFolder(monthKey)}</span><span className="text-xs text-gray-500">{monthData.length} itens</span></div>
+                                            </div>
+                                            <i className={`fas fa-chevron-${isOpen ? 'up' : 'down'} text-gray-400`}></i>
+                                        </button>
+                                        
+                                        {isOpen && (
+                                            <div className="p-2 bg-white dark:bg-gray-900 space-y-2 animate-fade-in">
+                                                {monthData.map(item => renderItem(item))}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })
                         }
                     </div>
                 </div>
             );
         }
 
-        // --- DEMAIS TELAS (Dashboard, Admin, Forms, Scanner, etc) ---
+        function RoundLocationsRegisterScreen({ onNavigate, onSaveLocation, onUpdateLocation, locationsList, onDeleteLocation, showAlert, showConfirm, onOpenMenu }) {
+            const [newLocation, setNewLocation] = useState("");
+            const [saving, setSaving] = useState(false);
+            const [editingId, setEditingId] = useState(null);
 
-        function DashboardScreen({ data, onOpenMenu }) {
-            const [currentMonthStr, setCurrentMonthStr] = useState(new Date().toISOString().slice(0, 7));
-
-            const checkExpiration = (dateStr) => {
-                if (!dateStr || dateStr.length !== 7) return { status: 'OK', text: 'N/A' };
-                const [mm, yyyy] = dateStr.split('/');
-                const expDate = new Date(parseInt(yyyy), parseInt(mm) - 1, 1);
-                const now = new Date();
-                const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-                
-                const diffMonths = (expDate.getFullYear() - currentMonth.getFullYear()) * 12 + (expDate.getMonth() - currentMonth.getMonth());
-                
-                if (diffMonths < 0) return { status: 'VENCIDO', text: 'Vencido', color: 'bg-red-500 text-white', icon: 'fa-times-circle' };
-                if (diffMonths === 0 || diffMonths === 1) return { status: 'A_VENCER', text: 'A Vencer', color: 'bg-orange-500 text-white', icon: 'fa-exclamation-triangle' };
-                return { status: 'OK', text: 'No Prazo', color: 'bg-green-500 text-white', icon: 'fa-check-circle' };
+            const handleSave = async () => {
+                if (!newLocation) return showAlert("Digite o nome do local.", "warning");
+                setSaving(true);
+                if (editingId) { await onUpdateLocation(editingId, { name: newLocation.toUpperCase() }); showAlert("Atualizado!", "success"); setEditingId(null); } 
+                else { await onSaveLocation({ name: newLocation.toUpperCase() }); showAlert("Adicionado!", "success"); }
+                setSaving(false); setNewLocation("");
             };
 
-            const dashboardStats = useMemo(() => {
-                if (!Array.isArray(data)) return { monthStats: {}, expirations: [] };
-
-                const monthData = data.filter(i => !i.deleted && i.created_at && i.created_at.startsWith(currentMonthStr));
-                const monthStats = { total: monthData.length, ok: 0, irregular: 0, ronda_ok: 0, ronda_falha: 0 };
-
-                monthData.forEach(item => {
-                    if (item.type === 'RONDA') {
-                        if (item.status === 'Conforme') monthStats.ronda_ok++;
-                        else monthStats.ronda_falha++;
-                    } else if (item.type === 'HIDRANTE') {
-                        if (item.h_complete && item.h_unobstructed && !item.h_seal_broken) monthStats.ok++;
-                        else monthStats.irregular++;
-                    } else {
-                        if (!item.q1 && !item.q2) monthStats.ok++;
-                        else monthStats.irregular++;
-                    }
-                });
-
-                const latestInspections = {};
-                data.forEach(item => {
-                    if (item.deleted || item.type === 'RONDA') return;
-                    if (!latestInspections[item.equipmentId] || new Date(item.created_at) > new Date(latestInspections[item.equipmentId].created_at)) {
-                        latestInspections[item.equipmentId] = item;
-                    }
-                });
-
-                const expirations = [];
-                Object.values(latestInspections).forEach(item => {
-                    const rechargeStatus = item.type === 'EXTINTOR' ? checkExpiration(item.nextRecharge) : null;
-                    const hydroStatus = checkExpiration(item.nextHydro);
-
-                    if ((rechargeStatus && rechargeStatus.status !== 'OK') || hydroStatus.status !== 'OK') {
-                        expirations.push({
-                            id: item.equipmentId,
-                            name: item.equipmentName,
-                            location: item.moduleLocation,
-                            type: item.type,
-                            recharge: rechargeStatus,
-                            hydro: hydroStatus,
-                            lastInspection: formatDate(item.created_at)
-                        });
-                    }
-                });
-
-                expirations.sort((a, b) => {
-                    const aIsVencido = (a.recharge?.status === 'VENCIDO' || a.hydro?.status === 'VENCIDO');
-                    const bIsVencido = (b.recharge?.status === 'VENCIDO' || b.hydro?.status === 'VENCIDO');
-                    if (aIsVencido && !bIsVencido) return -1;
-                    if (!aIsVencido && bIsVencido) return 1;
-                    return 0;
-                });
-
-                return { monthStats, expirations };
-            }, [data, currentMonthStr]);
-
-            const { monthStats, expirations } = dashboardStats;
-            const equipTotal = monthStats.ok + monthStats.irregular;
-            const equipOkPct = equipTotal > 0 ? (monthStats.ok / equipTotal) * 100 : 0;
-            const equipIrrPct = equipTotal > 0 ? (monthStats.irregular / equipTotal) * 100 : 0;
-
-            const rondaTotal = monthStats.ronda_ok + monthStats.ronda_falha;
-            const rondaOkPct = rondaTotal > 0 ? (monthStats.ronda_ok / rondaTotal) * 100 : 0;
-            const rondaFalhaPct = rondaTotal > 0 ? (monthStats.ronda_falha / rondaTotal) * 100 : 0;
+            const handleEditClick = (loc) => { setEditingId(loc.id); setNewLocation(loc.name); };
+            const handleCancelEdit = () => { setEditingId(null); setNewLocation(""); };
+            const handleDelete = (id) => { showConfirm("Excluir este local?", () => onDeleteLocation(id), "error"); };
 
             return (
-                <div className="flex flex-col h-full bg-gray-50 dark:bg-black relative">
-                    <div className="bg-teal-700 text-white p-4 shadow-md flex items-center justify-between sticky top-0 z-20">
-                        <div className="flex items-center gap-4">
-                            <h2 className="text-lg font-black tracking-wide flex items-center gap-2">
-                                <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center p-1"><LogoImage className="w-full h-full object-contain" /></div>
-                                TR FIRE Dashboard
-                            </h2>
+                <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 overflow-y-auto relative">
+                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate('adminMenu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
+                    <div className="mt-16 text-center mb-8"><div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-full mb-4"><i className="fas fa-map-marker-alt text-2xl text-white"></i></div><h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">{editingId ? 'EDITAR LOCAL' : 'LOCAIS DE RONDA'}</h2><p className="text-gray-500 dark:text-gray-400 text-sm">Gerenciar pontos</p></div>
+                    <div className="space-y-4"><input value={newLocation} onChange={e => setNewLocation(e.target.value)} placeholder="NOME DO LOCAL" className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-blue outline-none dark:text-white font-bold text-gray-700 uppercase" /><div className="flex gap-2">{editingId && <button onClick={handleCancelEdit} className="flex-1 py-4 bg-gray-300 text-gray-700 rounded-xl font-bold shadow-lg">CANCELAR</button>}<button onClick={handleSave} disabled={saving} className="flex-[2] py-4 bg-brand-blue text-white rounded-xl text-lg font-bold shadow-lg active:scale-95 transition-transform">{saving ? '...' : (editingId ? 'ATUALIZAR' : 'ADICIONAR')}</button></div></div>
+                    <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700"><h3 className="font-bold text-gray-500 mb-4 text-xs uppercase">Locais Cadastrados ({locationsList.length})</h3><div className="space-y-2">{locationsList.map(loc => (<div key={loc.id} className={`bg-white dark:bg-gray-900 border ${editingId === loc.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'} p-4 rounded-xl flex items-center justify-between shadow-sm`}><span className="font-bold text-gray-800 dark:text-white text-sm">{loc.name}</span><div className="flex gap-2"><button onClick={() => handleEditClick(loc)} className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center hover:bg-blue-200"><i className="fas fa-pen text-xs"></i></button><button onClick={() => handleDelete(loc.id)} className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center hover:bg-red-200"><i className="fas fa-trash text-xs"></i></button></div></div>))}</div></div>
+                </div>
+            );
+        };
+
+        function UnitRegisterScreen({ onNavigate, onSaveUnit, unitsList, onUpdateUnit, onDeleteUnit, showAlert, showConfirm }) {
+            const [newUnit, setNewUnit] = useState({ name: '', address: '' });
+            const [editingId, setEditingId] = useState(null);
+            const handleSave = async () => {
+                if (!newUnit.name) return showAlert("Preencha nome.", "warning");
+                if (editingId) { await onUpdateUnit(editingId, newUnit); setEditingId(null); showAlert("Atualizado!", "success"); } 
+                else { await onSaveUnit(newUnit); showAlert("Cadastrado!", "success"); }
+                setNewUnit({ name: '', address: '' });
+            };
+            const handleEditClick = (u) => { setEditingId(u.id); setNewUnit({ name: u.name, address: u.address }); };
+            return (
+                <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 overflow-y-auto">
+                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate('adminMenu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
+                    <div className="mt-16 space-y-4"><input value={newUnit.name} onChange={e => setNewUnit({...newUnit, name: e.target.value.toUpperCase()})} placeholder="NOME UNIDADE" className="w-full p-4 bg-gray-100 rounded-xl font-bold" /><input value={newUnit.address} onChange={e => setNewUnit({...newUnit, address: e.target.value})} placeholder="ENDEREÇO" className="w-full p-4 bg-gray-100 rounded-xl font-bold" /><button onClick={handleSave} className="w-full py-4 bg-brand-orange text-white rounded-xl font-bold">SALVAR</button></div>
+                    <div className="mt-8 space-y-2">{unitsList && unitsList.map(u => (<div key={u.id} className="p-4 border rounded-xl flex justify-between"><div><b>{u.name}</b><br/><span className="text-xs">{u.address}</span></div><div><button onClick={() => handleEditClick(u)} className="mr-2 text-blue-500"><i className="fas fa-pen"></i></button><button onClick={()=>showConfirm("Excluir?", ()=>onDeleteUnit(u.id), "error")} className="text-red-500"><i className="fas fa-trash"></i></button></div></div>))}</div>
+                </div>
+            );
+        };
+
+        function UserRegisterScreen({ onNavigate, onSaveUser, usersList, unitsList, onUpdateUser, onDeleteUser, showAlert, showConfirm, backDestination = 'adminMenu' }) {
+            const [newUser, setNewUser] = useState({ name: '', pass: '', unit: '', shift: 'DIURNO', role: 'OPERACIONAL' });
+            const [editingId, setEditingId] = useState(null);
+            const handleSave = async () => {
+                if (!newUser.name || !newUser.pass) return showAlert("Dados incompletos.", "warning");
+                let finalUnit = newUser.unit;
+                const isSuperUser = ['ADMIN', 'SUPERVISOR', 'COORDENADOR'].includes(newUser.role) || newUser.name.toUpperCase() === "ADMIN";
+                if (isSuperUser && !finalUnit) finalUnit = "GLOBAL";
+                
+                const userData = { 
+                    name: newUser.name.toUpperCase(), 
+                    pass: newUser.pass, 
+                    unit: finalUnit || '', 
+                    shift: newUser.shift, 
+                    role: newUser.role 
+                };
+                
+                if (editingId) { await onUpdateUser(editingId, userData); setEditingId(null); showAlert("Atualizado!", "success"); } 
+                else { await onSaveUser(userData); showAlert("Cadastrado!", "success"); }
+                setNewUser({ name: '', pass: '', unit: '', shift: 'DIURNO', role: 'OPERACIONAL' });
+            };
+            const handleEditClick = (u) => { setEditingId(u.id); setNewUser({ name: u.name, pass: u.pass, unit: u.unit || '', shift: u.shift || 'DIURNO', role: u.role || 'OPERACIONAL' }); };
+            return (
+                <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 overflow-y-auto">
+                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate(backDestination)} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
+                    <div className="mt-16 space-y-4">
+                        <select value={newUser.unit} onChange={e => setNewUser({...newUser, unit: e.target.value})} className="w-full p-4 bg-gray-100 rounded-xl font-bold"><option value="">Unidade (Opcional)</option>{unitsList && unitsList.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}</select>
+                        <div className="flex gap-2">
+                            <select value={newUser.shift} onChange={e => setNewUser({...newUser, shift: e.target.value})} className="flex-1 p-4 bg-gray-100 rounded-xl font-bold"><option value="DIURNO">DIURNO</option><option value="NOTURNO">NOTURNO</option></select>
+                            <select value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})} className="flex-1 p-4 bg-gray-100 rounded-xl font-bold text-blue-700"><option value="OPERACIONAL">OPERACIONAL</option><option value="ADMIN">ADMIN</option><option value="SUPERVISOR">SUPERVISOR</option><option value="COORDENADOR">COORDENADOR</option></select>
                         </div>
-                        <button type="button" onClick={onOpenMenu} className="text-2xl active:scale-95 p-1 focus:outline-none"><i className="fas fa-bars"></i></button>
+                        <input value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} placeholder="NOME" className="w-full p-4 bg-gray-100 rounded-xl font-bold" />
+                        <input value={newUser.pass} onChange={e => setNewUser({...newUser, pass: e.target.value})} placeholder="SENHA" className="w-full p-4 bg-gray-100 rounded-xl font-bold" />
+                        <button onClick={handleSave} className="w-full py-4 bg-brand-orange text-white rounded-xl font-bold">SALVAR</button>
                     </div>
-
-                    <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-12">
-                        {/* GRÁFICOS DO MÊS */}
-                        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-5">
-                            <h3 className="text-sm font-black text-gray-500 dark:text-gray-400 mb-4 uppercase flex justify-between items-center">
-                                Inspeções Realizadas 
-                                <span className="bg-teal-100 text-teal-800 px-2 py-0.5 rounded text-xs">{formatMonthFolder(currentMonthStr)}</span>
-                            </h3>
-                            
-                            {/* Gráfico Equipamentos */}
-                            <div className="mb-5">
-                                <div className="flex justify-between text-xs font-bold mb-1 dark:text-gray-300">
-                                    <span>Equipamentos ({equipTotal})</span>
-                                    <span>{equipOkPct.toFixed(0)}% OK</span>
-                                </div>
-                                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4 flex overflow-hidden">
-                                    <div className="bg-green-500 h-4" style={{ width: `${equipOkPct}%` }}></div>
-                                    <div className="bg-red-500 h-4" style={{ width: `${equipIrrPct}%` }}></div>
-                                </div>
-                                <div className="flex justify-between text-[10px] text-gray-500 mt-1">
-                                    <span><i className="fas fa-circle text-green-500"></i> {monthStats.ok} Conformes</span>
-                                    <span>{monthStats.irregular} Irregulares <i className="fas fa-circle text-red-500"></i></span>
-                                </div>
-                            </div>
-
-                            {/* Gráfico Rondas */}
-                            <div>
-                                <div className="flex justify-between text-xs font-bold mb-1 dark:text-gray-300">
-                                    <span>Rondas ({rondaTotal})</span>
-                                    <span>{rondaOkPct.toFixed(0)}% OK</span>
-                                </div>
-                                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4 flex overflow-hidden">
-                                    <div className="bg-blue-500 h-4" style={{ width: `${rondaOkPct}%` }}></div>
-                                    <div className="bg-orange-500 h-4" style={{ width: `${rondaFalhaPct}%` }}></div>
-                                </div>
-                                <div className="flex justify-between text-[10px] text-gray-500 mt-1">
-                                    <span><i className="fas fa-circle text-blue-500"></i> {monthStats.ronda_ok} Realizadas</span>
-                                    <span>{monthStats.ronda_falha} Falhas/Inconforme <i className="fas fa-circle text-orange-500"></i></span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* ALERTAS DE VENCIMENTO */}
-                        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-5">
-                            <h3 className="text-sm font-black text-gray-500 dark:text-gray-400 mb-4 uppercase">
-                                Alertas de Vencimento <span className="bg-red-100 text-red-800 px-2 py-0.5 rounded text-xs ml-2">{expirations.length}</span>
-                            </h3>
-
-                            {expirations.length === 0 ? (
-                                <div className="text-center py-6 text-gray-400">
-                                    <i className="fas fa-shield-alt text-4xl mb-2 text-green-500/50"></i>
-                                    <p className="text-sm font-bold">Nenhum equipamento próximo do vencimento.</p>
-                                </div>
-                            ) : (
-                                <div className="space-y-3">
-                                    {expirations.map((item, idx) => (
-                                        <div key={idx} className="border border-gray-200 dark:border-gray-700 rounded-xl p-3 bg-gray-50 dark:bg-gray-900/50">
-                                            <div className="flex justify-between items-start mb-2">
-                                                <div>
-                                                    <span className="font-bold text-sm text-gray-800 dark:text-white block">{item.name}</span>
-                                                    <span className="text-[10px] text-gray-500 uppercase">{item.type} | {item.location}</span>
-                                                </div>
-                                                <i className={`fas fa-exclamation-circle ${item.recharge?.status === 'VENCIDO' || item.hydro?.status === 'VENCIDO' ? 'text-red-500' : 'text-orange-500'}`}></i>
-                                            </div>
-                                            <div className="grid grid-cols-2 gap-2 mt-2">
-                                                {item.recharge && item.recharge.status !== 'OK' && (
-                                                    <div className={`p-2 rounded text-[10px] font-bold text-center flex flex-col items-center justify-center ${item.recharge.color}`}>
-                                                        <span>RECARGA</span>
-                                                        <span className="text-xs"><i className={`fas ${item.recharge.icon} mr-1`}></i>{item.recharge.text}</span>
-                                                    </div>
-                                                )}
-                                                {item.hydro && item.hydro.status !== 'OK' && (
-                                                    <div className={`p-2 rounded text-[10px] font-bold text-center flex flex-col items-center justify-center ${item.hydro.color} ${!item.recharge || item.recharge.status === 'OK' ? 'col-span-2' : ''}`}>
-                                                        <span>TESTE HIDROSTÁTICO</span>
-                                                        <span className="text-xs"><i className={`fas ${item.hydro.icon} mr-1`}></i>{item.hydro.text}</span>
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div className="text-[10px] text-gray-400 text-right mt-2 font-mono">Última leitura: {item.lastInspection}</div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    </div>
+                    <div className="mt-8 space-y-2">{usersList && usersList.map(u => (<div key={u.id} className="p-4 border rounded-xl flex justify-between"><div><b>{u.name}</b> <span className="text-xs bg-gray-200 px-1 rounded">{u.shift || 'D'}</span> {['ADMIN', 'SUPERVISOR', 'COORDENADOR'].includes(u.role) && <span className="text-xs bg-purple-200 text-purple-800 px-1 rounded ml-1">{u.role}</span>}<br/><span className="text-xs">{u.unit || 'GLOBAL'}</span></div><div><button onClick={() => handleEditClick(u)} className="mr-2 text-blue-500"><i className="fas fa-pen"></i></button><button onClick={()=>showConfirm("Excluir?", ()=>onDeleteUser(u.id), "error")} className="text-red-500"><i className="fas fa-trash"></i></button></div></div>))}</div>
                 </div>
             );
         };
 
         function AdminMenuScreen({ onNavigate, onOpenMenu }) {
             return (
-                <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 animate-fade-in relative">
-                    <div className="absolute top-4 left-4"><button type="button" onClick={() => onNavigate('dashboard')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm active:scale-95 focus:outline-none"><i className="fas fa-arrow-left"></i></button></div>
-                    <div className="absolute top-4 right-4"><button type="button" onClick={onOpenMenu} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm active:scale-95 focus:outline-none"><i className="fas fa-bars"></i></button></div>
-                    <div className="mt-16 text-center mb-8"><h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">ADMINISTRAÇÃO</h2></div>
-                    <div className="w-full space-y-4">
-                        <button type="button" onClick={() => onNavigate('accessControl')} className="w-full py-4 bg-purple-600 text-white rounded-xl font-bold shadow-lg focus:outline-none">ACESSOS</button>
-                        <button type="button" onClick={() => onNavigate('unitRegister')} className="w-full py-4 bg-gray-600 text-white rounded-xl font-bold shadow-lg focus:outline-none">UNIDADES</button>
-                        <button type="button" onClick={() => onNavigate('roundLocRegister')} className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold shadow-lg focus:outline-none">LOCAIS DE RONDA</button>
-                        <button type="button" onClick={() => onNavigate('userRegister')} className="w-full py-4 bg-gray-700 text-white rounded-xl font-bold shadow-lg focus:outline-none">BOMBEIROS</button>
+                <div className="flex flex-col h-full bg-white dark:bg-brand-dark overflow-y-auto animate-fade-in relative">
+                    <div className="bg-cyan-700 p-4 flex justify-between items-center text-white sticky top-0 z-10 shadow-md">
+                        <button onClick={onOpenMenu} className="w-10 h-10 flex items-center justify-start text-2xl active:scale-90 transition-transform"><i className="fas fa-bars"></i></button>
+                        <h1 className="font-black text-lg tracking-tight uppercase">Parâmetros Admin</h1>
+                        <div className="w-10"></div>
+                    </div>
+                    <div className="p-4 w-full space-y-4 mt-4">
+                        <button onClick={() => onNavigate('accessControl')} className="w-full py-4 bg-purple-600 text-white rounded-2xl font-bold shadow-md active:scale-95 transition-transform flex items-center px-6"><i className="fas fa-key w-8 text-xl"></i> CONTROLE DE ACESSO</button>
+                        <button onClick={() => onNavigate('unitRegister')} className="w-full py-4 bg-gray-600 text-white rounded-2xl font-bold shadow-md active:scale-95 transition-transform flex items-center px-6"><i className="fas fa-building w-8 text-xl"></i> GESTÃO DE UNIDADES</button>
+                        <button onClick={() => onNavigate('roundLocRegister')} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-md active:scale-95 transition-transform flex items-center px-6"><i className="fas fa-map-marked-alt w-8 text-xl"></i> LOCAIS DE RONDA</button>
+                        <button onClick={() => onNavigate('userRegister')} className="w-full py-4 bg-gray-700 text-white rounded-2xl font-bold shadow-md active:scale-95 transition-transform flex items-center px-6"><i className="fas fa-users-cog w-8 text-xl"></i> GERIR BOMBEIROS</button>
                     </div>
                 </div>
             );
@@ -729,14 +735,14 @@
              const togglePermission = (permId) => { if(!selectedUser) return; const current = selectedUser.permissions || []; const next = current.includes(permId) ? current.filter(p=>p!==permId) : [...current, permId]; setSelectedUser({...selectedUser, permissions: next}); onUpdatePermissions(selectedUser.id, next); };
              return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 animate-fade-in relative">
-                    <div className="absolute top-4 left-4"><button type="button" onClick={() => selectedUser ? setSelectedUser(null) : onNavigate('adminMenu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm focus:outline-none"><i className="fas fa-arrow-left"></i></button></div>
+                    <div className="absolute top-4 left-4"><button onClick={() => selectedUser ? setSelectedUser(null) : onNavigate('adminMenu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
                     <div className="mt-16 text-center mb-6"><h2 className="text-xl font-black dark:text-white">CONTROLE DE ACESSO</h2></div>
                     {!selectedUser ? (
-                        <div className="space-y-3">{usersList && usersList.filter(u=>u.name!=='ADMIN').map(u=>(<div key={u.id} onClick={()=>setSelectedUser(u)} className="bg-gray-100 p-4 rounded-xl font-bold cursor-pointer">{u.name}</div>))}</div>
+                        <div className="space-y-3">{usersList && usersList.filter(u=>u.name!=='ADMIN').map(u=>(<div key={u.id} onClick={()=>setSelectedUser(u)} className="bg-gray-100 p-4 rounded-xl font-bold">{u.name}</div>))}</div>
                     ) : (
                         <div className="space-y-3">
                             {['EXTINTOR','HIDRANTE','HISTORICO','RONDA'].map(p=>(
-                                <div key={p} onClick={()=>togglePermission(p)} className={`p-4 rounded-xl font-bold border-2 cursor-pointer ${selectedUser.permissions?.includes(p)?'border-green-500 bg-green-50 text-green-700':'border-gray-200 bg-gray-50 text-gray-400'}`}>{p}</div>
+                                <div key={p} onClick={()=>togglePermission(p)} className={`p-4 rounded-xl font-bold border-2 ${selectedUser.permissions?.includes(p)?'border-green-500 bg-green-50 text-green-700':'border-gray-200 bg-gray-50 text-gray-400'}`}>{p}</div>
                             ))}
                         </div>
                     )}
@@ -744,7 +750,7 @@
              );
         };
 
-        function RoundsLocationScreen({ onNavigate, onSelectLocation, db, roundLocationsList, onOpenMenu }) {
+        function RoundsLocationScreen({ onNavigate, onSelectLocation, db, responsibleName, roundLocationsList, onOpenMenu }) {
             const [shiftInfo, setShiftInfo] = useState({ name: '', start: null, end: null, isNight: false });
             const [tick, setTick] = useState(0); 
             const [selectedLocation, setSelectedLocation] = useState(null); 
@@ -776,7 +782,6 @@
                 if (!shiftInfo.start || !db) return false;
                 return db.some(item => {
                     if (item.type !== 'RONDA' || item.deleted) return false;
-                    if (!item.created_at) return false;
                     const itemDate = new Date(item.created_at);
                     return item.sector === location && itemDate >= shiftInfo.start && itemDate <= shiftInfo.end;
                 });
@@ -803,7 +808,6 @@
 
                 const isDone = db.some(item => {
                     if (item.type !== 'RONDA' || item.deleted) return false;
-                    if (!item.created_at) return false;
                     const itemDate = new Date(item.created_at);
                     return item.sector === location && itemDate >= start && itemDate <= end;
                 });
@@ -843,16 +847,18 @@
             };
 
             return (
-                <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-3 animate-fade-in relative">
-                    <div className="absolute top-4 left-4"><button type="button" onClick={() => onNavigate('dashboard')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm active:scale-95 focus:outline-none"><i className="fas fa-arrow-left"></i></button></div>
-                    <div className="absolute top-4 right-4"><button type="button" onClick={onOpenMenu} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm active:scale-95 focus:outline-none"><i className="fas fa-bars"></i></button></div>
-                    <div className="mt-16 text-center mb-6"><h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">LOCAIS DE RONDA</h2></div>
-                    <div className="flex-1 overflow-y-auto space-y-3 pb-6">
+                <div className="flex flex-col h-full bg-gray-50 dark:bg-brand-dark animate-fade-in relative">
+                    <div className="bg-brand-blue p-4 flex justify-between items-center text-white sticky top-0 z-10 shadow-md">
+                        <button onClick={onOpenMenu} className="w-10 h-10 flex items-center justify-start text-2xl active:scale-90 transition-transform"><i className="fas fa-bars"></i></button>
+                        <h1 className="font-black text-lg tracking-tight uppercase">Ronda Diária</h1>
+                        <div className="w-10"></div>
+                    </div>
+                    <div className="flex-1 overflow-y-auto space-y-3 p-4 pb-6">
                         {roundLocationsList.map(loc => {
                             const done = isLocationDone(loc.name);
                             const activeInfo = getActiveRoundInfo(loc.name);
                             return (
-                                <button type="button" key={loc.id} onClick={() => handleLocationClick(loc.name)} className={`w-full py-4 bg-white dark:bg-gray-800 border-2 ${done ? 'border-green-500' : 'border-gray-100 dark:border-gray-700 hover:border-blue-500'} text-gray-700 dark:text-white rounded-2xl text-lg font-bold shadow-sm flex items-center justify-between px-4 focus:outline-none`}>
+                                <button key={loc.id} onClick={() => handleLocationClick(loc.name)} className={`w-full py-4 bg-white dark:bg-gray-800 border-2 ${done ? 'border-green-500' : 'border-gray-100 dark:border-gray-700 hover:border-blue-500'} text-gray-700 dark:text-white rounded-2xl text-lg font-bold shadow-sm flex items-center justify-between px-4`}>
                                     <div className="flex flex-col items-start">
                                         <span>{loc.name}</span>
                                         <span className={`text-[10px] font-bold uppercase mt-1 ${done ? 'text-green-500' : 'text-orange-500'}`}>{done ? 'Realizado' : 'Pendente'}</span>
@@ -876,7 +882,7 @@
                     {selectedLocation && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={() => setSelectedLocation(null)}>
                             <div className="bg-white dark:bg-gray-900 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative" onClick={e => e.stopPropagation()}>
-                                <button type="button" onClick={() => setSelectedLocation(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 focus:outline-none"><i className="fas fa-times text-xl"></i></button>
+                                <button onClick={() => setSelectedLocation(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><i className="fas fa-times text-xl"></i></button>
                                 <h3 className="text-xl font-black text-center mb-2 dark:text-white">{selectedLocation}</h3>
                                 <p className="text-center text-blue-600 font-bold text-sm mb-6 uppercase">{shiftInfo.name}</p>
                                 <div className="space-y-4">
@@ -914,20 +920,6 @@
             );
         };
 
-        function ColorSelect({ label, val, field, onChange, invert=false }) { 
-            let bgClass = "bg-white dark:bg-gray-800"; let textClass = "text-gray-700 dark:text-gray-200"; 
-            if(val === true) { bgClass = invert ? "bg-red-100 dark:bg-red-900 border-red-500" : "bg-green-100 dark:bg-green-900 border-green-500"; textClass = invert ? "text-red-700 dark:text-red-100" : "text-green-700 dark:text-green-100"; } 
-            else if(val === false) { bgClass = invert ? "bg-green-100 dark:bg-green-900 border-green-500" : "bg-red-100 dark:bg-red-900 border-red-500"; textClass = invert ? "text-green-700 dark:text-green-100" : "text-red-700 dark:text-red-100"; } 
-            return (
-                <div className={`p-3 rounded-xl border ${val !== null ? 'border-2' : 'border-gray-200 dark:border-gray-700'} ${bgClass} shadow-sm transition-colors w-full`}>
-                    <p className={`font-bold mb-1 text-xs ${val !== null ? textClass : 'text-gray-500 dark:text-gray-400'}`}>{label}</p>
-                    <select value={val === null ? '' : (val ? 'true' : 'false')} onChange={(e) => onChange(field, e.target.value)} className={`w-full bg-transparent font-bold focus:outline-none ${textClass} appearance-none`}>
-                        <option value="">Selecionar...</option><option value="true">Sim</option><option value="false">Não</option>
-                    </select>
-                </div>
-            ); 
-        }
-
         function ScannerScreen({ onNavigate, onScanSuccess, db, inspectionType, showAlert }) {
             const scannerRef = useRef(null);
             useEffect(() => {
@@ -937,7 +929,6 @@
                 scanner.start({ facingMode: "environment" }, config, (decodedText) => {
                     scanner.stop().then(() => {
                         scanner.clear();
-                        
                         let data = { equipmentId: decodedText, equipmentName: decodedText };
                         try { 
                             const parsed = JSON.parse(decodedText); 
@@ -948,8 +939,8 @@
 
                         if (inspectionType !== 'RONDA') {
                             const currentMonth = new Date().toISOString().slice(0, 7); 
-                            const isDuplicate = db.some(item => !item.deleted && item.created_at && (item.equipmentId || '').toString() === data.equipmentId.toString() && item.created_at.startsWith(currentMonth));
-                            if (isDuplicate) { showAlert(`⚠️ EQUIPAMENTO JÁ VISTORIADO!\n\nEste código já foi registrado neste mês.`, "warning"); onNavigate(`category_${inspectionType}`); return; }
+                            const isDuplicate = db.some(item => !item.deleted && (item.equipmentId || '').toString() === data.equipmentId.toString() && item.created_at.startsWith(currentMonth));
+                            if (isDuplicate) { showAlert(`⚠️ EQUIPAMENTO JÁ VISTORIADO!\n\nEste código já foi registrado em ${new Date().toLocaleString('pt-BR', { month: 'long' })}.\nNova leitura permitida apenas no mês seguinte.`, "warning"); onNavigate('menu'); return; }
                         }
                         onScanSuccess(data);
                     }).catch(err => console.error(err));
@@ -957,16 +948,88 @@
                 return () => { if (scanner.isScanning) scanner.stop().catch(()=>{}); };
             }, [db, inspectionType]);
 
-            const handleGoBack = () => {
-                if (inspectionType === 'RONDA') onNavigate('roundsLocation');
-                else onNavigate(`category_${inspectionType}`);
-            }
-
             return (
                 <div className="flex flex-col h-full bg-black relative">
-                    <div className="absolute top-4 left-4 z-20"><button type="button" onClick={handleGoBack} className="text-white bg-black/40 w-10 h-10 rounded-full flex items-center justify-center focus:outline-none"><i className="fas fa-arrow-left"></i></button></div>
-                    <div className="flex-1 flex flex-col items-center justify-center bg-gray-900"><div id="reader" className="w-full max-w-md bg-black"></div><p className="text-white/60 text-sm mt-4">Aponte para o QR Code ({inspectionType})</p></div>
+                    {/* Alterado para mandar 'menu' genérico que será interceptado pelo App para retornar à categoryScreen correta */}
+                    <div className="absolute top-4 left-4 z-20"><button onClick={() => onNavigate('menu')} className="text-white bg-black/40 w-10 h-10 rounded-full flex items-center justify-center"><i className="fas fa-arrow-left"></i></button></div>
+                    <div className="flex-1 flex flex-col items-center justify-center bg-gray-900"><div id="reader" className="w-full max-w-md bg-black"></div><p className="text-white/60 text-sm mt-4">Aponte para o QR Code</p></div>
                     <div className="p-4 bg-white dark:bg-brand-dark rounded-t-3xl z-10 safe-area-bottom"></div>
+                </div>
+            );
+        };
+
+        function RoundsFormScreen({ initialData, onNavigate, onSave, responsibleName, roundLocation, currentUnit, showAlert }) {
+            const savedForm = useMemo(() => {
+                const saved = localStorage.getItem('trfire_temp_round');
+                return saved ? JSON.parse(saved) : null;
+            }, []);
+
+             const [isSaving, setIsSaving] = useState(false);
+             const [form, setForm] = useState(() => {
+                 if (initialData && initialData.id) {
+                     return { ...initialData }; 
+                 }
+                 return savedForm || { type: 'RONDA', sector: roundLocation, equipmentName: initialData?.equipmentName || '', moduleLocation: '', status: '', photo: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false };
+             });
+             const fileInputRef = useRef(null);
+             
+             useEffect(() => {
+                 localStorage.setItem('trfire_temp_round', JSON.stringify(form));
+             }, [form]);
+
+             const handlePhotoChange = (e) => { 
+                const file = e.target.files[0]; 
+                if (file) { 
+                    const reader = new FileReader(); 
+                    reader.onload = (event) => { 
+                        const img = new Image(); 
+                        img.onload = () => { 
+                            const canvas = document.createElement('canvas'); 
+                            const ctx = canvas.getContext('2d'); 
+                            const MAX = 400; 
+                            let width = img.width; let height = img.height; 
+                            if (width > height) { if (width > MAX) { height *= MAX / width; width = MAX; } } else { if (height > MAX) { width *= MAX / height; height = MAX; } } 
+                            canvas.width = width; canvas.height = height; ctx.drawImage(img, 0, 0, width, height); 
+                            setForm(prev => ({ ...prev, photo: canvas.toDataURL('image/jpeg', 0.5) })); 
+                        }; 
+                        img.src = event.target.result; 
+                    }; 
+                    reader.readAsDataURL(file); 
+                } 
+             };
+             const save = async () => { 
+                 if (!form.moduleLocation || !form.photo) return showAlert("Preencha tudo.", "warning"); 
+                 setIsSaving(true); 
+                 const success = await onSave(form); 
+                 setIsSaving(false);
+                 if(success) localStorage.removeItem('trfire_temp_round');
+             };
+             return (
+                <div className="flex flex-col h-full bg-gray-50 dark:bg-black">
+                    <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('roundsLocation')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">Ronda</h2><button onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold" type="button">{isSaving ? '...' : 'SALVAR'}</button></div>
+                    <div className="flex-1 overflow-y-auto p-2 space-y-4">
+                        <div className="bg-white p-4 rounded-xl space-y-4">
+                            <input value={form.equipmentName} disabled className="w-full bg-gray-100 p-3 rounded font-bold" />
+                            <div className="mt-2">
+                                <label className="text-xs font-bold text-gray-500 dark:text-gray-400 block mb-1">Condições ? *</label>
+                                <select value={form.moduleLocation} onChange={e=>setForm({...form, moduleLocation:e.target.value})} className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 uppercase appearance-none">
+                                    <option value="">Selecione...</option>
+                                    {ROUND_CONDITIONS.map(o=><option key={o} value={o}>{o}</option>)}
+                                </select>
+                            </div>
+                            <div className="mt-2">
+                                <label className="text-xs font-bold text-gray-500 dark:text-gray-400 block mb-1">Status</label>
+                                <select value={form.status} onChange={e=>setForm({...form, status:e.target.value})} className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 appearance-none">
+                                    <option value="">Status...</option>
+                                    <option value="Conforme">Conforme</option>
+                                    <option value="Não Conforme">Não Conforme</option>
+                                </select>
+                            </div>
+                            <div onClick={()=>fileInputRef.current.click()} className="w-full h-32 border-2 border-dashed rounded flex items-center justify-center text-gray-400 cursor-pointer mt-4">{form.photo ? <img src={form.photo} className="h-full object-cover"/> : <i className="fas fa-camera text-2xl"></i>}</div>
+                            <input type="file" ref={fileInputRef} onChange={handlePhotoChange} className="hidden" accept="image/*" capture="environment" />
+                            <textarea value={form.obs} onChange={e=>setForm({...form, obs:e.target.value})} placeholder="Obs..." className="w-full p-3 bg-gray-100 rounded h-24 mt-4" />
+                        </div>
+                    </div>
                 </div>
             );
         };
@@ -1038,7 +1101,7 @@
 
              return (
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black">
-                    <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button type="button" onClick={() => onNavigate(`category_${inspectionType}`)} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full focus:outline-none"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">{inspectionType}</h2><button type="button" onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold focus:outline-none">{isSaving ? '...' : 'SALVAR'}</button></div>
+                    <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('menu')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">{inspectionType}</h2><button onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold" type="button">{isSaving ? '...' : 'SALVAR'}</button></div>
                     <div className="flex-1 overflow-y-auto p-2 space-y-4">
                         <div className="bg-white p-4 rounded-xl space-y-4">
                             <input value={form.equipmentName} onChange={e=>setForm({...form, equipmentName:e.target.value})} className="w-full bg-gray-100 p-3 rounded font-bold" />
@@ -1057,20 +1120,35 @@
             );
         };
 
-        const ListScreen = ({ data, onNavigate, onToggleDelete, onDeletePermanently, currentUser, showAlert, showConfirm, userRole, onEditItem, onOpenMenu }) => {
+        const ListScreen = ({ data, onNavigate, onToggleDelete, onDeletePermanently, onImportData, currentUser, showAlert, showConfirm, userRole, onEditItem, onOpenMenu }) => {
             const [showFilter, setShowFilter] = useState(false);
+            const [showPdfModal, setShowPdfModal] = useState(false); 
+            const [showBackupModal, setShowBackupModal] = useState(false);
             const [showBin, setShowBin] = useState(false);
             const [filters, setFilters] = useState({ startDate: '', endDate: '', type: '', responsible: '', moduleLocation: '' });
             const [selectedIds, setSelectedIds] = useState(new Set()); 
+            const fileInputRef = useRef(null);
+            const [viewMonth, setViewMonth] = useState(new Date().toISOString().slice(0, 7));
+            const [pdfMonth, setPdfMonth] = useState(new Date().toISOString().slice(0, 7)); 
+            
             const [openMonths, setOpenMonths] = useState({});
             const [openCategories, setOpenCategories] = useState({});
             
-            const isAdmin = userRole === 'ADMIN';
+            const isAdmin = ['ADMIN', 'SUPERVISOR', 'COORDENADOR'].includes(userRole);
 
             useEffect(() => { setSelectedIds(new Set()); }, [showBin]);
 
             const toggleMonth = (m) => setOpenMonths(prev => ({...prev, [m]: !prev[m]}));
             const toggleCategory = (key) => setOpenCategories(prev => ({...prev, [key]: !prev[key]}));
+
+            const formatMonthFolder = (yyyy_mm) => {
+                if(!yyyy_mm) return "DATA INVÁLIDA";
+                try {
+                    const [year, month] = yyyy_mm.split('-');
+                    const date = new Date(parseInt(year), parseInt(month) - 1);
+                    return date.toLocaleString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase();
+                } catch(e) { return yyyy_mm; }
+            };
 
             const deletedData = Array.isArray(data) ? data.filter(item => item.deleted).sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)) : [];
             
@@ -1093,7 +1171,6 @@
             const groupedStructure = useMemo(() => {
                 const struct = {};
                 activeData.forEach(item => {
-                    if (!item.created_at) return;
                     const monthKey = item.created_at.slice(0, 7); 
                     if (!struct[monthKey]) struct[monthKey] = { EXTINTOR: [], HIDRANTE: [], RONDA: [] };
                     const type = item.type || 'EXTINTOR';
@@ -1104,6 +1181,7 @@
 
             const sortedMonths = Object.keys(groupedStructure).sort().reverse();
             const responsibles = useMemo(() => { const unique = new Set(); if (Array.isArray(data)) { data.forEach(item => { if (item && item.responsible) unique.add(item.responsible); }); } return [...unique]; }, [data]);
+            
             const handleSelectAll = () => { if (showBin) { if (selectedIds.size === deletedData.length) setSelectedIds(new Set()); else setSelectedIds(new Set(deletedData.map(i => i.id))); } else { if (selectedIds.size === activeData.length) setSelectedIds(new Set()); else setSelectedIds(new Set(activeData.map(i => i.id))); } };
             const toggleSelection = (id) => { const newSet = new Set(selectedIds); if (newSet.has(id)) newSet.delete(id); else newSet.add(id); setSelectedIds(newSet); };
 
@@ -1111,40 +1189,107 @@
             const confirmBulkRestore = () => { if (selectedIds.size === 0) return; showConfirm(`Restaurar ${selectedIds.size} itens?`, async () => { const promises = Array.from(selectedIds).map(id => onToggleDelete(id, false)); await Promise.all(promises); setSelectedIds(new Set()); showAlert(`${selectedIds.size} itens restaurados!`, "success"); }, "info"); };
             const confirmBulkDelete = () => { if (selectedIds.size === 0) return; showConfirm(`EXCLUIR ${selectedIds.size} itens?`, async () => { const promises = Array.from(selectedIds).map(id => onDeletePermanently(id)); const results = await Promise.all(promises); const success = results.filter(r => r).length; setSelectedIds(new Set()); if(results.length - success > 0) showAlert(`${success} excluídos. Falha em ${results.length - success}.`, "warning"); else showAlert(`${success} itens excluídos!`, "success"); }, "error"); };
             const confirmBulkSoftDelete = () => { if (selectedIds.size === 0) return; showConfirm(`Lixeira: ${selectedIds.size} itens?`, async () => { const promises = Array.from(selectedIds).map(id => onToggleDelete(id, true)); await Promise.all(promises); setSelectedIds(new Set()); showAlert(`${selectedIds.size} itens movidos!`, "success"); }, "warning"); };
+            const handleExport = () => { const jsonString = JSON.stringify(data, null, 2); const blob = new Blob([jsonString], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup_trfire_${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); setShowBackupModal(false); };
+            const handleFileImport = (e) => { const file = e.target.files[0]; if(!file) return; const reader = new FileReader(); reader.onload = (ev) => { try { const json = JSON.parse(ev.target.result); onImportData(json); setShowBackupModal(false); } catch(err) { showAlert("Erro JSON.", "error"); } }; reader.readAsText(file); e.target.value = null; };
+            
+            const generateSpecificPDF = async (type) => { 
+                if (type === 'RONDA' && !isAdmin) { return showAlert("Acesso Negado: Apenas Administradores podem gerar relatórios de Ronda.", "error"); }
+                setShowPdfModal(false); 
+                const reportData = activeData.filter(item => { return (item.type || (type === 'RONDA' ? '' : 'EXTINTOR')) === type && item.created_at.slice(0, 7) === pdfMonth; });
+                if(reportData.length === 0) return showAlert(`Sem dados de ${type} em ${formatMonthFolder(pdfMonth)}.`, "warning"); 
+                const doc = new jsPDF({ orientation: "landscape" }); doc.setFillColor(243, 244, 246); doc.rect(0, 0, 297, 40, 'F'); doc.setTextColor(33, 33, 33); doc.setFontSize(22); let title = ""; if (type === 'EXTINTOR') title = "CHECK-LIST EXTINTORES MENSAL"; else if (type === 'HIDRANTE') title = "CHECK-LIST HIDRANTES MENSAL"; else if (type === 'RONDA') title = "RELATÓRIO DE RONDAS PREVENTIVAS"; doc.text(title, 14, 25); doc.setFontSize(10); doc.setTextColor(100, 100, 100); doc.text(`Mês de Referência: ${formatMonthFolder(pdfMonth)} | Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 35); doc.setFontSize(9); doc.setTextColor(33, 33, 33); doc.text("Parque Logístico: AERO GRU I", 280, 28, { align: "right" }); doc.text("Empresa: Vilella Assessoria em Segurança do Trabalho", 280, 35, { align: "right" }); 
+                const monthObj = new Date(pdfMonth + '-02'); const monthStr = monthObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase().replace('.', ''); const yearStr = monthObj.getFullYear(); const typeStr = type === 'EXTINTOR' ? 'Extintores' : (type === 'HIDRANTE' ? 'Hidrantes' : 'Rondas');
+                const uniqueResponsibles = [...new Set(reportData.map(i => i.responsible).filter(Boolean))]; const responsibleLabel = uniqueResponsibles.length === 1 ? uniqueResponsibles[0] : "Equipe"; const userStr = responsibleLabel.replace(/\s+/g, '-'); const fileName = `TRFIRE_Relatorio_${monthStr}-${yearStr}_${typeStr}_${userStr}.pdf`;
+                let body = []; let head = []; 
+                if (type === 'EXTINTOR') { head = [['Local', 'Equipamento', 'Data/Hora', 'Responsável', 'Tipo', 'Próx. Recarga', 'Próx. T. Hidro.', 'Possui Pictograma?', 'Sinalização de Solo?', 'Lacre Romp.?', 'Obstruído?', 'Observação']]; body = reportData.map(i => [ i.moduleLocation || '-', i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.extinguisherType || '-', i.nextRecharge || '-', i.nextHydro || '-', i.hasId ? 'SIM' : 'NÃO', i.floorSign ? 'SIM' : 'NÃO', i.q1 ? 'SIM' : 'NÃO', i.q2 ? 'SIM' : 'NÃO', i.obs || '' ]); } 
+                else if (type === 'HIDRANTE') { head = [['Local', 'Equipamento', 'Data/Hora', 'Responsável', 'Equip. Completo?', 'Desobstruído?', 'Lacre Romp.?', 'Próx. T. Hidro.', 'Observação']]; body = reportData.map(i => [ i.moduleLocation || '-', i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.h_complete ? 'SIM' : 'NÃO', i.h_unobstructed ? 'NÃO' : 'SIM', i.h_seal_broken ? 'SIM' : 'NÃO', i.nextHydro || '-', i.obs || '' ]); } 
+                else if (type === 'RONDA') { head = [['Local', 'Área Técnica', 'Data/Hora', 'Responsável', 'Condições', 'Status', 'Observação']]; body = reportData.map(i => [ i.sector || '-', i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.moduleLocation || '-', i.status || '-', i.obs || '' ]); } 
+                doc.autoTable({ head: head, body: body, startY: 45, theme: 'grid', headStyles: { fillColor: [224, 224, 224], textColor: [0, 0, 0], fontStyle: 'bold', lineWidth: 0.1, lineColor: [200, 200, 200] }, styles: { fontSize: 7, textColor: [50, 50, 50], lineColor: [230, 230, 230], lineWidth: 0.1, overflow: 'linebreak' }, alternateRowStyles: { fillColor: [255, 255, 255] } }); 
+                if (type === 'EXTINTOR') { let finalY = doc.lastAutoTable.finalY + 10; const counts = {}; reportData.forEach(item => { const t = item.extinguisherType || 'Indefinido'; counts[t] = (counts[t] || 0) + 1; }); if (finalY > 150) { doc.addPage(); finalY = 20; } doc.setFontSize(12); doc.setTextColor(33, 33, 33); doc.text("Resumo Quantitativo:", 14, finalY); const summaryBody = Object.entries(counts).map(([t, c]) => [t, c]); doc.autoTable({ head: [['Tipo', 'Quantidade']], body: summaryBody, startY: finalY + 5, theme: 'striped', tableWidth: 'wrap', styles: { fontSize: 9 } }); }
+                doc.save(fileName); 
+            };
+
+            const renderItem = (item) => {
+                const isHid = item.type === 'HIDRANTE';
+                const isRonda = item.type === 'RONDA';
+                const isSelected = selectedIds.has(item.id);
+                let statusColor = 'bg-gray-100 text-gray-700';
+                let statusText = '---';
+                if (isRonda) { 
+                    if(item.status === 'NÃO REALIZADA') { statusColor = 'bg-red-500 text-white border-red-600'; statusText = 'TAREFA NÃO REALIZADA'; } 
+                    else { statusColor = item.status === 'Conforme' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = item.status === 'Conforme' ? 'CONFORME' : 'NÃO CONFORME'; }
+                } else if (isHid) { statusColor = (item.h_complete && item.h_unobstructed && !item.h_seal_broken) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = (item.h_complete && item.h_unobstructed && !item.h_seal_broken) ? 'OK' : 'IRREGULAR'; } else { statusColor = (!item.q1 && !item.q2) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = (!item.q1) ? 'OK' : 'VIOLADO'; }
+                
+                const canDelete = isAdmin || (item.responsible === currentUser && !isRonda);
+
+                return (
+                    <div key={item.id} className={`p-4 rounded-xl shadow-sm border-l-4 flex justify-between items-center transition-all mb-2 ${showBin ? (isSelected ? 'bg-red-100 border-red-600' : 'bg-red-50 dark:bg-red-900/10 border-red-500 opacity-80') : 'bg-white dark:bg-gray-800 border-gray-300'}`}>
+                        <div className="flex items-center gap-3">
+                            {(isAdmin || showBin) && <div onClick={() => toggleSelection(item.id)} className={`w-6 h-6 rounded border-2 flex items-center justify-center cursor-pointer transition-colors ${selectedIds.has(item.id)?'bg-red-600 border-red-600 text-white':'border-gray-300 bg-white'}`}>{selectedIds.has(item.id) && <i className="fas fa-check text-xs"></i>}</div>}
+                            <div>
+                                <span className="font-bold text-sm block">{item.equipmentName}</span>
+                                <span className="text-xs text-gray-500 font-bold block mt-0.5">{formatDate(item.created_at)} | {item.responsible}</span>
+                                {isRonda && <div className="text-xs text-gray-400 mt-1">Local: {item.sector} {item.moduleLocation ? `| ${item.moduleLocation}` : ''}</div>}
+                            </div>
+                            {(item.photo || item.hasPhoto) && <div className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-1 rounded flex items-center gap-1"><i className="fas fa-camera"></i></div>}
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                            {showBin ? (
+                                <div className="flex gap-2">
+                                    <i onClick={() => onToggleDelete(item.id, false)} className="fas fa-trash-restore text-green-500 cursor-pointer"></i>
+                                    {isAdmin && <i onClick={() => onDeletePermanently(item.id)} className="fas fa-times text-red-500 cursor-pointer"></i>}
+                                </div>
+                            ) : (
+                                <div className="flex flex-col items-end">
+                                     <div className="flex items-center gap-2">
+                                        <span className={`inline-block text-[10px] px-2 py-0.5 rounded font-bold ${statusColor}`}>{statusText}</span>
+                                        {isAdmin && (
+                                            <button onClick={(e) => { e.stopPropagation(); onEditItem(item); }} className="w-8 h-8 flex items-center justify-center text-blue-500 hover:text-blue-700 transition-colors">
+                                                <i className="fas fa-pen"></i>
+                                            </button>
+                                        )}
+                                     </div>
+                                     {canDelete && <i onClick={() => showConfirm("Lixeira?", () => onToggleDelete(item.id, true), "warning")} className="fas fa-trash text-red-300 cursor-pointer mt-1"></i>}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            };
 
             return (
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black relative">
                     <div className="bg-gray-800 text-white p-3 shadow-md flex justify-between items-center sticky top-0 z-20">
                         <div className="flex items-center gap-2">
-                            {showBin ? (<button type="button" onClick={()=>setShowBin(false)} className="bg-white/20 px-3 py-1 rounded text-xs focus:outline-none">VOLTAR</button>) : (<button type="button" onClick={()=>onNavigate('dashboard')} className="bg-white/20 w-8 h-8 rounded-full flex items-center justify-center shadow-sm focus:outline-none"><i className="fas fa-arrow-left"></i></button>)}
-                            <span className="text-sm font-bold uppercase tracking-wider ml-2">{showBin ? 'Lixeira' : 'Histórico Geral'}</span>
+                            {showBin ? (
+                                <button onClick={()=>setShowBin(false)} className="bg-white/20 px-3 py-1 rounded text-xs"><i className="fas fa-arrow-left"></i></button>
+                            ) : (
+                                <button onClick={onOpenMenu} className="w-8 h-8 flex items-center justify-start text-xl active:scale-90 transition-transform"><i className="fas fa-bars"></i></button>
+                            )}
+                            <span className="text-sm font-bold uppercase tracking-wide ml-2">{showBin ? 'Lixeira' : 'Histórico Geral'}</span>
                         </div>
-                        <div className="flex gap-4 items-center">
-                            {showBin && isAdmin && <button type="button" onClick={handleEmptyBin} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-xs font-bold shadow-sm focus:outline-none">ESVAZIAR</button>}
-                            {!showBin && (<button type="button" onClick={() => setShowFilter(!showFilter)} className="fas fa-filter text-lg text-yellow-400 cursor-pointer active:scale-95 focus:outline-none"></button>)}
-                            <button type="button" onClick={() => setShowBin(!showBin)} className={`fas ${showBin ? 'fa-list' : 'fa-trash'} text-lg cursor-pointer active:scale-95 text-red-400 focus:outline-none`}></button>
-                            <div className="w-px h-6 bg-white/30 mx-1"></div>
-                            <button type="button" onClick={onOpenMenu} className="fas fa-bars text-xl cursor-pointer active:scale-95 focus:outline-none"></button>
+                        <div className="flex gap-4">
+                            {showBin && isAdmin && <button onClick={handleEmptyBin} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-xs font-bold shadow-sm">ESVAZIAR</button>}
+                            {!showBin && (<><i onClick={() => setShowFilter(!showFilter)} className="fas fa-filter text-lg text-yellow-400 cursor-pointer"></i><i onClick={() => setShowPdfModal(true)} className="fas fa-file-pdf text-lg cursor-pointer"></i>{isAdmin && <i onClick={() => setShowBackupModal(true)} className="fas fa-cloud-download-alt text-lg text-blue-300 cursor-pointer"></i>}</>)}<i onClick={() => setShowBin(!showBin)} className={`fas ${showBin ? 'fa-list' : 'fa-trash'} text-lg cursor-pointer`}></i>
                         </div>
                     </div>
-                    {/* Toolbar */}
                     {isAdmin && selectedIds.size > 0 && (
                         <div className="bg-gray-200 dark:bg-gray-800 p-2 flex justify-between items-center px-4">
                             <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{selectedIds.size} selecionados</span>
                             <div className="flex gap-2">
-                                <button type="button" onClick={handleSelectAll} className="text-blue-600 text-xs font-bold mr-2 focus:outline-none">TODOS</button>
-                                {showBin ? (<><button type="button" onClick={confirmBulkRestore} className="text-green-600 text-xs font-bold focus:outline-none">RESTAURAR</button><button type="button" onClick={confirmBulkDelete} className="text-red-600 text-xs font-bold focus:outline-none">EXCLUIR</button></>) : (<button type="button" onClick={confirmBulkSoftDelete} className="text-red-600 text-xs font-bold focus:outline-none">LIXEIRA</button>)}
+                                <button onClick={handleSelectAll} className="text-blue-600 text-xs font-bold mr-2">TODOS</button>
+                                {showBin ? (<><button onClick={confirmBulkRestore} className="text-green-600 text-xs font-bold">RESTAURAR</button><button onClick={confirmBulkDelete} className="text-red-600 text-xs font-bold">EXCLUIR</button></>) : (<button onClick={confirmBulkSoftDelete} className="text-red-600 text-xs font-bold">LIXEIRA</button>)}
                             </div>
                         </div>
                     )}
-                    {/* Modais */}
-                    {showFilter && !showBin && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowFilter(false)}><div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-2xl w-64 border border-gray-200 dark:border-gray-700" onClick={e => e.stopPropagation()}><h3 className="font-bold mb-3 dark:text-white text-sm uppercase">Filtrar por</h3><div className="space-y-3"><div><label className="text-xs text-gray-500 block mb-1">De</label><input type="date" value={filters.startDate} onChange={e=>setFilters({...filters, startDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Até</label><input type="date" value={filters.endDate} onChange={e=>setFilters({...filters, endDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Tipo</label><select value={filters.type} onChange={e=>setFilters({...filters, type: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option><option value="EXTINTOR">Extintor</option><option value="HIDRANTE">Hidrante</option><option value="RONDA">Ronda</option></select></div><div><label className="text-xs text-gray-500 block mb-1">Responsável</label><select value={filters.responsible} onChange={e=>setFilters({...filters, responsible: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{responsibles.map(r => <option key={r} value={r}>{r}</option>)}</select></div><div><label className="text-xs text-gray-500 block mb-1">Módulo/Local</label><select value={filters.moduleLocation} onChange={e=>setFilters({...filters, moduleLocation: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{LOCATION_OPTIONS.map(l => <option key={l} value={l}>{l}</option>)}</select></div><div className="flex gap-2 pt-2"><button type="button" onClick={() => { setFilters({startDate:'', endDate:'', type:'', responsible:'', moduleLocation:''}); }} className="flex-1 py-1 text-xs font-bold text-gray-500 bg-gray-200 dark:bg-gray-700 rounded focus:outline-none">Limpar</button><button type="button" onClick={() => setShowFilter(false)} className="flex-1 py-1 text-xs font-bold text-white bg-brand-red rounded focus:outline-none">Fechar</button></div></div></div></div>)}
+                    {/* Modais omitidos para brevidade mas inalterados */}
+                    {showFilter && !showBin && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowFilter(false)}><div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-2xl w-64 border border-gray-200 dark:border-gray-700" onClick={e => e.stopPropagation()}><h3 className="font-bold mb-3 dark:text-white text-sm uppercase">Filtrar por</h3><div className="space-y-3"><div><label className="text-xs text-gray-500 block mb-1">De</label><input type="date" value={filters.startDate} onChange={e=>setFilters({...filters, startDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Até</label><input type="date" value={filters.endDate} onChange={e=>setFilters({...filters, endDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Tipo</label><select value={filters.type} onChange={e=>setFilters({...filters, type: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option><option value="EXTINTOR">Extintor</option><option value="HIDRANTE">Hidrante</option><option value="RONDA">Ronda</option></select></div><div><label className="text-xs text-gray-500 block mb-1">Responsável</label><select value={filters.responsible} onChange={e=>setFilters({...filters, responsible: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{responsibles.map(r => <option key={r} value={r}>{r}</option>)}</select></div><div><label className="text-xs text-gray-500 block mb-1">Módulo/Local</label><select value={filters.moduleLocation} onChange={e=>setFilters({...filters, moduleLocation: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{LOCATION_OPTIONS.map(l => <option key={l} value={l}>{l}</option>)}</select></div><div className="flex gap-2 pt-2"><button onClick={() => { setFilters({startDate:'', endDate:'', type:'', responsible:'', moduleLocation:''}); setViewMonth(new Date().toISOString().slice(0, 7)); }} className="flex-1 py-1 text-xs font-bold text-gray-500 bg-gray-200 dark:bg-gray-700 rounded">Limpar</button><button onClick={() => setShowFilter(false)} className="flex-1 py-1 text-xs font-bold text-white bg-brand-red rounded">Fechar</button></div></div></div></div>)}
+                    {showPdfModal && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm animate-fade-in text-center"><h3 className="text-lg font-bold mb-2 dark:text-white">Gerar Relatório</h3><div className="mb-6"><label className="text-xs text-gray-500 block mb-1">Selecione o Mês</label><input type="month" value={pdfMonth} onChange={(e) => setPdfMonth(e.target.value)} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white font-bold text-center" /></div><div className="space-y-3"><button onClick={() => generateSpecificPDF('EXTINTOR')} className="w-full py-3 bg-brand-red text-white font-bold rounded-xl shadow-md active:scale-95">Relatório de EXTINTORES</button><button onClick={() => generateSpecificPDF('HIDRANTE')} className="w-full py-3 bg-brand-orange text-white font-bold rounded-xl shadow-md active:scale-95">Relatório de HIDRANTES</button><button onClick={() => generateSpecificPDF('RONDA')} className="w-full py-3 bg-brand-blue text-white font-bold rounded-xl shadow-md active:scale-95">Relatório de RONDAS</button><button onClick={() => setShowPdfModal(false)} className="w-full py-3 bg-gray-200 text-gray-700 font-bold rounded-xl mt-2">Cancelar</button></div></div></div>)}
+                    {showBackupModal && isAdmin && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm animate-fade-in text-center"><h3 className="text-lg font-bold mb-4 dark:text-white flex items-center justify-center gap-2"><i className="fas fa-database text-blue-500"></i> Backup & Restauração</h3><div className="space-y-3"><button onClick={handleExport} className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2"><i className="fas fa-download"></i> EXPORTAR TUDO</button><div className="relative"><input type="file" ref={fileInputRef} onChange={handleFileImport} accept=".json" className="hidden" /><button onClick={() => fileInputRef.current.click()} className="w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2"><i className="fas fa-upload"></i> IMPORTAR DADOS</button></div><button onClick={() => setShowBackupModal(false)} className="w-full py-3 bg-gray-200 text-gray-700 font-bold rounded-xl mt-4">Fechar</button></div></div></div>)}
                     
                     <div className="flex-1 overflow-y-auto p-3 space-y-2">
                         {showBin ? (
-                             deletedData.length === 0 ? <div className="text-center text-gray-500 mt-10">Lixeira vazia.</div> : deletedData.map(item => (
-                                 <HistoryItemCard key={item.id} item={item} showBin={true} isSelected={selectedIds.has(item.id)} toggleSelection={toggleSelection} onToggleDelete={onToggleDelete} onDeletePermanently={onDeletePermanently} isAdmin={isAdmin} currentUser={currentUser} />
-                             ))
+                             deletedData.length === 0 ? <div className="text-center text-gray-500 mt-10">Lixeira vazia.</div> : deletedData.map(item => renderItem(item))
                         ) : (
                              sortedMonths.length === 0 ? <div className="text-center text-gray-500 mt-10">Nenhum registro encontrado.</div> : 
                              sortedMonths.map(monthKey => {
@@ -1154,19 +1299,19 @@
                                  
                                  return (
                                      <div key={monthKey} className="mb-2 bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-                                         <button type="button" onClick={() => toggleMonth(monthKey)} className="w-full flex justify-between items-center p-4 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 transition-colors focus:outline-none">
+                                         <button onClick={() => toggleMonth(monthKey)} className="w-full flex justify-between items-center p-4 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 transition-colors">
                                              <div className="flex items-center gap-3">
-                                                 <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center"><i className={`fas ${isOpen ? 'fa-folder-open' : 'fa-folder'}`}></i></div>
+                                                 <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-white flex items-center justify-center"><i className={`fas ${isOpen ? 'fa-folder-open' : 'fa-folder'}`}></i></div>
                                                  <div className="text-left"><span className="block font-bold text-gray-800 dark:text-white">{formatMonthFolder(monthKey)}</span><span className="text-xs text-gray-500">{count} itens</span></div>
                                              </div>
                                              <i className={`fas fa-chevron-${isOpen ? 'up' : 'down'} text-gray-400`}></i>
                                          </button>
                                          
                                          {isOpen && (
-                                             <div className="p-2 bg-white dark:bg-gray-900 space-y-2 animate-fade-in border-t border-gray-100 dark:border-gray-800">
-                                                 {monthData.EXTINTOR.length > 0 && (<div className="border-l-4 border-brand-red pl-2 ml-2"><button type="button" onClick={() => toggleCategory(`${monthKey}-EXT`)} className="w-full flex justify-between items-center py-2 text-brand-red font-bold text-sm focus:outline-none"><span><i className="fas fa-fire-extinguisher mr-2"></i>EXTINTORES ({monthData.EXTINTOR.length})</span><i className={`fas fa-chevron-${openCategories[`${monthKey}-EXT`] ? 'up' : 'down'}`}></i></button>{openCategories[`${monthKey}-EXT`] && <div className="space-y-2 mt-1">{monthData.EXTINTOR.map(item => <HistoryItemCard key={item.id} item={item} showBin={false} isSelected={selectedIds.has(item.id)} toggleSelection={toggleSelection} onToggleDelete={onToggleDelete} isAdmin={isAdmin} currentUser={currentUser} onEditItem={onEditItem} />)}</div>}</div>)}
-                                                 {monthData.HIDRANTE.length > 0 && (<div className="border-l-4 border-brand-orange pl-2 ml-2"><button type="button" onClick={() => toggleCategory(`${monthKey}-HID`)} className="w-full flex justify-between items-center py-2 text-brand-orange font-bold text-sm focus:outline-none"><span><i className="fas fa-faucet mr-2"></i>HIDRANTES ({monthData.HIDRANTE.length})</span><i className={`fas fa-chevron-${openCategories[`${monthKey}-HID`] ? 'up' : 'down'}`}></i></button>{openCategories[`${monthKey}-HID`] && <div className="space-y-2 mt-1">{monthData.HIDRANTE.map(item => <HistoryItemCard key={item.id} item={item} showBin={false} isSelected={selectedIds.has(item.id)} toggleSelection={toggleSelection} onToggleDelete={onToggleDelete} isAdmin={isAdmin} currentUser={currentUser} onEditItem={onEditItem} />)}</div>}</div>)}
-                                                 {monthData.RONDA.length > 0 && (<div className="border-l-4 border-brand-blue pl-2 ml-2"><button type="button" onClick={() => toggleCategory(`${monthKey}-RND`)} className="w-full flex justify-between items-center py-2 text-brand-blue font-bold text-sm focus:outline-none"><span><i className="fas fa-clipboard-check mr-2"></i>RONDAS ({monthData.RONDA.length})</span><i className={`fas fa-chevron-${openCategories[`${monthKey}-RND`] ? 'up' : 'down'}`}></i></button>{openCategories[`${monthKey}-RND`] && <div className="space-y-2 mt-1">{monthData.RONDA.map(item => <HistoryItemCard key={item.id} item={item} showBin={false} isSelected={selectedIds.has(item.id)} toggleSelection={toggleSelection} onToggleDelete={onToggleDelete} isAdmin={isAdmin} currentUser={currentUser} onEditItem={onEditItem} />)}</div>}</div>)}
+                                             <div className="p-2 bg-white dark:bg-gray-900 space-y-2 animate-fade-in">
+                                                 {monthData.EXTINTOR.length > 0 && (<div className="border-l-4 border-brand-red pl-2 ml-2"><button onClick={() => toggleCategory(`${monthKey}-EXT`)} className="w-full flex justify-between items-center py-2 text-brand-red font-bold text-sm"><span><i className="fas fa-fire-extinguisher mr-2"></i>EXTINTORES ({monthData.EXTINTOR.length})</span><i className={`fas fa-chevron-${openCategories[`${monthKey}-EXT`] ? 'up' : 'down'}`}></i></button>{openCategories[`${monthKey}-EXT`] && <div className="space-y-2 mt-1">{monthData.EXTINTOR.map(item => renderItem(item))}</div>}</div>)}
+                                                 {monthData.HIDRANTE.length > 0 && (<div className="border-l-4 border-brand-orange pl-2 ml-2"><button onClick={() => toggleCategory(`${monthKey}-HID`)} className="w-full flex justify-between items-center py-2 text-brand-orange font-bold text-sm"><span><i className="fas fa-faucet mr-2"></i>HIDRANTES ({monthData.HIDRANTE.length})</span><i className={`fas fa-chevron-${openCategories[`${monthKey}-HID`] ? 'up' : 'down'}`}></i></button>{openCategories[`${monthKey}-HID`] && <div className="space-y-2 mt-1">{monthData.HIDRANTE.map(item => renderItem(item))}</div>}</div>)}
+                                                 {monthData.RONDA.length > 0 && (<div className="border-l-4 border-brand-blue pl-2 ml-2"><button onClick={() => toggleCategory(`${monthKey}-RND`)} className="w-full flex justify-between items-center py-2 text-brand-blue font-bold text-sm"><span><i className="fas fa-clipboard-check mr-2"></i>RONDAS ({monthData.RONDA.length})</span><i className={`fas fa-chevron-${openCategories[`${monthKey}-RND`] ? 'up' : 'down'}`}></i></button>{openCategories[`${monthKey}-RND`] && <div className="space-y-2 mt-1">{monthData.RONDA.map(item => renderItem(item))}</div>}</div>)}
                                              </div>
                                          )}
                                      </div>
@@ -1186,28 +1331,16 @@
                 const user = localStorage.getItem('trfire_user');
                 const storedLastActivity = parseInt(localStorage.getItem('trfire_last_activity') || '0');
                 const now = Date.now();
-                const TIMEOUT_MS = 10 * 60 * 1000;
+                const TIMEOUT_MS = 10 * 60 * 1000; 
 
                 if (user && (now - storedLastActivity > TIMEOUT_MS)) {
-                    try {
-                        localStorage.removeItem('trfire_user');
-                        localStorage.removeItem('trfire_unit');
-                        localStorage.removeItem('trfire_role');
-                    } catch(e){}
+                    localStorage.removeItem('trfire_user');
+                    localStorage.removeItem('trfire_unit');
+                    localStorage.removeItem('trfire_role');
                     return 'responsible';
                 }
                 
-                let savedPage = null;
-                try { savedPage = localStorage.getItem('trfire_current_page'); } catch(e){}
-                
-                if (user) {
-                    // Evita travamento se o cache antigo pedir 'menu' que não existe mais
-                    if (savedPage && savedPage !== 'responsible' && savedPage !== 'menu') {
-                        return savedPage;
-                    }
-                    return 'dashboard';
-                }
-                return 'responsible';
+                return user ? 'menu' : 'responsible';
             });
             const [responsible, setResponsible] = useState(localStorage.getItem('trfire_user') || '');
             const [currentUnit, setCurrentUnit] = useState(localStorage.getItem('trfire_unit') || '');
@@ -1225,33 +1358,18 @@
             const [deferredPrompt, setDeferredPrompt] = useState(null);
             
             const [isMenuOpen, setIsMenuOpen] = useState(false);
-            const [isReportOpen, setIsReportOpen] = useState(false);
-            const [isBackupOpen, setIsBackupOpen] = useState(false);
-
             const [loading, setLoading] = useState(true);
-            const [isOnline, setIsOnline] = useState(navigator.onLine);
 
             const showAlert = (message, type = 'info', onCloseAction = null) => { setNotification({ isOpen: true, message, type, isConfirmation: false, onConfirm: null, onCloseAction }); };
             const showConfirm = (message, onConfirmAction, type = 'warning') => { setNotification({ isOpen: true, message, type, isConfirmation: true, onConfirm: onConfirmAction }); };
             const closeNotification = () => { if(notification.onCloseAction) notification.onCloseAction(); setNotification({ ...notification, isOpen: false, onCloseAction: null }); };
+            const navigateTo = (newPage) => { try { window.history.pushState({ page: newPage }, "", `?page=${newPage}`); } catch (e) { } localStorage.setItem('trfire_current_page', newPage); setPage(newPage); };
             
-            // NAVEGAÇÃO SEGURA (Simples mudança de State)
-            const navigateTo = (newPage) => { 
-                try { localStorage.setItem('trfire_current_page', newPage); } catch (e) { console.warn("Aviso LocalStorage:", e); }
-                setPage(newPage); 
-            };
-            
-            useEffect(() => { 
-                const handleOnline = () => { setIsOnline(true); showAlert("Conexão restabelecida! Sincronizando dados...", "success"); };
-                const handleOffline = () => { setIsOnline(false); showAlert("Sem internet! O App continuará funcionando offline.", "warning"); };
-                window.addEventListener('online', handleOnline);
-                window.addEventListener('offline', handleOffline);
-                return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
-            }, []);
-
             useEffect(() => { const h = (e) => { e.preventDefault(); setDeferredPrompt(e); }; window.addEventListener('beforeinstallprompt', h); return () => window.removeEventListener('beforeinstallprompt', h); }, []);
-            
-            useEffect(() => { if (page === 'responsible') return; const TIMEOUT_MS = 10 * 60 * 1000; const updateActivity = () => { setLastActivity(Date.now()); try { localStorage.setItem('trfire_last_activity', Date.now().toString()); }catch(e){} }; const checkInactivity = () => { const storedLastActivity = parseInt(localStorage.getItem('trfire_last_activity') || Date.now()); if (Date.now() - storedLastActivity > TIMEOUT_MS) { showAlert("Sessão encerrada.", "warning", () => { localStorage.removeItem('trfire_user'); localStorage.removeItem('trfire_role'); window.location.reload(); }); } }; const intervalId = setInterval(checkInactivity, 60000); document.addEventListener("visibilitychange", () => { if(document.visibilityState === 'visible') checkInactivity(); }); const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click']; events.forEach(e => document.addEventListener(e, updateActivity)); updateActivity(); return () => { clearInterval(intervalId); events.forEach(e => document.removeEventListener(e, updateActivity)); }; }, [page]);
+            const handleInstallClick = () => { if (deferredPrompt) { deferredPrompt.prompt(); setDeferredPrompt(null); } else { showAlert("Instale via menu do navegador.", "info"); } };
+            useEffect(() => { const h = (e) => { if (e.state && e.state.page) setPage(e.state.page); }; window.addEventListener('popstate', h); return () => window.removeEventListener('popstate', h); }, []);
+            useEffect(() => { const savedPage = localStorage.getItem('trfire_current_page'); if (savedPage && savedPage !== 'responsible' && localStorage.getItem('trfire_user')) { setPage(savedPage); } }, []);
+            useEffect(() => { if (page === 'responsible') return; const TIMEOUT_MS = 10 * 60 * 1000; const updateActivity = () => { setLastActivity(Date.now()); localStorage.setItem('trfire_last_activity', Date.now().toString()); }; const checkInactivity = () => { const storedLastActivity = parseInt(localStorage.getItem('trfire_last_activity') || Date.now()); if (Date.now() - storedLastActivity > TIMEOUT_MS) { showAlert("Sessão encerrada.", "warning", () => { localStorage.removeItem('trfire_user'); localStorage.removeItem('trfire_role'); window.location.reload(); }); } }; const intervalId = setInterval(checkInactivity, 60000); document.addEventListener("visibilitychange", () => { if(document.visibilityState === 'visible') checkInactivity(); }); const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click']; events.forEach(e => document.addEventListener(e, updateActivity)); updateActivity(); return () => { clearInterval(intervalId); events.forEach(e => document.removeEventListener(e, updateActivity)); }; }, [page]);
 
             async function checkAndGenerateMissedRounds(currentDb) {
                 if (!dbFirestore) return;
@@ -1264,10 +1382,42 @@
                 else if (currentHour >= 18 && currentHour <= 23) { let start = new Date(now); start.setHours(12,0,0,0); let end = new Date(now); end.setHours(17,59,59,999); targetRange = { id: `DIURNO_2_${getLocalISODate(now)}`, start, end }; shiftId = `DIURNO_2_${getLocalISODate(now)}`; } 
                 else { let yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1); let start = new Date(yesterday); start.setHours(18,0,0,0); let end = new Date(yesterday); end.setHours(23,59,59,999); targetRange = { id: `NOTURNO_1_${getLocalISODate(yesterday)}`, start, end }; shiftId = `NOTURNO_1_${getLocalISODate(yesterday)}`; }
                 if (!targetRange || now <= targetRange.end) return;
+                
                 let responsibleName = null;
-                try { const shiftLogDoc = await dbFirestore.collection("shift_logs").doc(shiftId).get(); if (shiftLogDoc.exists) { responsibleName = shiftLogDoc.data().responsible; } else { return; } } catch (e) { console.error(e); return; }
+                let shiftRole = null;
+                
+                try { 
+                    const shiftLogDoc = await dbFirestore.collection("shift_logs").doc(shiftId).get(); 
+                    if (shiftLogDoc.exists) { 
+                        responsibleName = shiftLogDoc.data().responsible; 
+                        shiftRole = shiftLogDoc.data().role; 
+                    } else { 
+                        return; 
+                    } 
+                } catch (e) { console.error(e); return; }
+
+                // --- CAMADA DE IMUNIDADE RETROATIVA ---
+                // Se o cargo não estiver no shift_logs (log antigo), nós buscamos ele
+                if (!shiftRole && responsibleName) {
+                    if (responsibleName.toUpperCase() === 'ADMIN') {
+                        shiftRole = 'ADMIN';
+                    } else {
+                        try {
+                            const uQuery = await dbFirestore.collection("users").where("name", "==", responsibleName).limit(1).get();
+                            if (!uQuery.empty) { shiftRole = uQuery.docs[0].data().role || 'OPERACIONAL'; }
+                        } catch(e) {}
+                    }
+                }
+
+                // Se identificarmos que o responsável é SUPER USER, abortamos a auditoria imediatamente!
+                const excludedRoles = ['ADMIN', 'SUPERVISOR', 'COORDENADOR'];
+                if (shiftRole && excludedRoles.includes(shiftRole.toUpperCase())) {
+                    return;
+                }
+                // ---------------------------------------
+
                 const locationsToCheck = roundLocationsList.length > 0 ? roundLocationsList.map(l => l.name) : DEFAULT_ROUND_LOCATIONS;
-                for (const loc of locationsToCheck) { const hasInspection = currentDb.some(item => { if (item.type !== 'RONDA' || item.deleted || item.sector !== loc) return false; if (!item.created_at) return false; const itemDate = new Date(item.created_at); return itemDate >= targetRange.start && itemDate <= targetRange.end; }); const safeLocId = loc.replace(/[^a-zA-Z0-9]/g, ''); const autoDocId = `AUTO_${targetRange.id}_${safeLocId}`; const alreadyAutoRegistered = currentDb.some(item => item.id === autoDocId); if (!hasInspection && !alreadyAutoRegistered) { try { await dbFirestore.collection("inspections").doc(autoDocId).set({ type: 'RONDA', sector: loc, equipmentName: 'AUDITORIA AUTOMÁTICA', status: 'NÃO REALIZADA', auto: true, obs: `Inspeção não realizada. Turno supervisionado por: ${responsibleName}`, responsible: responsibleName, created_at: targetRange.end.toISOString(), deleted: false }); } catch (e) { console.error(e); } } }
+                for (const loc of locationsToCheck) { const hasInspection = currentDb.some(item => { if (item.type !== 'RONDA' || item.deleted || item.sector !== loc) return false; const itemDate = new Date(item.created_at); return itemDate >= targetRange.start && itemDate <= targetRange.end; }); const safeLocId = loc.replace(/[^a-zA-Z0-9]/g, ''); const autoDocId = `AUTO_${targetRange.id}_${safeLocId}`; const alreadyAutoRegistered = currentDb.some(item => item.id === autoDocId); if (!hasInspection && !alreadyAutoRegistered) { try { await dbFirestore.collection("inspections").doc(autoDocId).set({ type: 'RONDA', sector: loc, equipmentName: 'AUDITORIA AUTOMÁTICA', status: 'NÃO REALIZADA', auto: true, obs: `Inspeção não realizada. Turno supervisionado por: ${responsibleName}`, responsible: responsibleName, created_at: targetRange.end.toISOString(), deleted: false }); } catch (e) { console.error(e); } } }
             }
             
             async function checkAndCleanupTrash(currentDb) {
@@ -1281,8 +1431,8 @@
                 if(!dbFirestore || !firebaseUser) return;
                 setLoading(true);
                 const q = dbFirestore.collection("inspections").orderBy("created_at", "desc").limit(10000);
-                const unsub1 = q.onSnapshot({ includeMetadataChanges: true }, s => { 
-                    const d=[]; s.forEach(doc=>d.push({id:doc.id, pendingSync: doc.metadata.hasPendingWrites, ...doc.data()})); 
+                const unsub1 = q.onSnapshot(s => { 
+                    const d=[]; s.forEach(doc=>d.push({id:doc.id,...doc.data()})); 
                     setDb(d); 
                     checkAndGenerateMissedRounds(d); 
                     checkAndCleanupTrash(d); 
@@ -1299,26 +1449,28 @@
 
             const handleSave = async (d) => { 
                 try { 
-                    dbFirestore.collection("inspections").add({...d, unit: currentUnit}).catch(e => console.error("Offline Save:", e)); 
-                    
-                    if(d.type === 'RONDA') navigateTo('roundsLocation');
-                    else navigateTo(`category_${d.type}`);
-                    
-                    if (!navigator.onLine) { showAlert("Salvo LOCALMENTE! Sincronização pendente.", "warning"); }
+                    await dbFirestore.collection("inspections").add({...d, unit: currentUnit}); 
+                    // Alterado: Redireciona de volta para a tela de categoria se for Extintor/Hidrante
+                    if (d.type === 'EXTINTOR' || d.type === 'HIDRANTE') {
+                        setInspectionType(d.type);
+                        setPage('equipmentCategory');
+                    } else if (d.type === 'RONDA') {
+                        setPage('roundsLocation');
+                    } else {
+                        setPage('list');
+                    }
                     return true; 
-                } catch(e){ 
-                    return false; 
-                } 
+                } catch(e){ return false; } 
             };
-            const handleSaveUser = async (d) => dbFirestore.collection("users").add(d).catch(e=>console.error(e));
-            const handleUpdateUser = async (id, d) => dbFirestore.collection("users").doc(id).update(d).catch(e=>console.error(e));
-            const handleDeleteUser = async (id) => dbFirestore.collection("users").doc(id).delete().catch(e=>console.error(e));
-            const handleSaveUnit = async (d) => dbFirestore.collection("units").add(d).catch(e=>console.error(e));
-            const handleUpdateUnit = async (id, d) => dbFirestore.collection("units").doc(id).update(d).catch(e=>console.error(e));
-            const handleDeleteUnit = async (id) => dbFirestore.collection("units").doc(id).delete().catch(e=>console.error(e));
-            const handleSaveRoundLocation = async (d) => dbFirestore.collection("round_locations").add(d).catch(e=>console.error(e));
-            const handleUpdateRoundLocation = async (id, d) => dbFirestore.collection("round_locations").doc(id).update(d).catch(e=>console.error(e));
-            const handleDeleteRoundLocation = async (id) => dbFirestore.collection("round_locations").doc(id).delete().catch(e=>console.error(e));
+            const handleSaveUser = async (d) => dbFirestore.collection("users").add(d);
+            const handleUpdateUser = async (id, d) => dbFirestore.collection("users").doc(id).update(d);
+            const handleDeleteUser = async (id) => dbFirestore.collection("users").doc(id).delete();
+            const handleSaveUnit = async (d) => dbFirestore.collection("units").add(d);
+            const handleUpdateUnit = async (id, d) => dbFirestore.collection("units").doc(id).update(d);
+            const handleDeleteUnit = async (id) => dbFirestore.collection("units").doc(id).delete();
+            const handleSaveRoundLocation = async (d) => dbFirestore.collection("round_locations").add(d);
+            const handleUpdateRoundLocation = async (id, d) => dbFirestore.collection("round_locations").doc(id).update(d);
+            const handleDeleteRoundLocation = async (id) => dbFirestore.collection("round_locations").doc(id).delete();
             
             const onToggleDelete = async (id, status) => { 
                 if(!dbFirestore) return; 
@@ -1327,42 +1479,31 @@
                     const docRef = dbFirestore.collection("inspections").doc(id); 
                     const updateData = { deleted: status };
                     if (status) { updateData.deleted_at = new Date().toISOString(); } else { updateData.deleted_at = null; }
-                    docRef.update(updateData).catch(e => console.error("Offline Update:", e)); 
-                    if (!navigator.onLine) { showAlert("Movido para a lixeira LOCALMENTE.", "info"); }
-                } catch (e) { 
-                    showAlert("Erro ao atualizar.", "error"); 
-                } 
+                    await docRef.update(updateData); 
+                } catch (e) { showAlert("Erro ao atualizar.", "error"); } 
             };
             
             const onDeletePermanently = async (id) => {
                 if(!dbFirestore) return false;
                 setDb(prev => prev.filter(item => item.id !== id));
-                try {
-                    dbFirestore.collection("inspections").doc(id).delete().catch(e => console.error("Offline Delete:", e));
-                    if (!navigator.onLine) { showAlert("Exclusão agendada LOCALMENTE.", "info"); }
-                    return true;
-                } catch (e) {
-                    console.error("Erro ao excluir permanentemente:", e);
-                    showAlert("Erro ao excluir. O item pode reaparecer ao recarregar.", "error");
-                    return false;
-                }
+                try { await dbFirestore.collection("inspections").doc(id).delete(); return true; } 
+                catch (e) { showAlert("Erro ao excluir.", "error"); return false; }
             };
             
-            const onImportData = (j) => { j.forEach(i=>dbFirestore.collection("inspections").add(i).catch(e=>console.error(e))); };
+            const onImportData = (j) => { j.forEach(i=>dbFirestore.collection("inspections").add(i)); };
             
             const handleLogin = (name, unitName, role, showWelcome = true) => { 
-                try {
-                    localStorage.setItem('trfire_user', name); 
-                    localStorage.setItem('trfire_unit', unitName); 
-                    localStorage.setItem('trfire_role', role); 
-                } catch(e){}
+                localStorage.setItem('trfire_user', name); 
+                localStorage.setItem('trfire_unit', unitName); 
+                localStorage.setItem('trfire_role', role); 
                 setResponsible(name); 
                 setCurrentUnit(unitName); 
                 setUserRole(role); 
-                setPage('dashboard');
-                if(showWelcome) showAlert(`Bem-vindo, ${name}!\nPerfil: ${role}`, "welcome");
+                setPage('menu'); 
 
-                if (dbFirestore) {
+                // Impede que ADMIN, SUPERVISOR ou COORDENADOR entrem no log de turnos da auditoria
+                const excludedRoles = ['ADMIN', 'SUPERVISOR', 'COORDENADOR'];
+                if (dbFirestore && !excludedRoles.includes(role.toUpperCase())) {
                     const now = new Date();
                     const currentHour = now.getHours();
                     const getLocalISODate = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -1372,38 +1513,32 @@
                     else if (currentHour >= 18 && currentHour <= 23) shiftId = `NOTURNO_1_${getLocalISODate(now)}`;
                     else shiftId = `NOTURNO_2_${getLocalISODate(now)}`;
                     
-                    dbFirestore.collection("shift_logs").doc(shiftId).set({ responsible: name, unit: unitName, timestamp: new Date().toISOString() }, { merge: true }).catch(console.error);
+                    // Adicionado o 'role' no salvamento para agilizar as validações futuras
+                    dbFirestore.collection("shift_logs").doc(shiftId).set({ responsible: name, role: role, unit: unitName, timestamp: new Date().toISOString() }, { merge: true }).catch(console.error);
                 }
             };
 
             const handleStartInspection = (t) => { 
-                try {
-                    localStorage.removeItem('trfire_temp_form');
-                    localStorage.removeItem('trfire_temp_round');
-                } catch(e){}
+                localStorage.removeItem('trfire_temp_form');
+                localStorage.removeItem('trfire_temp_round');
                 setScanRes(null);
                 setInspectionType(t); 
-                navigateTo('scan');
+                navigateTo('scan'); 
             };
+            
+            // Função para abrir a tela da Categoria
+            const handleOpenCategory = (t) => {
+                setInspectionType(t);
+                navigateTo('equipmentCategory');
+            }
+
             const handleRoundStart = (l) => { 
-                try {
-                    localStorage.removeItem('trfire_temp_form');
-                    localStorage.removeItem('trfire_temp_round');
-                } catch(e){}
+                localStorage.removeItem('trfire_temp_form');
+                localStorage.removeItem('trfire_temp_round');
                 setScanRes(null);
                 setRoundLocation(l); 
                 setInspectionType('RONDA'); 
-                navigateTo('scan');
-            };
-            
-            const performLogout = () => {
-                try {
-                    localStorage.removeItem('trfire_user');
-                    localStorage.removeItem('trfire_role');
-                    localStorage.removeItem('trfire_unit');
-                    localStorage.removeItem('trfire_current_page');
-                } catch(e){}
-                window.location.reload();
+                navigateTo('scan'); 
             };
 
             const handleEditItem = (item) => {
@@ -1430,45 +1565,51 @@
 
             return (
                 <ErrorBoundary>
-                    {!isOnline && (
-                        <div className="bg-orange-600 text-white text-[10px] font-bold text-center py-1.5 flex justify-center items-center gap-2 sticky top-0 z-[100] w-full shadow-md animate-pulse">
-                            <i className="fas fa-wifi-slash"></i> MODO OFFLINE ATIVO - DADOS SALVOS NO DISPOSITIVO
-                        </div>
-                    )}
-                    <NotificationModal isOpen={notification.isOpen} message={notification.message} type={notification.type} isConfirmation={notification.isConfirmation} onClose={closeNotification} onConfirm={notification.onConfirm} />
-                    
-                    <ReportModal isOpen={isReportOpen} onClose={() => setIsReportOpen(false)} data={db} showAlert={showAlert} isAdmin={userRole === 'ADMIN'} />
-                    <BackupModal isOpen={isBackupOpen} onClose={() => setIsBackupOpen(false)} data={db} onImportData={onImportData} showAlert={showAlert} />
-
-                    <GlobalSidebar 
+                    <SidebarMenu 
                         isOpen={isMenuOpen} 
                         onClose={() => setIsMenuOpen(false)} 
                         onNavigate={navigateTo} 
-                        onOpenReport={() => setIsReportOpen(true)}
-                        onOpenBackup={() => setIsBackupOpen(true)}
-                        usersList={users}
-                        userRole={userRole} 
                         responsibleName={responsible} 
                         currentUnit={currentUnit} 
-                        handleLogout={performLogout} 
+                        userRole={userRole} 
+                        usersList={users} 
+                        onOpenCategory={handleOpenCategory} // Usado nos botões do menu lateral
+                        onStartInspection={handleStartInspection} // Usado nas rondas
                     />
 
-                    {page === 'responsible' && <ResponsibleScreen onConfirm={handleLogin} usersList={users} unitsList={units} showAlert={showAlert} onNavigate={navigateTo} isOnline={isOnline} />}
-                    {page === 'dashboard' && <DashboardScreen data={db} onOpenMenu={() => setIsMenuOpen(true)} />}
+                    <NotificationModal isOpen={notification.isOpen} message={notification.message} type={notification.type} isConfirmation={notification.isConfirmation} onClose={closeNotification} onConfirm={notification.onConfirm} />
+                    
+                    {page === 'responsible' && <ResponsibleScreen onConfirm={handleLogin} usersList={users} unitsList={units} showAlert={showAlert} onNavigate={navigateTo} />}
+                    {page === 'menu' && <DashboardScreen db={db} onOpenMenu={() => setIsMenuOpen(true)} responsibleName={responsible} />}
                     {page === 'adminMenu' && <AdminMenuScreen onNavigate={navigateTo} onOpenMenu={() => setIsMenuOpen(true)} />}
                     {page === 'accessControl' && <AccessControlScreen onNavigate={navigateTo} usersList={users} onUpdatePermissions={(id,p)=>dbFirestore.collection("users").doc(id).update({permissions:p})} />}
-                    {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={navigateTo} onSelectLocation={handleRoundStart} db={db} roundLocationsList={roundLocationsList} onOpenMenu={() => setIsMenuOpen(true)} />}
+                    
+                    {/* NOVA TELA DE CATEGORIA */}
+                    {page === 'equipmentCategory' && <EquipmentCategoryScreen db={db} inspectionType={inspectionType} onNavigate={navigateTo} onStartScan={handleStartInspection} currentUser={responsible} userRole={userRole} onEditItem={handleEditItem} onToggleDelete={onToggleDelete} showConfirm={showConfirm} />}
+
+                    {page === 'roundsLocation' && <RoundsLocationScreen onNavigate={navigateTo} onSelectLocation={handleRoundStart} db={db} responsibleName={responsible} roundLocationsList={roundLocationsList} onOpenMenu={() => setIsMenuOpen(true)} />}
                     {page === 'userRegister' && <UserRegisterScreen onNavigate={navigateTo} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} />}
                     {page === 'unitRegister' && <UnitRegisterScreen onNavigate={navigateTo} onSaveUnit={handleSaveUnit} unitsList={units} onUpdateUnit={handleUpdateUnit} onDeleteUnit={handleDeleteUnit} showAlert={showAlert} showConfirm={showConfirm} />}
                     {page === 'roundLocRegister' && <RoundLocationsRegisterScreen onNavigate={navigateTo} onSaveLocation={handleSaveRoundLocation} onUpdateLocation={handleUpdateRoundLocation} locationsList={roundLocationsList} onDeleteLocation={handleDeleteRoundLocation} showAlert={showAlert} showConfirm={showConfirm} />}
                     
-                    {page.startsWith('category_') && <CategoryScreen type={page.split('_')[1]} db={db} onStartInspection={handleStartInspection} onToggleDelete={onToggleDelete} onDeletePermanently={onDeletePermanently} currentUser={responsible} userRole={userRole} onEditItem={handleEditItem} onOpenMenu={() => setIsMenuOpen(true)} />}
-
-                    {page === 'scan' && <ScannerScreen onNavigate={navigateTo} onScanSuccess={(d)=>{setScanRes(d); navigateTo(inspectionType === 'RONDA' ? 'roundsForm' : 'form')}} db={db} inspectionType={inspectionType} showAlert={showAlert} />}
-                    {page === 'form' && <FormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} onSave={handleSave} inspectionType={inspectionType} showAlert={showAlert} />}
-                    {page === 'roundsForm' && <RoundsFormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} roundLocation={roundLocation} onSave={handleSave} currentUnit={currentUnit} showAlert={showAlert} />}
+                    {page === 'scan' && <ScannerScreen onNavigate={(t) => {
+                         // Lógica de "Voltar" ajustada para retornar à categoria de onde veio
+                         let nextPage = t;
+                         if (t === 'menu') {
+                             if (inspectionType === 'RONDA') nextPage = 'roundsLocation';
+                             else if (inspectionType === 'EXTINTOR' || inspectionType === 'HIDRANTE') nextPage = 'equipmentCategory';
+                         }
+                         navigateTo(nextPage);
+                    }} onScanSuccess={(d)=>{setScanRes(d); navigateTo(inspectionType === 'RONDA' ? 'roundsForm' : 'form')}} db={db} inspectionType={inspectionType} showAlert={showAlert} />}
                     
-                    {page === 'list' && <ListScreen data={db} onNavigate={navigateTo} onToggleDelete={onToggleDelete} onDeletePermanently={onDeletePermanently} currentUser={responsible} userRole={userRole} showAlert={showAlert} showConfirm={showConfirm} onEditItem={handleEditItem} onOpenMenu={() => setIsMenuOpen(true)} />}
+                    {page === 'form' && <FormScreen initialData={scanRes} onNavigate={(t) => {
+                        // Ao clicar voltar no formulário, retorna para a Categoria
+                        if (t === 'menu') navigateTo('equipmentCategory');
+                        else navigateTo(t);
+                    }} responsibleName={responsible} onSave={handleSave} inspectionType={inspectionType} showAlert={showAlert} />}
+                    
+                    {page === 'roundsForm' && <RoundsFormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} roundLocation={roundLocation} onSave={handleSave} currentUnit={currentUnit} showAlert={showAlert} />}
+                    {page === 'list' && <ListScreen data={db} onNavigate={navigateTo} onToggleDelete={onToggleDelete} onDeletePermanently={onDeletePermanently} onImportData={onImportData} currentUser={responsible} userRole={userRole} showAlert={showAlert} showConfirm={showConfirm} onEditItem={handleEditItem} onOpenMenu={() => setIsMenuOpen(true)} />}
                     {page === 'adminSetup' && <UserRegisterScreen onNavigate={navigateTo} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} backDestination="responsible" />}
                 </ErrorBoundary>
             );

@@ -3,19 +3,21 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO MESTRE V86.0 (Sublocais em Extintores e Hidrantes)
+    VERSÃO MESTRE V87.0 (Modo Offline Progressivo)
     ============================================================================
     RESUMO DAS ALTERAÇÕES:
-    1. SUBLOCAIS DINÂMICOS:
-       - Nova coleção no Firebase 'sub_locations'.
-       - Campo 'subLocation' adicionado ao formulário de Extintores e Hidrantes.
-       - Lista suspensa que se habilita apenas após selecionar o Local principal.
-       - Botão de cadastro "+ CADASTRAR NOVO SUBLOCAL" direto na lista.
-       
-    2. VISUALIZAÇÃO GERAL:
-       - Painéis de Histórico, Categoria e Dashboard atualizados para mostrar 
-         "Local - Sublocal".
-       - Relatório em PDF atualizado para exibir as duas informações juntas.
+    1. PERSISTÊNCIA OFFLINE (IndexedDB):
+       - Ativação do dbFirestore.enablePersistence() para cache em tempo real.
+    
+    2. FILA DE SINCRONIZAÇÃO (Fire and Forget):
+       - O salvamento não dá mais "await" eterno se a internet cair. 
+       - O App resolve a ação instantaneamente, grava no celular e o Firebase 
+         sincroniza em background ao detectar o retorno da rede.
+         
+    3. INDICADORES VISUAIS:
+       - Listener global window.onLine detecta queda de internet.
+       - Barra fixa no topo avisando "MODO OFFLINE ATIVO".
+       - Ícone da tela de Login muda de ONLINE (Verde) para OFFLINE (Vermelho).
     ============================================================================
     -->
 
@@ -128,8 +130,19 @@
             if (!firebase.apps.length) { app = firebase.initializeApp(firebaseConfig); } 
             else { app = firebase.app(); }
             dbFirestore = firebase.firestore();
+            
+            // --- NOVO: HABILITAÇÃO DO MODO OFFLINE NATIVO DO FIREBASE ---
+            dbFirestore.enablePersistence({ synchronizeTabs: true })
+                .catch(function(err) {
+                    if (err.code == 'failed-precondition') {
+                        console.warn("Persistência offline já está ativa em outra aba.");
+                    } else if (err.code == 'unimplemented') {
+                        console.warn("Este navegador não suporta a persistência offline do Firebase.");
+                    }
+                });
+
             auth = firebase.auth();
-            console.log("Firebase Compat Conectado.");
+            console.log("Firebase Compat Conectado (Modo Offline Ativado).");
         } catch (error) { console.error("Erro Firebase:", error); }
 
         const LOGO_SRC = "logo.png"; 
@@ -222,7 +235,7 @@
             ); 
         }
 
-        function ResponsibleScreen({ onConfirm, usersList, unitsList, showAlert, onNavigate }) {
+        function ResponsibleScreen({ onConfirm, usersList, unitsList, showAlert, onNavigate, isOnline }) {
             const [selectedName, setSelectedName] = useState("");
             const [selectedUnit, setSelectedUnit] = useState("");
             const [password, setPassword] = useState("");
@@ -259,7 +272,13 @@
                     <div onClick={handleLogoTap} className="w-28 h-28 mb-2 bg-white rounded-full p-4 shadow-2xl flex items-center justify-center cursor-pointer active:scale-95 transition-transform"><LogoImage className="w-full h-full object-contain" /></div>
                     <h1 className="text-white text-2xl font-extrabold tracking-tight mb-1 text-center">TR FIRE <span className="text-brand-orange">INSPEÇÕES</span></h1>
                     <p className="text-white/80 text-xs mb-2 font-medium">Sistema de Controle de Equipamentos</p>
-                    <div className="flex items-center gap-2 mb-4 bg-black/20 px-3 py-1 rounded-full"><div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div><p className="text-white/90 text-xs font-bold">ONLINE</p></div>
+                    
+                    {/* Badge Online/Offline Dinâmico */}
+                    <div className={`flex items-center gap-2 mb-4 px-3 py-1 rounded-full ${isOnline ? 'bg-black/20' : 'bg-red-900/60 border border-red-500/50 shadow-inner'}`}>
+                        <div className={`w-2 h-2 rounded-full animate-pulse ${isOnline ? 'bg-green-400' : 'bg-red-500'}`}></div>
+                        <p className="text-white/90 text-[10px] font-black uppercase tracking-wider">{isOnline ? 'ONLINE' : 'OFFLINE (Sinc. Pendente)'}</p>
+                    </div>
+
                     <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-2xl w-full max-w-sm space-y-4 mt-6">
                         <div><label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">Unidade</label><div className="relative"><select value={selectedUnit} onChange={(e) => { setSelectedUnit(e.target.value); }} className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white appearance-none font-bold text-gray-700 text-base"><option value="">{unitsList && unitsList.length > 0 ? "Selecione..." : "A carregar..."}</option>{unitsList && unitsList.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}</select></div></div>
                         <div><label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">Responsável</label><div className="relative"><input type="text" value={selectedName} onChange={(e) => setSelectedName(e.target.value.toUpperCase())} placeholder="Digite seu nome..." className="w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 text-base"/></div></div>
@@ -585,7 +604,7 @@
                                 <span className="text-xs text-gray-500 font-bold block mt-0.5">{formatDate(item.created_at)} | {item.responsible}</span>
                                 <span className="text-[10px] text-gray-400 font-bold block mt-0.5"><i className="fas fa-map-marker-alt mr-1"></i> {item.moduleLocation || 'LOCAL NÃO INFORMADO'} {item.subLocation ? ` - ${item.subLocation}` : ''}</span>
                             </div>
-                            {(item.photo || item.hasPhoto) && <div className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-1 rounded flex items-center gap-1"><i className="fas fa-camera"></i></div>}
+                            {(item.photo || item.hasPhoto || item.photo2) && <div className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-1 rounded flex items-center gap-1"><i className="fas fa-camera"></i></div>}
                         </div>
                         <div className="flex flex-col items-end gap-2">
                             <div className="flex items-center gap-2">
@@ -670,6 +689,92 @@
                     <div className="mt-16 text-center mb-8"><div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-full mb-4"><i className="fas fa-map-marker-alt text-2xl text-white"></i></div><h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">{editingId ? 'EDITAR LOCAL' : 'LOCAIS DE RONDA'}</h2><p className="text-gray-500 dark:text-gray-400 text-sm">Gerenciar pontos</p></div>
                     <div className="space-y-4"><input value={newLocation} onChange={e => setNewLocation(e.target.value)} placeholder="NOME DO LOCAL" className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-blue outline-none dark:text-white font-bold text-gray-700 uppercase" /><div className="flex gap-2">{editingId && <button onClick={handleCancelEdit} className="flex-1 py-4 bg-gray-300 text-gray-700 rounded-xl font-bold shadow-lg">CANCELAR</button>}<button onClick={handleSave} disabled={saving} className="flex-[2] py-4 bg-brand-blue text-white rounded-xl text-lg font-bold shadow-lg active:scale-95 transition-transform">{saving ? '...' : (editingId ? 'ATUALIZAR' : 'ADICIONAR')}</button></div></div>
                     <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700"><h3 className="font-bold text-gray-500 mb-4 text-xs uppercase">Locais Cadastrados ({locationsList.length})</h3><div className="space-y-2">{locationsList.map(loc => (<div key={loc.id} className={`bg-white dark:bg-gray-900 border ${editingId === loc.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'} p-4 rounded-xl flex items-center justify-between shadow-sm`}><span className="font-bold text-gray-800 dark:text-white text-sm">{loc.name}</span><div className="flex gap-2"><button onClick={() => handleEditClick(loc)} className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center hover:bg-blue-200"><i className="fas fa-pen text-xs"></i></button><button onClick={() => handleDelete(loc.id)} className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center hover:bg-red-200"><i className="fas fa-trash text-xs"></i></button></div></div>))}</div></div>
+                </div>
+            );
+        };
+
+        function SubLocationsRegisterScreen({ onNavigate, subLocationsList, onUpdateSubLocation, onDeleteSubLocation, showAlert, showConfirm }) {
+            const [selectedMainLocation, setSelectedMainLocation] = useState("");
+            const [editingId, setEditingId] = useState(null);
+            const [subLocName, setSubLocName] = useState("");
+            const [saving, setSaving] = useState(false);
+
+            const handleSave = async () => {
+                if (!subLocName.trim()) return showAlert("Digite o nome do sublocal.", "warning");
+                setSaving(true);
+                if (editingId) {
+                    await onUpdateSubLocation(editingId, subLocName.trim().toUpperCase());
+                    showAlert("Sublocal atualizado!", "success");
+                    setEditingId(null);
+                    setSubLocName("");
+                }
+                setSaving(false);
+            };
+
+            const handleEditClick = (sl) => {
+                setEditingId(sl.id);
+                setSubLocName(sl.name);
+            };
+
+            const handleCancelEdit = () => {
+                setEditingId(null);
+                setSubLocName("");
+            };
+
+            const handleDelete = (id) => {
+                showConfirm("Tem certeza que deseja excluir este sublocal?", () => onDeleteSubLocation(id), "error");
+            };
+
+            const filteredList = (subLocationsList || []).filter(sl => sl.mainLocation === selectedMainLocation).sort((a,b) => a.name.localeCompare(b.name));
+
+            return (
+                <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 overflow-y-auto relative animate-fade-in">
+                    <div className="absolute top-4 left-4"><button onClick={() => onNavigate('adminMenu')} className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-white shadow-sm"><i className="fas fa-arrow-left"></i></button></div>
+                    
+                    <div className="mt-16 text-center mb-8">
+                        <div className="inline-flex items-center justify-center w-16 h-16 bg-teal-600 rounded-full mb-4"><i className="fas fa-layer-group text-2xl text-white"></i></div>
+                        <h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase">GERIR SUBLOCAIS</h2>
+                        <p className="text-gray-500 dark:text-gray-400 text-sm">Editar ou remover cadastros</p>
+                    </div>
+
+                    <div className="space-y-4">
+                        <select value={selectedMainLocation} onChange={(e) => { setSelectedMainLocation(e.target.value); handleCancelEdit(); }} className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 uppercase">
+                            <option value="">Selecione o Local Principal...</option>
+                            {LOCATION_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                        </select>
+
+                        {editingId && (
+                            <div className="animate-fade-in p-4 bg-orange-50 dark:bg-orange-900/20 border border-brand-orange rounded-xl space-y-3">
+                                <label className="text-xs font-bold text-brand-orange uppercase">Editando Sublocal</label>
+                                <input value={subLocName} onChange={e => setSubLocName(e.target.value)} placeholder="NOME DO SUBLOCAL" className="w-full p-3 bg-white dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 uppercase" />
+                                <div className="flex gap-2">
+                                    <button onClick={handleCancelEdit} className="flex-1 py-3 bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-bold shadow-sm">CANCELAR</button>
+                                    <button onClick={handleSave} disabled={saving} className="flex-[2] py-3 bg-brand-orange text-white rounded-xl font-bold shadow-sm active:scale-95 transition-transform">{saving ? '...' : 'SALVAR ALTERAÇÃO'}</button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {selectedMainLocation && !editingId && (
+                        <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700 animate-fade-in">
+                            <h3 className="font-bold text-gray-500 mb-4 text-xs uppercase">Sublocais de {selectedMainLocation} ({filteredList.length})</h3>
+                            {filteredList.length === 0 ? (
+                                <p className="text-sm text-gray-400 text-center py-4">Nenhum sublocal vinculado a este local.</p>
+                            ) : (
+                                <div className="space-y-2">
+                                    {filteredList.map(sl => (
+                                        <div key={sl.id} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-4 rounded-xl flex items-center justify-between shadow-sm">
+                                            <span className="font-bold text-gray-800 dark:text-white text-sm">{sl.name}</span>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => handleEditClick(sl)} className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center hover:bg-blue-200"><i className="fas fa-pen text-xs"></i></button>
+                                                <button onClick={() => handleDelete(sl.id)} className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center hover:bg-red-200"><i className="fas fa-trash text-xs"></i></button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             );
         };
@@ -800,6 +905,7 @@
                         <button onClick={() => onNavigate('accessControl')} className="w-full py-4 bg-purple-600 text-white rounded-2xl font-bold shadow-md active:scale-95 transition-transform flex items-center px-6"><i className="fas fa-key w-8 text-xl"></i> CONTROLE DE ACESSO</button>
                         <button onClick={() => onNavigate('unitRegister')} className="w-full py-4 bg-gray-600 text-white rounded-2xl font-bold shadow-md active:scale-95 transition-transform flex items-center px-6"><i className="fas fa-building w-8 text-xl"></i> GESTÃO DE UNIDADES</button>
                         <button onClick={() => onNavigate('roundLocRegister')} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-md active:scale-95 transition-transform flex items-center px-6"><i className="fas fa-map-marked-alt w-8 text-xl"></i> LOCAIS DE RONDA</button>
+                        <button onClick={() => onNavigate('subLocRegister')} className="w-full py-4 bg-teal-600 text-white rounded-2xl font-bold shadow-md active:scale-95 transition-transform flex items-center px-6"><i className="fas fa-layer-group w-8 text-xl"></i> GERIR SUBLOCAIS</button>
                         <button onClick={() => onNavigate('userRegister')} className="w-full py-4 bg-gray-700 text-white rounded-2xl font-bold shadow-md active:scale-95 transition-transform flex items-center px-6"><i className="fas fa-users-cog w-8 text-xl"></i> GERIR BOMBEIROS</button>
                     </div>
                 </div>
@@ -1002,7 +1108,12 @@
                 const scanner = new Html5Qrcode("reader");
                 scannerRef.current = scanner;
                 const config = { fps: 10, qrbox: { width: 250, height: 250 } };
-                scanner.start({ facingMode: "environment" }, config, (decodedText) => {
+                
+                let isProcessing = false;
+                const onDecodeSuccess = (decodedText) => {
+                    if (isProcessing) return;
+                    isProcessing = true;
+
                     scanner.stop().then(() => {
                         scanner.clear();
                         let data = { equipmentId: decodedText, equipmentName: decodedText };
@@ -1020,7 +1131,16 @@
                         }
                         onScanSuccess(data);
                     }).catch(err => console.error(err));
-                }, () => {}).catch(err => console.error(err));
+                };
+
+                // Tenta forçar a câmera traseira estritamente (evita que alguns celulares abram a frontal)
+                scanner.start({ facingMode: { exact: "environment" } }, config, onDecodeSuccess, () => {})
+                    .catch((err) => {
+                        // Fallback de segurança caso o celular não suporte o parâmetro 'exact'
+                        scanner.start({ facingMode: "environment" }, config, onDecodeSuccess, () => {})
+                            .catch(err2 => console.error("Erro no Scanner:", err2));
+                    });
+
                 return () => { if (scanner.isScanning) scanner.stop().catch(()=>{}); };
             }, [db, inspectionType]);
 
@@ -1044,15 +1164,17 @@
                  if (initialData && initialData.id) {
                      return { ...initialData }; 
                  }
-                 return savedForm || { type: 'RONDA', sector: roundLocation, equipmentName: initialData?.equipmentName || '', moduleLocation: '', status: '', photo: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false };
+                 return savedForm || { type: 'RONDA', sector: roundLocation, equipmentName: initialData?.equipmentName || '', moduleLocation: '', status: '', photo: null, photo2: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false };
              });
-             const fileInputRef = useRef(null);
+             
+             const fileInputRef1 = useRef(null);
+             const fileInputRef2 = useRef(null);
              
              useEffect(() => {
                  localStorage.setItem('trfire_temp_round', JSON.stringify(form));
              }, [form]);
 
-             const handlePhotoChange = (e) => { 
+             const handlePhotoChange = (e, field) => { 
                 const file = e.target.files[0]; 
                 if (file) { 
                     const reader = new FileReader(); 
@@ -1065,7 +1187,7 @@
                             let width = img.width; let height = img.height; 
                             if (width > height) { if (width > MAX) { height *= MAX / width; width = MAX; } } else { if (height > MAX) { width *= MAX / height; height = MAX; } } 
                             canvas.width = width; canvas.height = height; ctx.drawImage(img, 0, 0, width, height); 
-                            setForm(prev => ({ ...prev, photo: canvas.toDataURL('image/jpeg', 0.5) })); 
+                            setForm(prev => ({ ...prev, [field]: canvas.toDataURL('image/jpeg', 0.5) })); 
                         }; 
                         img.src = event.target.result; 
                     }; 
@@ -1073,7 +1195,7 @@
                 } 
              };
              const save = async () => { 
-                 if (!form.moduleLocation || !form.photo) return showAlert("Preencha tudo.", "warning"); 
+                 if (!form.moduleLocation || !form.photo) return showAlert("Preencha tudo e tire a Foto 1.", "warning"); 
                  setIsSaving(true); 
                  const success = await onSave(form); 
                  setIsSaving(false);
@@ -1083,7 +1205,7 @@
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black">
                     <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('roundsLocation')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">Ronda</h2><button onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold" type="button">{isSaving ? '...' : 'SALVAR'}</button></div>
                     <div className="flex-1 overflow-y-auto p-2 space-y-4">
-                        <div className="bg-white p-4 rounded-xl space-y-4">
+                        <div className="bg-white p-4 rounded-xl space-y-4 shadow-sm border border-gray-100">
                             <input value={form.equipmentName} disabled className="w-full bg-gray-100 p-3 rounded font-bold" />
                             <div className="mt-2">
                                 <label className="text-xs font-bold text-gray-500 dark:text-gray-400 block mb-1">Condições ? *</label>
@@ -1100,8 +1222,19 @@
                                     <option value="Não Conforme">Não Conforme</option>
                                 </select>
                             </div>
-                            <div onClick={()=>fileInputRef.current.click()} className="w-full h-32 border-2 border-dashed rounded flex items-center justify-center text-gray-400 cursor-pointer mt-4">{form.photo ? <img src={form.photo} className="h-full object-cover"/> : <i className="fas fa-camera text-2xl"></i>}</div>
-                            <input type="file" ref={fileInputRef} onChange={handlePhotoChange} className="hidden" accept="image/*" capture="environment" />
+                            
+                            {/* CAIXAS DE FOTOS VERTICAIS (GRID 2 COLUNAS) */}
+                            <div className="grid grid-cols-2 gap-3 mt-4">
+                                <div onClick={()=>fileInputRef1.current.click()} className="w-full h-48 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex flex-col items-center justify-center text-gray-400 cursor-pointer overflow-hidden relative bg-gray-50 dark:bg-gray-800">
+                                    {form.photo ? <img src={form.photo} className="w-full h-full object-cover"/> : <><i className="fas fa-camera text-2xl mb-2"></i><span className="text-[10px] font-bold uppercase tracking-wider">FOTO 1 *</span></>}
+                                </div>
+                                <div onClick={()=>fileInputRef2.current.click()} className="w-full h-48 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex flex-col items-center justify-center text-gray-400 cursor-pointer overflow-hidden relative bg-gray-50 dark:bg-gray-800">
+                                    {form.photo2 ? <img src={form.photo2} className="w-full h-full object-cover"/> : <><i className="fas fa-camera text-2xl mb-2"></i><span className="text-[10px] font-bold uppercase tracking-wider">FOTO 2</span></>}
+                                </div>
+                            </div>
+                            <input type="file" ref={fileInputRef1} onChange={(e)=>handlePhotoChange(e, 'photo')} className="hidden" accept="image/*" capture="environment" />
+                            <input type="file" ref={fileInputRef2} onChange={(e)=>handlePhotoChange(e, 'photo2')} className="hidden" accept="image/*" capture="environment" />
+                            
                             <textarea value={form.obs} onChange={e=>setForm({...form, obs:e.target.value})} placeholder="Obs..." className="w-full p-3 bg-gray-100 rounded h-24 mt-4" />
                         </div>
                     </div>
@@ -1120,10 +1253,11 @@
                  if (initialData && initialData.id) {
                      return { ...initialData }; 
                  }
-                 return savedForm || { type: inspectionType, equipmentId: initialData?.equipmentId, equipmentName: initialData?.equipmentName, moduleLocation: '', subLocation: '', hasId: null, floorSign: null, q1: null, q2: null, nextRecharge: '', h_complete: null, h_unobstructed: null, h_seal_broken: null, nextHydro: '', photo: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false, extinguisherType: '' };
+                 return savedForm || { type: inspectionType, equipmentId: initialData?.equipmentId, equipmentName: initialData?.equipmentName, moduleLocation: '', subLocation: '', hasId: null, floorSign: null, q1: null, q2: null, nextRecharge: '', h_complete: null, h_unobstructed: null, h_seal_broken: null, nextHydro: '', photo: null, photo2: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false, extinguisherType: '' };
              });
              
-             const fileInputRef = useRef(null);
+             const fileInputRef1 = useRef(null);
+             const fileInputRef2 = useRef(null);
              
              // --- NOVO: GERENCIAMENTO DE SUBLOCAL ---
              const [isAddingSubLoc, setIsAddingSubLoc] = useState(false);
@@ -1166,7 +1300,7 @@
                  localStorage.setItem('trfire_temp_form', JSON.stringify(form));
              }, [form]);
 
-             const handlePhotoChange = (e) => { 
+             const handlePhotoChange = (e, field) => { 
                 const file = e.target.files[0]; 
                 if (file) { 
                     const reader = new FileReader(); 
@@ -1179,7 +1313,7 @@
                             let width = img.width; let height = img.height; 
                             if (width > height) { if (width > MAX) { height *= MAX / width; width = MAX; } } else { if (height > MAX) { width *= MAX / height; height = MAX; } } 
                             canvas.width = width; canvas.height = height; ctx.drawImage(img, 0, 0, width, height); 
-                            setForm(prev => ({ ...prev, photo: canvas.toDataURL('image/jpeg', 0.5) })); 
+                            setForm(prev => ({ ...prev, [field]: canvas.toDataURL('image/jpeg', 0.5) })); 
                         }; 
                         img.src = event.target.result; 
                     }; 
@@ -1201,7 +1335,7 @@
                      if (form.h_seal_broken === null) missing.push("Lacre"); if (!form.nextHydro) missing.push("T. Hidro");
                  } 
                  if(missing.length > 0) return showAlert("Falta: " + missing.join(", "), "warning"); 
-                 if (!form.photo) return showAlert("⚠️ Registro fotográfico obrigatório!", "warning");
+                 if (!form.photo) return showAlert("⚠️ Registro fotográfico obrigatório (Foto 1)!", "warning");
 
                  setIsSaving(true); 
                  const success = await onSave(form); 
@@ -1254,8 +1388,19 @@
                             )}
 
                             {inspectionType === 'EXTINTOR' ? (<><div className="grid grid-cols-2 gap-2"><ColorSelect label="1. Placa Sinal.?" field="hasId" val={form.hasId} onChange={handleSelectChange} /><ColorSelect label="2. Pintura Solo?" field="floorSign" val={form.floorSign} onChange={handleSelectChange} /></div><div className="grid grid-cols-2 gap-2"><ColorSelect label="3. Lacre Rompido?" field="q1" val={form.q1} onChange={handleSelectChange} invert={true} /><ColorSelect label="4. Obstruído?" field="q2" val={form.q2} onChange={handleSelectChange} invert={true} /></div><div className="grid grid-cols-2 gap-2"><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">Próx. Recarga</label><input type="tel" value={form.nextRecharge} onChange={e=>setForm({...form, nextRecharge: handleDateInput(e.target.value)})} placeholder="MMAAAA" className="w-full bg-transparent font-bold dark:text-white"/></div><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">Teste Hidro.</label><input type="tel" value={form.nextHydro} onChange={e=>setForm({...form, nextHydro: handleDateInput(e.target.value)})} placeholder="MMAAAA" className="w-full bg-transparent font-bold dark:text-white"/></div></div></>) : (<><div className="grid grid-cols-2 gap-2"><ColorSelect label="1. Completo?" field="h_complete" val={form.h_complete} onChange={handleSelectChange} /><ColorSelect label="2. Desobstruído?" field="h_unobstructed" val={form.h_unobstructed} onChange={handleSelectChange} /></div><div className="grid grid-cols-2 gap-2"><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">3. Teste Hidro.</label><input type="tel" value={form.nextHydro} onChange={e=>setForm({...form, nextHydro: handleDateInput(e.target.value)})} placeholder="MMAAAA" className="w-full bg-transparent font-bold dark:text-white"/></div><ColorSelect label="4. Lacre Rompido?" field="h_seal_broken" val={form.h_seal_broken} onChange={handleSelectChange} invert={true} /></div></>)}
-                            <div onClick={()=>fileInputRef.current.click()} className="w-full h-32 border-2 border-dashed rounded flex items-center justify-center text-gray-400 cursor-pointer">{form.photo ? <img src={form.photo} className="h-full object-cover"/> : <i className="fas fa-camera text-2xl"></i>}</div>
-                            <input type="file" ref={fileInputRef} onChange={handlePhotoChange} className="hidden" accept="image/*" capture="environment" />
+                            
+                            {/* CAIXAS DE FOTOS VERTICAIS (GRID 2 COLUNAS) */}
+                            <div className="grid grid-cols-2 gap-3 mt-4">
+                                <div onClick={()=>fileInputRef1.current.click()} className="w-full h-48 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex flex-col items-center justify-center text-gray-400 cursor-pointer overflow-hidden relative bg-gray-50 dark:bg-gray-800">
+                                    {form.photo ? <img src={form.photo} className="w-full h-full object-cover"/> : <><i className="fas fa-camera text-2xl mb-2"></i><span className="text-[10px] font-bold uppercase tracking-wider">FOTO 1 *</span></>}
+                                </div>
+                                <div onClick={()=>fileInputRef2.current.click()} className="w-full h-48 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex flex-col items-center justify-center text-gray-400 cursor-pointer overflow-hidden relative bg-gray-50 dark:bg-gray-800">
+                                    {form.photo2 ? <img src={form.photo2} className="w-full h-full object-cover"/> : <><i className="fas fa-camera text-2xl mb-2"></i><span className="text-[10px] font-bold uppercase tracking-wider">FOTO 2</span></>}
+                                </div>
+                            </div>
+                            <input type="file" ref={fileInputRef1} onChange={(e)=>handlePhotoChange(e, 'photo')} className="hidden" accept="image/*" capture="environment" />
+                            <input type="file" ref={fileInputRef2} onChange={(e)=>handlePhotoChange(e, 'photo2')} className="hidden" accept="image/*" capture="environment" />
+                            
                             <textarea value={form.obs} onChange={e=>setForm({...form, obs:e.target.value})} placeholder="Observações (Opcional)..." className="w-full p-4 rounded-xl border-none shadow-sm h-32 resize-none bg-white dark:bg-gray-800 dark:text-white mb-4"></textarea>
                         </div>
                     </div>
@@ -1375,7 +1520,7 @@
                                 {isRonda && <div className="text-xs text-gray-400 mt-1">Local: {item.sector} {item.moduleLocation ? `| ${item.moduleLocation}` : ''}</div>}
                                 {!isRonda && <div className="text-[10px] text-gray-400 font-bold mt-1"><i className="fas fa-map-marker-alt mr-1"></i> {item.moduleLocation || 'LOCAL NÃO INFORMADO'} {item.subLocation ? `- ${item.subLocation}` : ''}</div>}
                             </div>
-                            {(item.photo || item.hasPhoto) && <div className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-1 rounded flex items-center gap-1"><i className="fas fa-camera"></i></div>}
+                            {(item.photo || item.hasPhoto || item.photo2) && <div className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-1 rounded flex items-center gap-1"><i className="fas fa-camera"></i></div>}
                         </div>
                         <div className="flex flex-col items-end gap-2">
                             {showBin ? (
@@ -1504,6 +1649,18 @@
             
             const [isMenuOpen, setIsMenuOpen] = useState(false);
             const [loading, setLoading] = useState(true);
+            
+            // --- NOVO: GERENCIAMENTO DE ESTADO ONLINE/OFFLINE ---
+            const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+
+            useEffect(() => {
+                const handleOnline = () => setIsOnline(true);
+                const handleOffline = () => setIsOnline(false);
+                window.addEventListener('online', handleOnline);
+                window.addEventListener('offline', handleOffline);
+                return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
+            }, []);
+            // ----------------------------------------------------
 
             const showAlert = (message, type = 'info', onCloseAction = null) => { setNotification({ isOpen: true, message, type, isConfirmation: false, onConfirm: null, onCloseAction }); };
             const showConfirm = (message, onConfirmAction, type = 'warning') => { setNotification({ isOpen: true, message, type, isConfirmation: true, onConfirm: onConfirmAction }); };
@@ -1586,7 +1743,6 @@
                 const unsub3 = dbFirestore.collection("units").onSnapshot(s => { const u=[]; s.forEach(doc=>u.push({id:doc.id,...doc.data()})); setUnits(u); }, err => console.error(err));
                 const unsub4 = dbFirestore.collection("round_locations").orderBy("name").onSnapshot(s => { const l=[]; s.forEach(doc=>l.push({id:doc.id,...doc.data()})); setRoundLocationsList(l); }, err => console.error(err));
                 
-                // NOVA CHAMADA: Busca de Sublocais em tempo real
                 const unsub5 = dbFirestore.collection("sub_locations").onSnapshot(s => { 
                     const sl=[]; s.forEach(doc=>sl.push({id:doc.id,...doc.data()})); 
                     setSubLocationsList(sl); 
@@ -1595,9 +1751,10 @@
                 return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); };
             }, [firebaseUser]);
 
+            // --- NOVO: FIRE AND FORGET PARA SALVAR SEM TRAVAR OFFLINE ---
             const handleSave = async (d) => { 
                 try { 
-                    await dbFirestore.collection("inspections").add({...d, unit: currentUnit}); 
+                    dbFirestore.collection("inspections").add({...d, unit: currentUnit}).catch(e => console.error("Sync em Background Pendente/Falhou:", e)); 
                     if (d.type === 'EXTINTOR' || d.type === 'HIDRANTE') {
                         setInspectionType(d.type);
                         setPage('equipmentCategory');
@@ -1610,14 +1767,11 @@
                 } catch(e){ return false; } 
             };
             
-            // FUNÇÃO PARA SALVAR O SUBLOCAL NO BANCO DE DADOS FIREBASE
             const handleSaveSubLocation = async (mainLocation, subLocName) => {
                 if (!dbFirestore) return null;
                 try {
-                    const docRef = await dbFirestore.collection("sub_locations").add({
-                        mainLocation: mainLocation,
-                        name: subLocName
-                    });
+                    const docRef = dbFirestore.collection("sub_locations").doc();
+                    docRef.set({ mainLocation: mainLocation, name: subLocName }).catch(e => console.error("Sync offline SubLocal:", e));
                     return { id: docRef.id, mainLocation, name: subLocName };
                 } catch(e) {
                     console.error("Erro ao salvar sublocal:", e);
@@ -1625,15 +1779,27 @@
                 }
             };
             
-            const handleSaveUser = async (d) => dbFirestore.collection("users").add(d);
-            const handleUpdateUser = async (id, d) => dbFirestore.collection("users").doc(id).update(d);
-            const handleDeleteUser = async (id) => dbFirestore.collection("users").doc(id).delete();
-            const handleSaveUnit = async (d) => dbFirestore.collection("units").add(d);
-            const handleUpdateUnit = async (id, d) => dbFirestore.collection("units").doc(id).update(d);
-            const handleDeleteUnit = async (id) => dbFirestore.collection("units").doc(id).delete();
-            const handleSaveRoundLocation = async (d) => dbFirestore.collection("round_locations").add(d);
-            const handleUpdateRoundLocation = async (id, d) => dbFirestore.collection("round_locations").doc(id).update(d);
-            const handleDeleteRoundLocation = async (id) => dbFirestore.collection("round_locations").doc(id).delete();
+            const handleUpdateSubLocation = async (id, name) => {
+                if (!dbFirestore) return false;
+                try { dbFirestore.collection("sub_locations").doc(id).update({ name }).catch(e=>console.error(e)); return true; } 
+                catch(e) { console.error(e); return false; }
+            };
+            
+            const handleDeleteSubLocation = async (id) => {
+                if (!dbFirestore) return false;
+                try { dbFirestore.collection("sub_locations").doc(id).delete().catch(e=>console.error(e)); return true; } 
+                catch(e) { console.error(e); return false; }
+            };
+            
+            const handleSaveUser = async (d) => { dbFirestore.collection("users").add(d).catch(e=>console.error(e)); return true; };
+            const handleUpdateUser = async (id, d) => { dbFirestore.collection("users").doc(id).update(d).catch(e=>console.error(e)); return true; };
+            const handleDeleteUser = async (id) => { dbFirestore.collection("users").doc(id).delete().catch(e=>console.error(e)); return true; };
+            const handleSaveUnit = async (d) => { dbFirestore.collection("units").add(d).catch(e=>console.error(e)); return true; };
+            const handleUpdateUnit = async (id, d) => { dbFirestore.collection("units").doc(id).update(d).catch(e=>console.error(e)); return true; };
+            const handleDeleteUnit = async (id) => { dbFirestore.collection("units").doc(id).delete().catch(e=>console.error(e)); return true; };
+            const handleSaveRoundLocation = async (d) => { dbFirestore.collection("round_locations").add(d).catch(e=>console.error(e)); return true; };
+            const handleUpdateRoundLocation = async (id, d) => { dbFirestore.collection("round_locations").doc(id).update(d).catch(e=>console.error(e)); return true; };
+            const handleDeleteRoundLocation = async (id) => { dbFirestore.collection("round_locations").doc(id).delete().catch(e=>console.error(e)); return true; };
             
             const onToggleDelete = async (id, status) => { 
                 if(!dbFirestore) return; 
@@ -1642,14 +1808,14 @@
                     const docRef = dbFirestore.collection("inspections").doc(id); 
                     const updateData = { deleted: status };
                     if (status) { updateData.deleted_at = new Date().toISOString(); } else { updateData.deleted_at = null; }
-                    await docRef.update(updateData); 
+                    docRef.update(updateData).catch(e => console.error(e)); 
                 } catch (e) { showAlert("Erro ao atualizar.", "error"); } 
             };
             
             const onDeletePermanently = async (id) => {
                 if(!dbFirestore) return false;
                 setDb(prev => prev.filter(item => item.id !== id));
-                try { await dbFirestore.collection("inspections").doc(id).delete(); return true; } 
+                try { dbFirestore.collection("inspections").doc(id).delete().catch(e => console.error(e)); return true; } 
                 catch (e) { showAlert("Erro ao excluir.", "error"); return false; }
             };
             
@@ -1725,6 +1891,14 @@
 
             return (
                 <ErrorBoundary>
+                    {/* --- BANNER GLOBAL DE MODO OFFLINE --- */}
+                    {!isOnline && page !== 'responsible' && (
+                        <div className="bg-red-600 text-white text-[10px] font-black tracking-widest text-center py-2 z-[200] relative shadow-md flex justify-center items-center gap-2 w-full uppercase animate-fade-in">
+                            <i className="fas fa-wifi-slash text-sm"></i> 
+                            <span>Modo Offline - Sinc. em Segundo Plano</span>
+                        </div>
+                    )}
+                
                     <SidebarMenu 
                         isOpen={isMenuOpen} 
                         onClose={() => setIsMenuOpen(false)} 
@@ -1740,7 +1914,7 @@
 
                     <NotificationModal isOpen={notification.isOpen} message={notification.message} type={notification.type} isConfirmation={notification.isConfirmation} onClose={closeNotification} onConfirm={notification.onConfirm} />
                     
-                    {page === 'responsible' && <ResponsibleScreen onConfirm={handleLogin} usersList={users} unitsList={units} showAlert={showAlert} onNavigate={navigateTo} />}
+                    {page === 'responsible' && <ResponsibleScreen onConfirm={handleLogin} usersList={users} unitsList={units} showAlert={showAlert} onNavigate={navigateTo} isOnline={isOnline} />}
                     {page === 'menu' && <DashboardScreen db={db} onOpenMenu={() => setIsMenuOpen(true)} responsibleName={responsible} />}
                     {page === 'adminMenu' && <AdminMenuScreen onNavigate={navigateTo} onOpenMenu={() => setIsMenuOpen(true)} />}
                     {page === 'accessControl' && <AccessControlScreen onNavigate={navigateTo} usersList={users} onUpdatePermissions={(id,p)=>dbFirestore.collection("users").doc(id).update({permissions:p})} />}
@@ -1751,6 +1925,7 @@
                     {page === 'userRegister' && <UserRegisterScreen onNavigate={navigateTo} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} />}
                     {page === 'unitRegister' && <UnitRegisterScreen onNavigate={navigateTo} onSaveUnit={handleSaveUnit} unitsList={units} onUpdateUnit={handleUpdateUnit} onDeleteUnit={handleDeleteUnit} showAlert={showAlert} showConfirm={showConfirm} />}
                     {page === 'roundLocRegister' && <RoundLocationsRegisterScreen onNavigate={navigateTo} onSaveLocation={handleSaveRoundLocation} onUpdateLocation={handleUpdateRoundLocation} locationsList={roundLocationsList} onDeleteLocation={handleDeleteRoundLocation} showAlert={showAlert} showConfirm={showConfirm} />}
+                    {page === 'subLocRegister' && <SubLocationsRegisterScreen onNavigate={navigateTo} subLocationsList={subLocationsList} onUpdateSubLocation={handleUpdateSubLocation} onDeleteSubLocation={handleDeleteSubLocation} showAlert={showAlert} showConfirm={showConfirm} />}
                     
                     {page === 'scan' && <ScannerScreen onNavigate={(t) => {
                          let nextPage = t;
@@ -1761,7 +1936,6 @@
                          navigateTo(nextPage);
                     }} onScanSuccess={(d)=>{setScanRes(d); navigateTo(inspectionType === 'RONDA' ? 'roundsForm' : 'form')}} db={db} inspectionType={inspectionType} showAlert={showAlert} />}
                     
-                    {/* Passagem do SubLocationList e OnSave para o Formulário */}
                     {page === 'form' && <FormScreen initialData={scanRes} onNavigate={(t) => {
                         if (t === 'menu') navigateTo('equipmentCategory');
                         else navigateTo(t);

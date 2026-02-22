@@ -3,21 +3,19 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO MESTRE V88.0 (Banco de Fotos Otimizado e Relatório Fotográfico)
+    VERSÃO MESTRE V88.1 (Layout Avançado de PDF e Proteção de Fotos)
     ============================================================================
     RESUMO DAS ALTERAÇÕES:
-    1. COMPRESSÃO DE IMAGEM 3x4 (200x230):
-       - As fotos agora são convertidas rigidamente para 200x230 via Canvas.
-       - Qualidade JPEG ajustada para 0.4, resultando em arquivos < 15KB.
+    1. RELATÓRIO FOTOGRÁFICO APRIMORADO:
+       - Nova estrutura de visualização em formato de "Card/Ficha".
+       - Dados textuais alinhados à esquerda e imagens engavetadas em blocos 
+         à direita com moldura e subtítulos dinâmicos (Selo, Equipamento, etc).
+       - Prevenção de erro de índice composto no Firebase (Filtro feito na memória).
     
-    2. BANCO DE DADOS DE FOTOS SEPARADO:
-       - Nova coleção no Firebase 'inspection_photos'.
-       - O app salva os dados do formulário na coleção 'inspections' e delega
-         as strings pesadas das fotos para a coleção espelho (aliviando a RAM).
-         
-    3. NOVO RELATÓRIO FOTOGRÁFICO:
-       - Exclusivo para ADMIN, SUPERVISOR ou COORDENADOR.
-       - Gera um PDF minimalista exibindo os dados da inspeção + as duas fotos.
+    2. BANCO DE DADOS DE FOTOS (Correção de Edição):
+       - A função 'handleSave' agora detecta se a ação é Add ou Update.
+       - Garante que a edição de textos no histórico não apague fotos gravadas 
+         anteriormente no banco `inspection_photos`.
     ============================================================================
     -->
 
@@ -1170,7 +1168,6 @@
                  localStorage.setItem('trfire_temp_round', JSON.stringify(form));
              }, [form]);
 
-             // NOVA LÓGICA DE CROP E COMPRESSÃO MÁXIMA (200x230 @ 0.4 QUALITY)
              const handlePhotoChange = (e, field) => { 
                 const file = e.target.files[0]; 
                 if (file) { 
@@ -1181,13 +1178,11 @@
                             const canvas = document.createElement('canvas'); 
                             const ctx = canvas.getContext('2d'); 
                             
-                            // Dimensões exatas obrigatórias
                             const targetWidth = 200; 
                             const targetHeight = 230; 
                             canvas.width = targetWidth; 
                             canvas.height = targetHeight; 
                             
-                            // Lógica de centralização e corte sem distorcer (Center Crop)
                             const ratio = Math.max(targetWidth / img.width, targetHeight / img.height); 
                             const newWidth = img.width * ratio; 
                             const newHeight = img.height * ratio; 
@@ -1195,7 +1190,6 @@
                             const offsetY = (targetHeight - newHeight) / 2; 
                             
                             ctx.drawImage(img, offsetX, offsetY, newWidth, newHeight); 
-                            // Qualidade 0.4 para garantir arquivo < 15KB
                             setForm(prev => ({ ...prev, [field]: canvas.toDataURL('image/jpeg', 0.4) })); 
                         }; 
                         img.src = event.target.result; 
@@ -1316,7 +1310,6 @@
                  localStorage.setItem('trfire_temp_form', JSON.stringify(form));
              }, [form]);
 
-             // NOVA LÓGICA DE CROP E COMPRESSÃO MÁXIMA (200x230 @ 0.4 QUALITY)
              const handlePhotoChange = (e, field) => { 
                 const file = e.target.files[0]; 
                 if (file) { 
@@ -1361,7 +1354,9 @@
                      if (form.h_seal_broken === null) missing.push("Lacre"); if (!form.nextHydro) missing.push("T. Hidro");
                  } 
                  if(missing.length > 0) return showAlert("Falta: " + missing.join(", "), "warning"); 
-                 if (!form.photo) return showAlert(`⚠️ Registro fotográfico obrigatório (${labelFoto1})!`, "warning");
+                 
+                 // Se for uma adição (sem ID prévio), ou se o usuário limpou a foto
+                 if (!form.id && !form.photo) return showAlert(`⚠️ Registro fotográfico obrigatório (${labelFoto1})!`, "warning");
 
                  setIsSaving(true); 
                  const success = await onSave(form); 
@@ -1417,13 +1412,13 @@
                             <div className="grid grid-cols-2 gap-3 mt-4">
                                 <div className="flex flex-col gap-1.5">
                                     <div onClick={()=>fileInputRef1.current.click()} className="w-full h-48 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex flex-col items-center justify-center text-gray-400 cursor-pointer overflow-hidden relative bg-gray-50 dark:bg-gray-800">
-                                        {form.photo ? <img src={form.photo} className="w-full h-full object-cover"/> : <><i className="fas fa-camera text-2xl mb-2"></i><span className="text-[10px] font-bold uppercase tracking-wider">FOTO 1 *</span></>}
+                                        {form.photo ? <img src={form.photo} className="w-full h-full object-cover"/> : (form.id && form.hasPhoto && !form.photo) ? <div className="text-center p-2"><i className="fas fa-check-circle text-green-500 text-2xl mb-1"></i><br/><span className="text-[10px] font-bold">MANTIDA NA NUVEM</span></div> : <><i className="fas fa-camera text-2xl mb-2"></i><span className="text-[10px] font-bold uppercase tracking-wider">FOTO 1 *</span></>}
                                     </div>
                                     <span className="text-[10px] font-black text-center text-gray-500 uppercase">{labelFoto1}</span>
                                 </div>
                                 <div className="flex flex-col gap-1.5">
                                     <div onClick={()=>fileInputRef2.current.click()} className="w-full h-48 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex flex-col items-center justify-center text-gray-400 cursor-pointer overflow-hidden relative bg-gray-50 dark:bg-gray-800">
-                                        {form.photo2 ? <img src={form.photo2} className="w-full h-full object-cover"/> : <><i className="fas fa-camera text-2xl mb-2"></i><span className="text-[10px] font-bold uppercase tracking-wider">FOTO 2</span></>}
+                                        {form.photo2 ? <img src={form.photo2} className="w-full h-full object-cover"/> : (form.id && form.hasPhoto && !form.photo2) ? <div className="text-center p-2"><i className="fas fa-cloud text-blue-400 text-2xl mb-1"></i><br/><span className="text-[10px] font-bold">PODE ESTAR NA NUVEM</span></div> : <><i className="fas fa-camera text-2xl mb-2"></i><span className="text-[10px] font-bold uppercase tracking-wider">FOTO 2</span></>}
                                     </div>
                                     <span className="text-[10px] font-black text-center text-gray-500 uppercase">{labelFoto2}</span>
                                 </div>
@@ -1528,11 +1523,11 @@
                 doc.save(fileName); 
             };
 
-            // --- NOVO: GERADOR DO RELATÓRIO FOTOGRÁFICO ---
+            // --- NOVO: GERADOR DO RELATÓRIO FOTOGRÁFICO AVANÇADO ---
             const generatePhotoPDF = async (type) => {
                 if (!isAdmin) { return showAlert("Acesso Negado.", "error"); }
                 setShowPdfModal(false); 
-                showAlert("Buscando fotos no banco de dados e gerando PDF...", "info");
+                showAlert("Buscando fotos no banco de dados e organizando PDF...", "info");
                 
                 const reportData = activeData.filter(item => { return (item.type || (type === 'RONDA' ? '' : 'EXTINTOR')) === type && item.created_at.slice(0, 7) === pdfMonth; });
                 if(reportData.length === 0) return showAlert(`Sem dados de ${type} no mês selecionado.`, "warning"); 
@@ -1542,12 +1537,13 @@
                     if (dbFirestore) {
                         const photosSnapshot = await dbFirestore.collection("inspection_photos")
                             .where("type", "==", type)
-                            .where("created_at", ">=", pdfMonth + "-01")
-                            .where("created_at", "<=", pdfMonth + "-31T23:59:59")
-                            .get();
+                            .get(); // Busca todas desse tipo e filtra o mês localmente para evitar erro de índice no Firebase
+                        
                         photosSnapshot.forEach(doc => {
                             const d = doc.data();
-                            photosMap[d.inspectionId] = d;
+                            if (d.created_at && d.created_at.startsWith(pdfMonth)) {
+                                photosMap[d.inspectionId] = d;
+                            }
                         });
                     }
                 } catch(e) { console.error("Erro ao puxar fotos:", e); }
@@ -1560,37 +1556,80 @@
                 doc.setFontSize(10); doc.setTextColor(100, 100, 100); 
                 doc.text(`Mês: ${formatMonthFolder(pdfMonth)} | Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 23); 
                 
-                let y = 40;
+                let y = 35;
+                const cardHeight = 55;
+                
                 for (let i = 0; i < reportData.length; i++) {
                     const item = reportData[i];
-                    if (y > 240) { doc.addPage(); y = 20; }
+                    if (y + cardHeight > 280) { doc.addPage(); y = 20; }
                     
+                    // Desenha o Card / Ficha do item
+                    doc.setDrawColor(200, 200, 200);
+                    doc.setFillColor(253, 253, 253);
+                    doc.roundedRect(12, y, 186, cardHeight, 3, 3, 'FD');
+                    
+                    // Coluna da Esquerda: Textos
                     doc.setFontSize(10);
                     doc.setTextColor(0,0,0);
                     doc.setFont("helvetica", "bold");
-                    doc.text(`Equipamento: ${item.equipmentName || '-'}`, 14, y);
+                    doc.text("Equipamento:", 16, y + 10);
                     doc.setFont("helvetica", "normal");
+                    doc.text(`${item.equipmentName || '-'}`, 44, y + 10);
                     
                     const localFull = item.type === 'RONDA' ? item.sector : (item.moduleLocation || '-');
                     const subLocalFull = item.subLocation ? ` - ${item.subLocation}` : '';
-                    
-                    doc.text(`Local: ${localFull}${subLocalFull}`, 14, y + 6);
-                    doc.text(`Data/Hora: ${formatDate(item.created_at)}`, 14, y + 12);
-                    doc.text(`Responsável: ${item.responsible || '-'}`, 14, y + 18);
-                    
-                    doc.setDrawColor(200, 200, 200);
-                    doc.line(14, y + 22, 196, y + 22);
+                    let locText = `${localFull}${subLocalFull}`;
+                    if (locText.length > 38) locText = locText.substring(0, 35) + '...';
 
+                    doc.setFont("helvetica", "bold");
+                    doc.text("Local:", 16, y + 20);
+                    doc.setFont("helvetica", "normal");
+                    doc.text(locText, 28, y + 20);
+                    
+                    doc.setFont("helvetica", "bold");
+                    doc.text("Data/Hora:", 16, y + 30);
+                    doc.setFont("helvetica", "normal");
+                    doc.text(`${formatDate(item.created_at)}`, 36, y + 30);
+                    
+                    doc.setFont("helvetica", "bold");
+                    doc.text("Responsável:", 16, y + 40);
+                    doc.setFont("helvetica", "normal");
+                    doc.text(`${item.responsible || '-'}`, 42, y + 40);
+
+                    // Coluna da Direita: Fotos
                     const photoData = photosMap[item.id] || item; 
                     
-                    if (photoData.photo) {
-                        try { doc.addImage(photoData.photo, 'JPEG', 100, y - 5, 40, 46); } catch(e){}
-                    }
-                    if (photoData.photo2) {
-                        try { doc.addImage(photoData.photo2, 'JPEG', 145, y - 5, 40, 46); } catch(e){}
-                    }
+                    // Rótulos dinâmicos da Foto baseados no tipo
+                    const labelF1 = type === 'EXTINTOR' ? 'Selo Inmetro' : (type === 'HIDRANTE' ? 'Etiq. Inspeção' : 'Local');
+                    const labelF2 = type === 'RONDA' ? 'Equip/Opcional' : 'Equipamento';
                     
-                    y += 55;
+                    // Moldura Foto 1
+                    doc.setDrawColor(180, 180, 180);
+                    doc.rect(106, y + 5, 38, 44);
+                    if (photoData.photo) {
+                        try { doc.addImage(photoData.photo, 'JPEG', 107, y + 6, 36, 42); } catch(e){}
+                    } else {
+                        doc.setFontSize(8); doc.setTextColor(150, 150, 150);
+                        doc.text("Sem Foto 1", 116, y + 26);
+                    }
+                    // Legenda Foto 1
+                    doc.setFontSize(7); doc.setTextColor(80, 80, 80); doc.setFont("helvetica", "bold");
+                    doc.text(labelF1, 106, y + 53);
+
+                    // Moldura Foto 2
+                    doc.setDrawColor(180, 180, 180);
+                    doc.rect(152, y + 5, 38, 44);
+                    if (photoData.photo2) {
+                        try { doc.addImage(photoData.photo2, 'JPEG', 153, y + 6, 36, 42); } catch(e){}
+                    } else {
+                        doc.setFontSize(8); doc.setTextColor(150, 150, 150);
+                        doc.text("Sem Foto 2", 162, y + 26);
+                    }
+                    // Legenda Foto 2
+                    doc.setFontSize(7); doc.setTextColor(80, 80, 80); doc.setFont("helvetica", "bold");
+                    doc.text(labelF2, 152, y + 53);
+                    
+                    y += cardHeight + 8; // Pula para a próxima ficha
                 }
                 
                 const monthObj = new Date(pdfMonth + '-02'); const monthStr = monthObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase().replace('.', ''); const yearStr = monthObj.getFullYear();
@@ -1879,22 +1918,33 @@
                 return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); };
             }, [firebaseUser]);
 
-            // NOVO: Salvamento Otimizado com Banco de Fotos
+            // NOVO: Salvamento Otimizado com Banco de Fotos (Lógica de ADD ou UPDATE corrigida para não apagar foto na edição)
             const handleSave = async (d) => { 
                 try { 
-                    const { photo, photo2, ...mainData } = d;
-                    const hasPhotoFlag = !!photo || !!photo2;
+                    const { photo, photo2, id, ...mainData } = d;
+                    const hasPhotoFlag = !!photo || !!photo2 || mainData.hasPhoto;
                     
-                    const docRef = await dbFirestore.collection("inspections").add({...mainData, unit: currentUnit, hasPhoto: hasPhotoFlag}); 
+                    let docId = id;
                     
-                    if (hasPhotoFlag) {
-                        dbFirestore.collection("inspection_photos").doc(docRef.id).set({
-                            inspectionId: docRef.id,
-                            photo: photo || null,
-                            photo2: photo2 || null,
+                    if (id) {
+                        await dbFirestore.collection("inspections").doc(id).update({...mainData, unit: currentUnit, hasPhoto: hasPhotoFlag});
+                    } else {
+                        const docRef = await dbFirestore.collection("inspections").add({...mainData, unit: currentUnit, hasPhoto: hasPhotoFlag}); 
+                        docId = docRef.id;
+                    }
+                    
+                    // Só atualiza o banco de fotos se as strings da imagem vieram no formulário 
+                    // (evita que edição de texto apenas apague a foto real salva antes)
+                    if (photo || photo2) {
+                        const photoUpdate = {
+                            inspectionId: docId,
                             created_at: mainData.created_at,
                             type: mainData.type
-                        }).catch(e => console.error("Sync offline foto:", e));
+                        };
+                        if (photo && photo.startsWith('data:image')) photoUpdate.photo = photo;
+                        if (photo2 && photo2.startsWith('data:image')) photoUpdate.photo2 = photo2;
+                        
+                        dbFirestore.collection("inspection_photos").doc(docId).set(photoUpdate, { merge: true }).catch(e => console.error("Sync offline foto:", e));
                     }
 
                     if (d.type === 'EXTINTOR' || d.type === 'HIDRANTE') {
@@ -1906,7 +1956,7 @@
                         setPage('list');
                     }
                     return true; 
-                } catch(e){ return false; } 
+                } catch(e){ console.error(e); return false; } 
             };
             
             const handleSaveSubLocation = async (mainLocation, subLocName) => {

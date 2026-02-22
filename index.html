@@ -3,21 +3,21 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO MESTRE V87.0 (Modo Offline Progressivo)
+    VERSÃO MESTRE V88.0 (Banco de Fotos Otimizado e Relatório Fotográfico)
     ============================================================================
     RESUMO DAS ALTERAÇÕES:
-    1. PERSISTÊNCIA OFFLINE (IndexedDB):
-       - Ativação do dbFirestore.enablePersistence() para cache em tempo real.
+    1. COMPRESSÃO DE IMAGEM 3x4 (200x230):
+       - As fotos agora são convertidas rigidamente para 200x230 via Canvas.
+       - Qualidade JPEG ajustada para 0.4, resultando em arquivos < 15KB.
     
-    2. FILA DE SINCRONIZAÇÃO (Fire and Forget):
-       - O salvamento não dá mais "await" eterno se a internet cair. 
-       - O App resolve a ação instantaneamente, grava no celular e o Firebase 
-         sincroniza em background ao detectar o retorno da rede.
+    2. BANCO DE DADOS DE FOTOS SEPARADO:
+       - Nova coleção no Firebase 'inspection_photos'.
+       - O app salva os dados do formulário na coleção 'inspections' e delega
+         as strings pesadas das fotos para a coleção espelho (aliviando a RAM).
          
-    3. INDICADORES VISUAIS:
-       - Listener global window.onLine detecta queda de internet.
-       - Barra fixa no topo avisando "MODO OFFLINE ATIVO".
-       - Ícone da tela de Login muda de ONLINE (Verde) para OFFLINE (Vermelho).
+    3. NOVO RELATÓRIO FOTOGRÁFICO:
+       - Exclusivo para ADMIN, SUPERVISOR ou COORDENADOR.
+       - Gera um PDF minimalista exibindo os dados da inspeção + as duas fotos.
     ============================================================================
     -->
 
@@ -131,7 +131,6 @@
             else { app = firebase.app(); }
             dbFirestore = firebase.firestore();
             
-            // --- NOVO: HABILITAÇÃO DO MODO OFFLINE NATIVO DO FIREBASE ---
             dbFirestore.enablePersistence({ synchronizeTabs: true })
                 .catch(function(err) {
                     if (err.code == 'failed-precondition') {
@@ -273,7 +272,6 @@
                     <h1 className="text-white text-2xl font-extrabold tracking-tight mb-1 text-center">TR FIRE <span className="text-brand-orange">INSPEÇÕES</span></h1>
                     <p className="text-white/80 text-xs mb-2 font-medium">Sistema de Controle de Equipamentos</p>
                     
-                    {/* Badge Online/Offline Dinâmico */}
                     <div className={`flex items-center gap-2 mb-4 px-3 py-1 rounded-full ${isOnline ? 'bg-black/20' : 'bg-red-900/60 border border-red-500/50 shadow-inner'}`}>
                         <div className={`w-2 h-2 rounded-full animate-pulse ${isOnline ? 'bg-green-400' : 'bg-red-500'}`}></div>
                         <p className="text-white/90 text-[10px] font-black uppercase tracking-wider">{isOnline ? 'ONLINE' : 'OFFLINE (Sinc. Pendente)'}</p>
@@ -604,7 +602,7 @@
                                 <span className="text-xs text-gray-500 font-bold block mt-0.5">{formatDate(item.created_at)} | {item.responsible}</span>
                                 <span className="text-[10px] text-gray-400 font-bold block mt-0.5"><i className="fas fa-map-marker-alt mr-1"></i> {item.moduleLocation || 'LOCAL NÃO INFORMADO'} {item.subLocation ? ` - ${item.subLocation}` : ''}</span>
                             </div>
-                            {(item.photo || item.hasPhoto || item.photo2) && <div className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-1 rounded flex items-center gap-1"><i className="fas fa-camera"></i></div>}
+                            {item.hasPhoto && <div className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-1 rounded flex items-center gap-1"><i className="fas fa-camera"></i></div>}
                         </div>
                         <div className="flex flex-col items-end gap-2">
                             <div className="flex items-center gap-2">
@@ -1133,10 +1131,8 @@
                     }).catch(err => console.error(err));
                 };
 
-                // Tenta forçar a câmera traseira estritamente (evita que alguns celulares abram a frontal)
                 scanner.start({ facingMode: { exact: "environment" } }, config, onDecodeSuccess, () => {})
                     .catch((err) => {
-                        // Fallback de segurança caso o celular não suporte o parâmetro 'exact'
                         scanner.start({ facingMode: "environment" }, config, onDecodeSuccess, () => {})
                             .catch(err2 => console.error("Erro no Scanner:", err2));
                     });
@@ -1174,6 +1170,7 @@
                  localStorage.setItem('trfire_temp_round', JSON.stringify(form));
              }, [form]);
 
+             // NOVA LÓGICA DE CROP E COMPRESSÃO MÁXIMA (200x230 @ 0.4 QUALITY)
              const handlePhotoChange = (e, field) => { 
                 const file = e.target.files[0]; 
                 if (file) { 
@@ -1183,17 +1180,30 @@
                         img.onload = () => { 
                             const canvas = document.createElement('canvas'); 
                             const ctx = canvas.getContext('2d'); 
-                            const MAX = 400; 
-                            let width = img.width; let height = img.height; 
-                            if (width > height) { if (width > MAX) { height *= MAX / width; width = MAX; } } else { if (height > MAX) { width *= MAX / height; height = MAX; } } 
-                            canvas.width = width; canvas.height = height; ctx.drawImage(img, 0, 0, width, height); 
-                            setForm(prev => ({ ...prev, [field]: canvas.toDataURL('image/jpeg', 0.5) })); 
+                            
+                            // Dimensões exatas obrigatórias
+                            const targetWidth = 200; 
+                            const targetHeight = 230; 
+                            canvas.width = targetWidth; 
+                            canvas.height = targetHeight; 
+                            
+                            // Lógica de centralização e corte sem distorcer (Center Crop)
+                            const ratio = Math.max(targetWidth / img.width, targetHeight / img.height); 
+                            const newWidth = img.width * ratio; 
+                            const newHeight = img.height * ratio; 
+                            const offsetX = (targetWidth - newWidth) / 2; 
+                            const offsetY = (targetHeight - newHeight) / 2; 
+                            
+                            ctx.drawImage(img, offsetX, offsetY, newWidth, newHeight); 
+                            // Qualidade 0.4 para garantir arquivo < 15KB
+                            setForm(prev => ({ ...prev, [field]: canvas.toDataURL('image/jpeg', 0.4) })); 
                         }; 
                         img.src = event.target.result; 
                     }; 
                     reader.readAsDataURL(file); 
                 } 
              };
+
              const save = async () => { 
                  if (!form.moduleLocation || !form.photo) return showAlert("Preencha tudo e tire a Foto 1.", "warning"); 
                  setIsSaving(true); 
@@ -1223,13 +1233,18 @@
                                 </select>
                             </div>
                             
-                            {/* CAIXAS DE FOTOS VERTICAIS (GRID 2 COLUNAS) */}
                             <div className="grid grid-cols-2 gap-3 mt-4">
-                                <div onClick={()=>fileInputRef1.current.click()} className="w-full h-48 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex flex-col items-center justify-center text-gray-400 cursor-pointer overflow-hidden relative bg-gray-50 dark:bg-gray-800">
-                                    {form.photo ? <img src={form.photo} className="w-full h-full object-cover"/> : <><i className="fas fa-camera text-2xl mb-2"></i><span className="text-[10px] font-bold uppercase tracking-wider">FOTO 1 *</span></>}
+                                <div className="flex flex-col gap-1.5">
+                                    <div onClick={()=>fileInputRef1.current.click()} className="w-full h-48 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex flex-col items-center justify-center text-gray-400 cursor-pointer overflow-hidden relative bg-gray-50 dark:bg-gray-800">
+                                        {form.photo ? <img src={form.photo} className="w-full h-full object-cover"/> : <><i className="fas fa-camera text-2xl mb-2"></i><span className="text-[10px] font-bold uppercase tracking-wider">FOTO 1 *</span></>}
+                                    </div>
+                                    <span className="text-[10px] font-black text-center text-gray-500 uppercase">Local da Ronda *</span>
                                 </div>
-                                <div onClick={()=>fileInputRef2.current.click()} className="w-full h-48 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex flex-col items-center justify-center text-gray-400 cursor-pointer overflow-hidden relative bg-gray-50 dark:bg-gray-800">
-                                    {form.photo2 ? <img src={form.photo2} className="w-full h-full object-cover"/> : <><i className="fas fa-camera text-2xl mb-2"></i><span className="text-[10px] font-bold uppercase tracking-wider">FOTO 2</span></>}
+                                <div className="flex flex-col gap-1.5">
+                                    <div onClick={()=>fileInputRef2.current.click()} className="w-full h-48 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex flex-col items-center justify-center text-gray-400 cursor-pointer overflow-hidden relative bg-gray-50 dark:bg-gray-800">
+                                        {form.photo2 ? <img src={form.photo2} className="w-full h-full object-cover"/> : <><i className="fas fa-camera text-2xl mb-2"></i><span className="text-[10px] font-bold uppercase tracking-wider">FOTO 2</span></>}
+                                    </div>
+                                    <span className="text-[10px] font-black text-center text-gray-500 uppercase">Equipamento/Opcional</span>
                                 </div>
                             </div>
                             <input type="file" ref={fileInputRef1} onChange={(e)=>handlePhotoChange(e, 'photo')} className="hidden" accept="image/*" capture="environment" />
@@ -1258,8 +1273,10 @@
              
              const fileInputRef1 = useRef(null);
              const fileInputRef2 = useRef(null);
+
+             const labelFoto1 = inspectionType === 'EXTINTOR' ? 'Selo do Inmetro *' : 'Etiqueta de Inspeção *';
+             const labelFoto2 = 'Equipamento';
              
-             // --- NOVO: GERENCIAMENTO DE SUBLOCAL ---
              const [isAddingSubLoc, setIsAddingSubLoc] = useState(false);
              const [newSubLocName, setNewSubLocName] = useState('');
              const [isSavingSubLoc, setIsSavingSubLoc] = useState(false);
@@ -1294,12 +1311,12 @@
              };
 
              const filteredSubLocs = (subLocationsList || []).filter(sl => sl.mainLocation === form.moduleLocation).sort((a,b) => a.name.localeCompare(b.name));
-             // ------------------------------------------
 
              useEffect(() => {
                  localStorage.setItem('trfire_temp_form', JSON.stringify(form));
              }, [form]);
 
+             // NOVA LÓGICA DE CROP E COMPRESSÃO MÁXIMA (200x230 @ 0.4 QUALITY)
              const handlePhotoChange = (e, field) => { 
                 const file = e.target.files[0]; 
                 if (file) { 
@@ -1309,11 +1326,20 @@
                         img.onload = () => { 
                             const canvas = document.createElement('canvas'); 
                             const ctx = canvas.getContext('2d'); 
-                            const MAX = 400; 
-                            let width = img.width; let height = img.height; 
-                            if (width > height) { if (width > MAX) { height *= MAX / width; width = MAX; } } else { if (height > MAX) { width *= MAX / height; height = MAX; } } 
-                            canvas.width = width; canvas.height = height; ctx.drawImage(img, 0, 0, width, height); 
-                            setForm(prev => ({ ...prev, [field]: canvas.toDataURL('image/jpeg', 0.5) })); 
+                            
+                            const targetWidth = 200; 
+                            const targetHeight = 230; 
+                            canvas.width = targetWidth; 
+                            canvas.height = targetHeight; 
+                            
+                            const ratio = Math.max(targetWidth / img.width, targetHeight / img.height); 
+                            const newWidth = img.width * ratio; 
+                            const newHeight = img.height * ratio; 
+                            const offsetX = (targetWidth - newWidth) / 2; 
+                            const offsetY = (targetHeight - newHeight) / 2; 
+                            
+                            ctx.drawImage(img, offsetX, offsetY, newWidth, newHeight); 
+                            setForm(prev => ({ ...prev, [field]: canvas.toDataURL('image/jpeg', 0.4) })); 
                         }; 
                         img.src = event.target.result; 
                     }; 
@@ -1335,7 +1361,7 @@
                      if (form.h_seal_broken === null) missing.push("Lacre"); if (!form.nextHydro) missing.push("T. Hidro");
                  } 
                  if(missing.length > 0) return showAlert("Falta: " + missing.join(", "), "warning"); 
-                 if (!form.photo) return showAlert("⚠️ Registro fotográfico obrigatório (Foto 1)!", "warning");
+                 if (!form.photo) return showAlert(`⚠️ Registro fotográfico obrigatório (${labelFoto1})!`, "warning");
 
                  setIsSaving(true); 
                  const success = await onSave(form); 
@@ -1350,7 +1376,6 @@
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black relative">
                     <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('menu')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">{inspectionType}</h2><button onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold" type="button">{isSaving ? '...' : 'SALVAR'}</button></div>
                     
-                    {/* MODAL DE NOVO SUBLOCAL */}
                     {isAddingSubLoc && (
                         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
                             <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm shadow-2xl">
@@ -1389,13 +1414,18 @@
 
                             {inspectionType === 'EXTINTOR' ? (<><div className="grid grid-cols-2 gap-2"><ColorSelect label="1. Placa Sinal.?" field="hasId" val={form.hasId} onChange={handleSelectChange} /><ColorSelect label="2. Pintura Solo?" field="floorSign" val={form.floorSign} onChange={handleSelectChange} /></div><div className="grid grid-cols-2 gap-2"><ColorSelect label="3. Lacre Rompido?" field="q1" val={form.q1} onChange={handleSelectChange} invert={true} /><ColorSelect label="4. Obstruído?" field="q2" val={form.q2} onChange={handleSelectChange} invert={true} /></div><div className="grid grid-cols-2 gap-2"><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">Próx. Recarga</label><input type="tel" value={form.nextRecharge} onChange={e=>setForm({...form, nextRecharge: handleDateInput(e.target.value)})} placeholder="MMAAAA" className="w-full bg-transparent font-bold dark:text-white"/></div><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">Teste Hidro.</label><input type="tel" value={form.nextHydro} onChange={e=>setForm({...form, nextHydro: handleDateInput(e.target.value)})} placeholder="MMAAAA" className="w-full bg-transparent font-bold dark:text-white"/></div></div></>) : (<><div className="grid grid-cols-2 gap-2"><ColorSelect label="1. Completo?" field="h_complete" val={form.h_complete} onChange={handleSelectChange} /><ColorSelect label="2. Desobstruído?" field="h_unobstructed" val={form.h_unobstructed} onChange={handleSelectChange} /></div><div className="grid grid-cols-2 gap-2"><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">3. Teste Hidro.</label><input type="tel" value={form.nextHydro} onChange={e=>setForm({...form, nextHydro: handleDateInput(e.target.value)})} placeholder="MMAAAA" className="w-full bg-transparent font-bold dark:text-white"/></div><ColorSelect label="4. Lacre Rompido?" field="h_seal_broken" val={form.h_seal_broken} onChange={handleSelectChange} invert={true} /></div></>)}
                             
-                            {/* CAIXAS DE FOTOS VERTICAIS (GRID 2 COLUNAS) */}
                             <div className="grid grid-cols-2 gap-3 mt-4">
-                                <div onClick={()=>fileInputRef1.current.click()} className="w-full h-48 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex flex-col items-center justify-center text-gray-400 cursor-pointer overflow-hidden relative bg-gray-50 dark:bg-gray-800">
-                                    {form.photo ? <img src={form.photo} className="w-full h-full object-cover"/> : <><i className="fas fa-camera text-2xl mb-2"></i><span className="text-[10px] font-bold uppercase tracking-wider">FOTO 1 *</span></>}
+                                <div className="flex flex-col gap-1.5">
+                                    <div onClick={()=>fileInputRef1.current.click()} className="w-full h-48 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex flex-col items-center justify-center text-gray-400 cursor-pointer overflow-hidden relative bg-gray-50 dark:bg-gray-800">
+                                        {form.photo ? <img src={form.photo} className="w-full h-full object-cover"/> : <><i className="fas fa-camera text-2xl mb-2"></i><span className="text-[10px] font-bold uppercase tracking-wider">FOTO 1 *</span></>}
+                                    </div>
+                                    <span className="text-[10px] font-black text-center text-gray-500 uppercase">{labelFoto1}</span>
                                 </div>
-                                <div onClick={()=>fileInputRef2.current.click()} className="w-full h-48 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex flex-col items-center justify-center text-gray-400 cursor-pointer overflow-hidden relative bg-gray-50 dark:bg-gray-800">
-                                    {form.photo2 ? <img src={form.photo2} className="w-full h-full object-cover"/> : <><i className="fas fa-camera text-2xl mb-2"></i><span className="text-[10px] font-bold uppercase tracking-wider">FOTO 2</span></>}
+                                <div className="flex flex-col gap-1.5">
+                                    <div onClick={()=>fileInputRef2.current.click()} className="w-full h-48 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex flex-col items-center justify-center text-gray-400 cursor-pointer overflow-hidden relative bg-gray-50 dark:bg-gray-800">
+                                        {form.photo2 ? <img src={form.photo2} className="w-full h-full object-cover"/> : <><i className="fas fa-camera text-2xl mb-2"></i><span className="text-[10px] font-bold uppercase tracking-wider">FOTO 2</span></>}
+                                    </div>
+                                    <span className="text-[10px] font-black text-center text-gray-500 uppercase">{labelFoto2}</span>
                                 </div>
                             </div>
                             <input type="file" ref={fileInputRef1} onChange={(e)=>handlePhotoChange(e, 'photo')} className="hidden" accept="image/*" capture="environment" />
@@ -1481,10 +1511,11 @@
             const handleFileImport = (e) => { const file = e.target.files[0]; if(!file) return; const reader = new FileReader(); reader.onload = (ev) => { try { const json = JSON.parse(ev.target.result); onImportData(json); setShowBackupModal(false); } catch(err) { showAlert("Erro JSON.", "error"); } }; reader.readAsText(file); e.target.value = null; };
             
             const generateSpecificPDF = async (type) => { 
-                if (type === 'RONDA' && !isAdmin) { return showAlert("Acesso Negado: Apenas Administradores podem gerar relatórios de Ronda.", "error"); }
+                if (!isAdmin) { return showAlert("Acesso Negado.", "error"); }
                 setShowPdfModal(false); 
                 const reportData = activeData.filter(item => { return (item.type || (type === 'RONDA' ? '' : 'EXTINTOR')) === type && item.created_at.slice(0, 7) === pdfMonth; });
                 if(reportData.length === 0) return showAlert(`Sem dados de ${type} em ${formatMonthFolder(pdfMonth)}.`, "warning"); 
+                
                 const doc = new jsPDF({ orientation: "landscape" }); doc.setFillColor(243, 244, 246); doc.rect(0, 0, 297, 40, 'F'); doc.setTextColor(33, 33, 33); doc.setFontSize(22); let title = ""; if (type === 'EXTINTOR') title = "CHECK-LIST EXTINTORES MENSAL"; else if (type === 'HIDRANTE') title = "CHECK-LIST HIDRANTES MENSAL"; else if (type === 'RONDA') title = "RELATÓRIO DE RONDAS PREVENTIVAS"; doc.text(title, 14, 25); doc.setFontSize(10); doc.setTextColor(100, 100, 100); doc.text(`Mês de Referência: ${formatMonthFolder(pdfMonth)} | Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 35); doc.setFontSize(9); doc.setTextColor(33, 33, 33); doc.text("Parque Logístico: AERO GRU I", 280, 28, { align: "right" }); doc.text("Empresa: Vilella Assessoria em Segurança do Trabalho", 280, 35, { align: "right" }); 
                 const monthObj = new Date(pdfMonth + '-02'); const monthStr = monthObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase().replace('.', ''); const yearStr = monthObj.getFullYear(); const typeStr = type === 'EXTINTOR' ? 'Extintores' : (type === 'HIDRANTE' ? 'Hidrantes' : 'Rondas');
                 const uniqueResponsibles = [...new Set(reportData.map(i => i.responsible).filter(Boolean))]; const responsibleLabel = uniqueResponsibles.length === 1 ? uniqueResponsibles[0] : "Equipe"; const userStr = responsibleLabel.replace(/\s+/g, '-'); const fileName = `TRFIRE_Relatorio_${monthStr}-${yearStr}_${typeStr}_${userStr}.pdf`;
@@ -1495,6 +1526,77 @@
                 doc.autoTable({ head: head, body: body, startY: 45, theme: 'grid', headStyles: { fillColor: [224, 224, 224], textColor: [0, 0, 0], fontStyle: 'bold', lineWidth: 0.1, lineColor: [200, 200, 200] }, styles: { fontSize: 7, textColor: [50, 50, 50], lineColor: [230, 230, 230], lineWidth: 0.1, overflow: 'linebreak' }, alternateRowStyles: { fillColor: [255, 255, 255] } }); 
                 if (type === 'EXTINTOR') { let finalY = doc.lastAutoTable.finalY + 10; const counts = {}; reportData.forEach(item => { const t = item.extinguisherType || 'Indefinido'; counts[t] = (counts[t] || 0) + 1; }); if (finalY > 150) { doc.addPage(); finalY = 20; } doc.setFontSize(12); doc.setTextColor(33, 33, 33); doc.text("Resumo Quantitativo:", 14, finalY); const summaryBody = Object.entries(counts).map(([t, c]) => [t, c]); doc.autoTable({ head: [['Tipo', 'Quantidade']], body: summaryBody, startY: finalY + 5, theme: 'striped', tableWidth: 'wrap', styles: { fontSize: 9 } }); }
                 doc.save(fileName); 
+            };
+
+            // --- NOVO: GERADOR DO RELATÓRIO FOTOGRÁFICO ---
+            const generatePhotoPDF = async (type) => {
+                if (!isAdmin) { return showAlert("Acesso Negado.", "error"); }
+                setShowPdfModal(false); 
+                showAlert("Buscando fotos no banco de dados e gerando PDF...", "info");
+                
+                const reportData = activeData.filter(item => { return (item.type || (type === 'RONDA' ? '' : 'EXTINTOR')) === type && item.created_at.slice(0, 7) === pdfMonth; });
+                if(reportData.length === 0) return showAlert(`Sem dados de ${type} no mês selecionado.`, "warning"); 
+                
+                let photosMap = {};
+                try {
+                    if (dbFirestore) {
+                        const photosSnapshot = await dbFirestore.collection("inspection_photos")
+                            .where("type", "==", type)
+                            .where("created_at", ">=", pdfMonth + "-01")
+                            .where("created_at", "<=", pdfMonth + "-31T23:59:59")
+                            .get();
+                        photosSnapshot.forEach(doc => {
+                            const d = doc.data();
+                            photosMap[d.inspectionId] = d;
+                        });
+                    }
+                } catch(e) { console.error("Erro ao puxar fotos:", e); }
+
+                const doc = new jsPDF({ orientation: "portrait" }); 
+                doc.setFillColor(243, 244, 246); doc.rect(0, 0, 210, 30, 'F'); 
+                doc.setTextColor(33, 33, 33); doc.setFontSize(16); 
+                let title = `RELATÓRIO FOTOGRÁFICO - ${type}`;
+                doc.text(title, 14, 15); 
+                doc.setFontSize(10); doc.setTextColor(100, 100, 100); 
+                doc.text(`Mês: ${formatMonthFolder(pdfMonth)} | Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 23); 
+                
+                let y = 40;
+                for (let i = 0; i < reportData.length; i++) {
+                    const item = reportData[i];
+                    if (y > 240) { doc.addPage(); y = 20; }
+                    
+                    doc.setFontSize(10);
+                    doc.setTextColor(0,0,0);
+                    doc.setFont("helvetica", "bold");
+                    doc.text(`Equipamento: ${item.equipmentName || '-'}`, 14, y);
+                    doc.setFont("helvetica", "normal");
+                    
+                    const localFull = item.type === 'RONDA' ? item.sector : (item.moduleLocation || '-');
+                    const subLocalFull = item.subLocation ? ` - ${item.subLocation}` : '';
+                    
+                    doc.text(`Local: ${localFull}${subLocalFull}`, 14, y + 6);
+                    doc.text(`Data/Hora: ${formatDate(item.created_at)}`, 14, y + 12);
+                    doc.text(`Responsável: ${item.responsible || '-'}`, 14, y + 18);
+                    
+                    doc.setDrawColor(200, 200, 200);
+                    doc.line(14, y + 22, 196, y + 22);
+
+                    const photoData = photosMap[item.id] || item; 
+                    
+                    if (photoData.photo) {
+                        try { doc.addImage(photoData.photo, 'JPEG', 100, y - 5, 40, 46); } catch(e){}
+                    }
+                    if (photoData.photo2) {
+                        try { doc.addImage(photoData.photo2, 'JPEG', 145, y - 5, 40, 46); } catch(e){}
+                    }
+                    
+                    y += 55;
+                }
+                
+                const monthObj = new Date(pdfMonth + '-02'); const monthStr = monthObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase().replace('.', ''); const yearStr = monthObj.getFullYear();
+                const fileName = `TRFIRE_Fotos_${monthStr}-${yearStr}_${type}.pdf`;
+                doc.save(fileName);
+                closeNotification();
             };
 
             const renderItem = (item) => {
@@ -1573,7 +1675,35 @@
                     )}
                     {/* Modais */}
                     {showFilter && !showBin && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowFilter(false)}><div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-2xl w-64 border border-gray-200 dark:border-gray-700" onClick={e => e.stopPropagation()}><h3 className="font-bold mb-3 dark:text-white text-sm uppercase">Filtrar por</h3><div className="space-y-3"><div><label className="text-xs text-gray-500 block mb-1">De</label><input type="date" value={filters.startDate} onChange={e=>setFilters({...filters, startDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Até</label><input type="date" value={filters.endDate} onChange={e=>setFilters({...filters, endDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Tipo</label><select value={filters.type} onChange={e=>setFilters({...filters, type: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option><option value="EXTINTOR">Extintor</option><option value="HIDRANTE">Hidrante</option><option value="RONDA">Ronda</option></select></div><div><label className="text-xs text-gray-500 block mb-1">Responsável</label><select value={filters.responsible} onChange={e=>setFilters({...filters, responsible: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{responsibles.map(r => <option key={r} value={r}>{r}</option>)}</select></div><div><label className="text-xs text-gray-500 block mb-1">Módulo/Local</label><select value={filters.moduleLocation} onChange={e=>setFilters({...filters, moduleLocation: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{LOCATION_OPTIONS.map(l => <option key={l} value={l}>{l}</option>)}</select></div><div className="flex gap-2 pt-2"><button onClick={() => { setFilters({startDate:'', endDate:'', type:'', responsible:'', moduleLocation:''}); setViewMonth(new Date().toISOString().slice(0, 7)); }} className="flex-1 py-1 text-xs font-bold text-gray-500 bg-gray-200 dark:bg-gray-700 rounded">Limpar</button><button onClick={() => setShowFilter(false)} className="flex-1 py-1 text-xs font-bold text-white bg-brand-red rounded">Fechar</button></div></div></div></div>)}
-                    {showPdfModal && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm animate-fade-in text-center"><h3 className="text-lg font-bold mb-2 dark:text-white">Gerar Relatório</h3><div className="mb-6"><label className="text-xs text-gray-500 block mb-1">Selecione o Mês</label><input type="month" value={pdfMonth} onChange={(e) => setPdfMonth(e.target.value)} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white font-bold text-center" /></div><div className="space-y-3"><button onClick={() => generateSpecificPDF('EXTINTOR')} className="w-full py-3 bg-brand-red text-white font-bold rounded-xl shadow-md active:scale-95">Relatório de EXTINTORES</button><button onClick={() => generateSpecificPDF('HIDRANTE')} className="w-full py-3 bg-brand-orange text-white font-bold rounded-xl shadow-md active:scale-95">Relatório de HIDRANTES</button><button onClick={() => generateSpecificPDF('RONDA')} className="w-full py-3 bg-brand-blue text-white font-bold rounded-xl shadow-md active:scale-95">Relatório de RONDAS</button><button onClick={() => setShowPdfModal(false)} className="w-full py-3 bg-gray-200 text-gray-700 font-bold rounded-xl mt-2">Cancelar</button></div></div></div>)}
+                    
+                    {showPdfModal && (
+                        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm animate-fade-in text-center shadow-2xl">
+                                <h3 className="text-lg font-bold mb-2 dark:text-white">Gerar Relatório</h3>
+                                <div className="mb-6"><label className="text-xs text-gray-500 block mb-1">Selecione o Mês</label><input type="month" value={pdfMonth} onChange={(e) => setPdfMonth(e.target.value)} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white font-bold text-center" /></div>
+                                
+                                <div className="space-y-3">
+                                    <button onClick={() => generateSpecificPDF('EXTINTOR')} className="w-full py-3 bg-brand-red text-white font-bold rounded-xl shadow-md active:scale-95 text-sm uppercase">Relatório de Extintores</button>
+                                    <button onClick={() => generateSpecificPDF('HIDRANTE')} className="w-full py-3 bg-brand-orange text-white font-bold rounded-xl shadow-md active:scale-95 text-sm uppercase">Relatório de Hidrantes</button>
+                                    <button onClick={() => generateSpecificPDF('RONDA')} className="w-full py-3 bg-brand-blue text-white font-bold rounded-xl shadow-md active:scale-95 text-sm uppercase">Relatório de Rondas</button>
+                                </div>
+                                
+                                {isAdmin && (
+                                    <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-4 text-left">
+                                        <h4 className="text-[10px] font-black text-gray-500 uppercase mb-3 tracking-widest text-center">Relatórios Fotográficos</h4>
+                                        <div className="space-y-2">
+                                            <button onClick={() => generatePhotoPDF('EXTINTOR')} className="w-full py-2.5 bg-red-50 text-red-700 font-bold rounded-xl shadow-sm active:scale-95 border border-red-200 text-xs"><i className="fas fa-camera mr-2"></i> Fotos Extintores</button>
+                                            <button onClick={() => generatePhotoPDF('HIDRANTE')} className="w-full py-2.5 bg-orange-50 text-orange-700 font-bold rounded-xl shadow-sm active:scale-95 border border-orange-200 text-xs"><i className="fas fa-camera mr-2"></i> Fotos Hidrantes</button>
+                                            <button onClick={() => generatePhotoPDF('RONDA')} className="w-full py-2.5 bg-blue-50 text-blue-700 font-bold rounded-xl shadow-sm active:scale-95 border border-blue-200 text-xs"><i className="fas fa-camera mr-2"></i> Fotos Rondas</button>
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                <button onClick={() => setShowPdfModal(false)} className="w-full py-3 bg-gray-200 text-gray-700 font-bold rounded-xl mt-4 text-sm">CANCELAR</button>
+                            </div>
+                        </div>
+                    )}
+                    
                     {showBackupModal && isAdmin && (<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm animate-fade-in text-center"><h3 className="text-lg font-bold mb-4 dark:text-white flex items-center justify-center gap-2"><i className="fas fa-database text-blue-500"></i> Backup & Restauração</h3><div className="space-y-3"><button onClick={handleExport} className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2"><i className="fas fa-download"></i> EXPORTAR TUDO</button><div className="relative"><input type="file" ref={fileInputRef} onChange={handleFileImport} accept=".json" className="hidden" /><button onClick={() => fileInputRef.current.click()} className="w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-2"><i className="fas fa-upload"></i> IMPORTAR DADOS</button></div><button onClick={() => setShowBackupModal(false)} className="w-full py-3 bg-gray-200 text-gray-700 font-bold rounded-xl mt-4">Fechar</button></div></div></div>)}
                     
                     <div className="flex-1 overflow-y-auto p-3 space-y-2">
@@ -1650,7 +1780,6 @@
             const [isMenuOpen, setIsMenuOpen] = useState(false);
             const [loading, setLoading] = useState(true);
             
-            // --- NOVO: GERENCIAMENTO DE ESTADO ONLINE/OFFLINE ---
             const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
             useEffect(() => {
@@ -1660,7 +1789,6 @@
                 window.addEventListener('offline', handleOffline);
                 return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
             }, []);
-            // ----------------------------------------------------
 
             const showAlert = (message, type = 'info', onCloseAction = null) => { setNotification({ isOpen: true, message, type, isConfirmation: false, onConfirm: null, onCloseAction }); };
             const showConfirm = (message, onConfirmAction, type = 'warning') => { setNotification({ isOpen: true, message, type, isConfirmation: true, onConfirm: onConfirmAction }); };
@@ -1751,10 +1879,24 @@
                 return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); };
             }, [firebaseUser]);
 
-            // --- NOVO: FIRE AND FORGET PARA SALVAR SEM TRAVAR OFFLINE ---
+            // NOVO: Salvamento Otimizado com Banco de Fotos
             const handleSave = async (d) => { 
                 try { 
-                    dbFirestore.collection("inspections").add({...d, unit: currentUnit}).catch(e => console.error("Sync em Background Pendente/Falhou:", e)); 
+                    const { photo, photo2, ...mainData } = d;
+                    const hasPhotoFlag = !!photo || !!photo2;
+                    
+                    const docRef = await dbFirestore.collection("inspections").add({...mainData, unit: currentUnit, hasPhoto: hasPhotoFlag}); 
+                    
+                    if (hasPhotoFlag) {
+                        dbFirestore.collection("inspection_photos").doc(docRef.id).set({
+                            inspectionId: docRef.id,
+                            photo: photo || null,
+                            photo2: photo2 || null,
+                            created_at: mainData.created_at,
+                            type: mainData.type
+                        }).catch(e => console.error("Sync offline foto:", e));
+                    }
+
                     if (d.type === 'EXTINTOR' || d.type === 'HIDRANTE') {
                         setInspectionType(d.type);
                         setPage('equipmentCategory');
@@ -1815,8 +1957,11 @@
             const onDeletePermanently = async (id) => {
                 if(!dbFirestore) return false;
                 setDb(prev => prev.filter(item => item.id !== id));
-                try { dbFirestore.collection("inspections").doc(id).delete().catch(e => console.error(e)); return true; } 
-                catch (e) { showAlert("Erro ao excluir.", "error"); return false; }
+                try { 
+                    dbFirestore.collection("inspections").doc(id).delete().catch(e => console.error(e)); 
+                    dbFirestore.collection("inspection_photos").doc(id).delete().catch(e => console.error(e)); 
+                    return true; 
+                } catch (e) { showAlert("Erro ao excluir.", "error"); return false; }
             };
             
             const onImportData = (j) => { j.forEach(i=>dbFirestore.collection("inspections").add(i)); };
@@ -1891,7 +2036,6 @@
 
             return (
                 <ErrorBoundary>
-                    {/* --- BANNER GLOBAL DE MODO OFFLINE --- */}
                     {!isOnline && page !== 'responsible' && (
                         <div className="bg-red-600 text-white text-[10px] font-black tracking-widest text-center py-2 z-[200] relative shadow-md flex justify-center items-center gap-2 w-full uppercase animate-fade-in">
                             <i className="fas fa-wifi-slash text-sm"></i> 

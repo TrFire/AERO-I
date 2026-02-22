@@ -3,26 +3,23 @@
 <head>
     <!-- 
     ============================================================================
-    VERSÃO MESTRE V88.1 (Layout Avançado de PDF e Proteção de Fotos)
+    VERSÃO MESTRE V89.1 (Ajuste VGA e Ícone Hidrante Personalizado)
     ============================================================================
     RESUMO DAS ALTERAÇÕES:
-    1. RELATÓRIO FOTOGRÁFICO APRIMORADO:
-       - Nova estrutura de visualização em formato de "Card/Ficha".
-       - Dados textuais alinhados à esquerda e imagens engavetadas em blocos 
-         à direita com moldura e subtítulos dinâmicos (Selo, Equipamento, etc).
-       - Prevenção de erro de índice composto no Firebase (Filtro feito na memória).
+    1. NOMENCLATURA:
+       - Substituição de "SPK (Sprinklers)" para "VGA (SPK)" em todo o sistema
+         (Menus, Histórico, Dashboards, PDF).
     
-    2. BANCO DE DADOS DE FOTOS (Correção de Edição):
-       - A função 'handleSave' agora detecta se a ação é Add ou Update.
-       - Garante que a edição de textos no histórico não apague fotos gravadas 
-         anteriormente no banco `inspection_photos`.
+    2. ESTILIZAÇÃO (UI/UX):
+       - Criação de um ícone SVG nativo de Hidrante para substituir o ícone
+         de torneira (fa-faucet), dando um aspecto mais profissional ao sistema.
     ============================================================================
     -->
 
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#D32F2F">
-    <meta name="description" content="App de Inspeção de Extintores e Hidrantes">
+    <meta name="description" content="App de Inspeção de Equipamentos">
     
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -177,6 +174,79 @@
 
         const LogoImage = ({ className }) => (<img src={LOGO_SRC} onError={(e) => {e.target.onerror = null; e.target.src=FALLBACK_LOGO}} alt="Logo" className={className} />);
 
+        // ÍCONE PERSONALIZADO DE HIDRANTE (SVG)
+        const HydrantIcon = ({ className }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="currentColor" className={className || "w-full h-full"}>
+                {/* Base Plate */}
+                <path d="M 15 85 L 85 85 A 5 5 0 0 1 90 90 L 90 95 L 10 95 L 10 90 A 5 5 0 0 1 15 85 Z" />
+                {/* Base Bolts */}
+                <rect x="22" y="80" width="8" height="5" rx="2" />
+                <rect x="70" y="80" width="8" height="5" rx="2" />
+                {/* Lower Stem */}
+                <rect x="35" y="55" width="30" height="30" />
+                {/* Middle Collar */}
+                <rect x="32" y="47" width="36" height="8" rx="3" />
+                {/* Central Body */}
+                <circle cx="50" cy="35" r="18" />
+                <rect x="32" y="25" width="36" height="20" />
+                {/* Top Dome */}
+                <path d="M 35 25 Q 50 10 65 25 Z" />
+                {/* Top Cap */}
+                <rect x="42" y="12" width="16" height="6" rx="2" />
+                <rect x="38" y="8" width="24" height="4" rx="1" />
+                
+                {/* Left Arm (Diagonal) */}
+                <g transform="translate(32, 35) rotate(-45)">
+                    <rect x="-15" y="-10" width="15" height="20" />
+                    <rect x="-25" y="-14" width="10" height="28" rx="2" />
+                    <rect x="-35" y="-4" width="10" height="8" />
+                    <rect x="-40" y="-12" width="6" height="24" rx="2" />
+                </g>
+                
+                {/* Right Arm (Diagonal) */}
+                <g transform="translate(68, 35) rotate(45)">
+                    <rect x="0" y="-10" width="15" height="20" />
+                    <rect x="15" y="-14" width="10" height="28" rx="2" />
+                    <rect x="25" y="-4" width="10" height="8" />
+                    <rect x="34" y="-12" width="6" height="24" rx="2" />
+                </g>
+            </svg>
+        );
+
+        // ÍCONE PERSONALIZADO DE SPRINKLER (SVG) - VGA (SPK)
+        const SpkIcon = ({ className }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="currentColor" className={className || "w-full h-full"}>
+                {/* Top Pipe */}
+                <path d="M 22 24 H 78 V 30 H 22 V 24 Z" />
+                {/* Center Stem */}
+                <path d="M 46 30 H 54 V 48 H 46 V 30 Z" />
+                {/* Left Arm */}
+                <path d="M 28 30 H 34 L 44 43 V 48 H 36 L 28 36 V 30 Z" />
+                {/* Right Arm */}
+                <path d="M 72 30 H 66 L 56 43 V 48 H 64 L 72 36 V 30 Z" />
+                {/* Deflector */}
+                <path d="M 36 48 H 64 V 54 H 36 V 48 Z" />
+                {/* Center Drop */}
+                <path d="M 50 60 C 50 60 45 70 45 74 C 45 76.8 47.2 79 50 79 C 52.8 79 55 76.8 55 74 C 55 70 50 60 50 60 Z" />
+                {/* Left Drop 1 */}
+                <g transform="translate(-14, 4) rotate(15 50 60)">
+                    <path d="M 50 60 C 50 60 45 70 45 74 C 45 76.8 47.2 79 50 79 C 52.8 79 55 76.8 55 74 C 55 70 50 60 50 60 Z" />
+                </g>
+                {/* Right Drop 1 */}
+                <g transform="translate(14, 4) rotate(-15 50 60)">
+                    <path d="M 50 60 C 50 60 45 70 45 74 C 45 76.8 47.2 79 50 79 C 52.8 79 55 76.8 55 74 C 55 70 50 60 50 60 Z" />
+                </g>
+                {/* Left Drop 2 */}
+                <g transform="translate(-28, 10) rotate(30 50 60)">
+                    <path d="M 50 60 C 50 60 45 70 45 74 C 45 76.8 47.2 79 50 79 C 52.8 79 55 76.8 55 74 C 55 70 50 60 50 60 Z" />
+                </g>
+                {/* Right Drop 2 */}
+                <g transform="translate(28, 10) rotate(-30 50 60)">
+                    <path d="M 50 60 C 50 60 45 70 45 74 C 45 76.8 47.2 79 50 79 C 52.8 79 55 76.8 55 74 C 55 70 50 60 50 60 Z" />
+                </g>
+            </svg>
+        );
+
         // --- COMPONENTES ---
 
         class ErrorBoundary extends React.Component {
@@ -290,15 +360,15 @@
             if (!isOpen) return null;
             
             const isAdmin = ['ADMIN', 'SUPERVISOR', 'COORDENADOR'].includes(userRole);
-            const userPerms = usersList?.find(u => u.name === responsibleName)?.permissions || ['EXTINTOR', 'HIDRANTE', 'HISTORICO'];
+            const userPerms = usersList?.find(u => u.name === responsibleName)?.permissions || ['EXTINTOR', 'HIDRANTE', 'SPK', 'HISTORICO'];
             
             const unitObj = unitsList?.find(u => u.name === currentUnit);
-            const unitModules = unitObj?.modules || ['EXTINTOR', 'HIDRANTE', 'RONDA'];
+            const unitModules = unitObj?.modules || ['EXTINTOR', 'HIDRANTE', 'SPK', 'RONDA'];
 
             const hasAccess = (perm) => {
                 const userHasPerm = isAdmin || userPerms.includes(perm);
                 const unitHasPerm = currentUnit === 'GLOBAL' || unitModules.includes(perm);
-                if (['EXTINTOR', 'HIDRANTE', 'RONDA'].includes(perm)) {
+                if (['EXTINTOR', 'HIDRANTE', 'SPK', 'RONDA'].includes(perm)) {
                     return userHasPerm && unitHasPerm;
                 }
                 return userHasPerm;
@@ -333,7 +403,7 @@
                                 <div className="w-10 flex justify-center"><i className="fas fa-chart-pie text-brand-orange text-lg"></i></div> Dashboard
                             </button>
                             
-                            {(hasAccess('RONDA') || hasAccess('EXTINTOR') || hasAccess('HIDRANTE')) && (
+                            {(hasAccess('RONDA') || hasAccess('EXTINTOR') || hasAccess('HIDRANTE') || hasAccess('SPK')) && (
                                 <div className="pt-4 pb-2 px-3">
                                     <p className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">Módulos</p>
                                 </div>
@@ -353,7 +423,13 @@
                             
                             {hasAccess('HIDRANTE') && (
                                 <button onClick={()=>handleNav('equipmentCategory', 'HIDRANTE')} className="w-full flex items-center p-3 text-left text-gray-700 dark:text-gray-200 font-bold hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors">
-                                    <div className="w-10 flex justify-center"><i className="fas fa-faucet text-brand-orange text-lg"></i></div> Hidrantes
+                                    <div className="w-10 flex justify-center"><HydrantIcon className="text-brand-orange text-lg w-5 h-5 inline" /></div> Hidrantes
+                                </button>
+                            )}
+                            
+                            {hasAccess('SPK') && (
+                                <button onClick={()=>handleNav('equipmentCategory', 'SPK')} className="w-full flex items-center p-3 text-left text-gray-700 dark:text-gray-200 font-bold hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors">
+                                    <div className="w-10 flex justify-center"><SpkIcon className="text-teal-600 text-lg w-5 h-5 inline" /></div> VGA (SPK)
                                 </button>
                             )}
 
@@ -386,12 +462,20 @@
             )
         }
 
-        function DashboardScreen({ db, onOpenMenu, responsibleName }) {
+        function DashboardScreen({ db, onOpenMenu, responsibleName, onNavigate, onStartInspection }) {
             const currentMonth = new Date().toISOString().slice(0, 7);
+            const todayStr = new Date().toISOString().slice(0, 10);
             
             const inspecionadosMes = useMemo(() => {
-                return db.filter(item => !item.deleted && item.created_at?.startsWith(currentMonth)).length;
+                return db.filter(item => !item.deleted && item.created_at?.startsWith(currentMonth));
             }, [db, currentMonth]);
+
+            const countExtMes = inspecionadosMes.filter(i => i.type === 'EXTINTOR').length;
+            const countHidMes = inspecionadosMes.filter(i => i.type === 'HIDRANTE').length;
+            const countSpkMes = inspecionadosMes.filter(i => i.type === 'SPK').length;
+            const countRondaMes = inspecionadosMes.filter(i => i.type === 'RONDA').length;
+            
+            const rondasHoje = db.filter(item => !item.deleted && item.type === 'RONDA' && item.created_at?.startsWith(todayStr)).length;
 
             const stats = useMemo(() => {
                 const latestEquipments = {};
@@ -407,12 +491,17 @@
                 let alertsList = [];
 
                 Object.values(latestEquipments).forEach(eq => {
-                    let stRecharge = eq.type === 'EXTINTOR' ? checkExpiration(eq.nextRecharge) : 'OK';
-                    let stHydro = checkExpiration(eq.nextHydro);
-                    
                     let finalStatus = 'OK';
-                    if (stRecharge === 'VENCIDO' || stHydro === 'VENCIDO') finalStatus = 'VENCIDO';
-                    else if (stRecharge === 'A_VENCER' || stHydro === 'A_VENCER') finalStatus = 'A_VENCER';
+                    
+                    if (eq.type === 'EXTINTOR' || eq.type === 'HIDRANTE') {
+                        let stRecharge = eq.type === 'EXTINTOR' ? checkExpiration(eq.nextRecharge) : 'OK';
+                        let stHydro = checkExpiration(eq.nextHydro);
+                        
+                        if (stRecharge === 'VENCIDO' || stHydro === 'VENCIDO') finalStatus = 'VENCIDO';
+                        else if (stRecharge === 'A_VENCER' || stHydro === 'A_VENCER') finalStatus = 'A_VENCER';
+                    } else if (eq.type === 'SPK') {
+                        finalStatus = 'OK';
+                    }
 
                     if (finalStatus === 'OK') countOk++;
                     else if (finalStatus === 'VENCIDO') { 
@@ -438,68 +527,113 @@
             const pctAVencer = stats.total ? (stats.countAVencer / stats.total) * 100 : 0;
             const pctVencido = stats.total ? (stats.countVencido / stats.total) * 100 : 0;
 
+            const currentHour = new Date().getHours();
+            const shiftName = currentHour >= 6 && currentHour < 18 ? "TURNO DIURNO" : "TURNO NOTURNO";
+
             return (
-                <div className="flex flex-col h-full bg-gray-50 dark:bg-brand-dark overflow-y-auto animate-fade-in relative">
+                <div className="flex flex-col h-full bg-gray-50 dark:bg-brand-dark overflow-y-auto animate-fade-in relative pb-10">
                     <div className="bg-brand-red p-4 flex justify-between items-center text-white sticky top-0 z-20 shadow-md">
                         <button onClick={onOpenMenu} className="w-10 h-10 flex items-center justify-start text-2xl active:scale-90 transition-transform"><i className="fas fa-bars"></i></button>
-                        <h1 className="font-black text-lg tracking-tight">GESTÃO & STATUS</h1>
+                        <h1 className="font-black text-lg tracking-tight">DASHBOARD</h1>
                         <div className="w-10"></div>
                     </div>
                     
-                    <div className="p-4 space-y-5 pb-8">
-                        <div>
-                            <p className="text-gray-500 dark:text-gray-400 text-xs font-bold uppercase tracking-wider mb-1">Bem-vindo(a) de volta,</p>
-                            <h2 className="text-xl font-black text-gray-800 dark:text-white">{responsibleName}</h2>
+                    <div className="p-4 space-y-6">
+                        <div className="flex justify-between items-end">
+                            <div>
+                                <p className="text-gray-500 dark:text-gray-400 text-xs font-bold uppercase tracking-wider mb-1">Bem-vindo(a) de volta,</p>
+                                <h2 className="text-xl font-black text-gray-800 dark:text-white truncate max-w-[200px]">{responsibleName}</h2>
+                            </div>
+                            <div className="text-right">
+                                <span className="inline-block bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 text-[10px] px-2 py-1 rounded-lg font-black uppercase tracking-widest border border-blue-200 dark:border-blue-800">
+                                    {shiftName}
+                                </span>
+                            </div>
                         </div>
 
-                        <div className="bg-white dark:bg-gray-800 rounded-3xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 flex items-center justify-between">
-                            <div>
-                                <p className="text-gray-500 dark:text-gray-400 text-xs font-bold uppercase mb-1">Inspecionados no Mês</p>
-                                <div className="flex items-baseline gap-2">
-                                    <h2 className="text-4xl font-black text-brand-blue">{inspecionadosMes}</h2>
-                                    <span className="text-xs text-gray-400 font-bold">leituras</span>
+                        <div>
+                            <p className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3">Acesso Rápido</p>
+                            <div className="grid grid-cols-2 gap-3">
+                                <button onClick={() => { setInspectionType('EXTINTOR'); onNavigate('equipmentCategory'); }} className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex items-center gap-3 active:scale-95 transition-transform">
+                                    <div className="w-10 h-10 rounded-full bg-red-50 dark:bg-red-900/20 text-brand-red flex items-center justify-center text-lg"><i className="fas fa-fire-extinguisher"></i></div>
+                                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300">Extintores</span>
+                                </button>
+                                <button onClick={() => { setInspectionType('HIDRANTE'); onNavigate('equipmentCategory'); }} className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex items-center gap-3 active:scale-95 transition-transform">
+                                    <div className="w-10 h-10 rounded-full bg-orange-50 dark:bg-orange-900/20 text-brand-orange flex items-center justify-center text-lg"><HydrantIcon className="w-5 h-5 inline" /></div>
+                                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300">Hidrantes</span>
+                                </button>
+                                <button onClick={() => { setInspectionType('SPK'); onNavigate('equipmentCategory'); }} className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex items-center gap-3 active:scale-95 transition-transform">
+                                    <div className="w-10 h-10 rounded-full bg-teal-50 dark:bg-teal-900/20 text-teal-600 flex items-center justify-center text-lg"><SpkIcon className="w-6 h-6 inline" /></div>
+                                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300">VGA (SPK)</span>
+                                </button>
+                                <button onClick={() => onNavigate('roundsLocation')} className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex items-center gap-3 active:scale-95 transition-transform">
+                                    <div className="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-900/20 text-brand-blue flex items-center justify-center text-lg"><i className="fas fa-clipboard-check"></i></div>
+                                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300">Rondas</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-3xl p-5 shadow-lg flex flex-col justify-between relative overflow-hidden">
+                                <i className="fas fa-chart-line absolute -right-4 -bottom-4 text-6xl text-white/5"></i>
+                                <div>
+                                    <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest mb-1">Mês Atual</p>
+                                    <h2 className="text-4xl font-black text-white">{inspecionadosMes.length}</h2>
+                                    <p className="text-white/80 text-[10px] font-medium mt-1">
+                                        <i className="fas fa-fire-extinguisher text-brand-red mr-1"></i> {countExtMes} &nbsp;
+                                        <HydrantIcon className="text-brand-orange mx-1 w-3 h-3 inline" /> {countHidMes} &nbsp;
+                                        <SpkIcon className="text-teal-400 mx-1 w-3 h-3 inline" /> {countSpkMes}
+                                    </p>
                                 </div>
                             </div>
-                            <div className="w-14 h-14 bg-blue-50 dark:bg-blue-900/30 rounded-full flex items-center justify-center text-brand-blue text-2xl shadow-inner">
-                                <i className="fas fa-clipboard-check"></i>
+                            
+                            <div className="bg-white dark:bg-gray-800 rounded-3xl p-5 shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col justify-center items-center text-center">
+                                <div className="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-900/20 text-brand-blue flex items-center justify-center text-xl mb-2">
+                                    <i className="fas fa-walking"></i>
+                                </div>
+                                <h2 className="text-3xl font-black text-gray-800 dark:text-white">{rondasHoje}</h2>
+                                <p className="text-gray-500 dark:text-gray-400 text-[10px] font-bold uppercase tracking-widest mt-1">Rondas Realizadas Hoje</p>
                             </div>
                         </div>
                         
                         <div className="bg-white dark:bg-gray-800 rounded-3xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
                             <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-gray-800 dark:text-white text-sm font-black uppercase tracking-wide">Situação Atual (Plantão)</h3>
-                                <span className="text-xs font-bold bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded text-gray-600 dark:text-gray-300">{stats.total} Ativos</span>
+                                <h3 className="text-gray-800 dark:text-white text-sm font-black uppercase tracking-wide">Saúde dos Equipamentos</h3>
+                                <span className="text-[10px] font-bold bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded text-gray-600 dark:text-gray-300">{stats.total} Ativos</span>
                             </div>
                             
-                            <div className="flex h-5 rounded-full overflow-hidden mb-4 bg-gray-100 dark:bg-gray-700 shadow-inner">
+                            <div className="flex h-4 rounded-full overflow-hidden mb-5 bg-gray-100 dark:bg-gray-700 shadow-inner">
                                 {pctOk > 0 && <div style={{width: `${pctOk}%`}} className="bg-green-500 hover:opacity-80 transition-opacity"></div>}
                                 {pctAVencer > 0 && <div style={{width: `${pctAVencer}%`}} className="bg-yellow-400 hover:opacity-80 transition-opacity"></div>}
                                 {pctVencido > 0 && <div style={{width: `${pctVencido}%`}} className="bg-red-500 hover:opacity-80 transition-opacity"></div>}
                                 {stats.total === 0 && <div className="w-full bg-gray-200 dark:bg-gray-600"></div>}
                             </div>
                             
-                            <div className="grid grid-cols-3 gap-2 text-center mt-2">
-                                <div className="bg-green-50 dark:bg-green-900/10 p-2 rounded-xl">
-                                    <p className="text-[10px] text-gray-500 font-bold uppercase mb-0.5">OK</p>
-                                    <p className="text-green-600 font-black text-lg">{stats.countOk}</p>
+                            <div className="grid grid-cols-3 gap-2 text-center">
+                                <div className="bg-green-50 dark:bg-green-900/10 py-3 rounded-xl border border-green-100 dark:border-green-900/30">
+                                    <p className="text-[9px] text-green-700 dark:text-green-500 font-black uppercase mb-0.5 tracking-wider">OK</p>
+                                    <p className="text-green-600 font-black text-xl">{stats.countOk}</p>
                                 </div>
-                                <div className="bg-yellow-50 dark:bg-yellow-900/10 p-2 rounded-xl">
-                                    <p className="text-[10px] text-gray-500 font-bold uppercase mb-0.5">A Vencer</p>
-                                    <p className="text-yellow-600 font-black text-lg">{stats.countAVencer}</p>
+                                <div className="bg-yellow-50 dark:bg-yellow-900/10 py-3 rounded-xl border border-yellow-100 dark:border-yellow-900/30">
+                                    <p className="text-[9px] text-yellow-700 dark:text-yellow-500 font-black uppercase mb-0.5 tracking-wider">A Vencer</p>
+                                    <p className="text-yellow-600 font-black text-xl">{stats.countAVencer}</p>
                                 </div>
-                                <div className="bg-red-50 dark:bg-red-900/10 p-2 rounded-xl">
-                                    <p className="text-[10px] text-gray-500 font-bold uppercase mb-0.5">Vencidos</p>
-                                    <p className="text-red-600 font-black text-lg">{stats.countVencido}</p>
+                                <div className="bg-red-50 dark:bg-red-900/10 py-3 rounded-xl border border-red-100 dark:border-red-900/30">
+                                    <p className="text-[9px] text-red-700 dark:text-red-500 font-black uppercase mb-0.5 tracking-wider">Vencidos</p>
+                                    <p className="text-red-600 font-black text-xl">{stats.countVencido}</p>
                                 </div>
                             </div>
                         </div>
                         
                         <div>
-                            <div className="flex items-center gap-2 mb-3 px-1">
-                                <div className="w-8 h-8 rounded-full bg-brand-orange/20 flex items-center justify-center text-brand-orange animate-pulse">
-                                    <i className="fas fa-bell"></i>
+                            <div className="flex items-center justify-between mb-3 px-1">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-8 h-8 rounded-full bg-brand-orange/10 flex items-center justify-center text-brand-orange">
+                                        <i className="fas fa-bell"></i>
+                                    </div>
+                                    <h3 className="text-gray-800 dark:text-white font-black text-sm uppercase tracking-wide">Atenção Necessária</h3>
                                 </div>
-                                <h3 className="text-gray-800 dark:text-white font-black text-base uppercase tracking-tight">Alertas do Sistema</h3>
+                                <span className="text-[10px] font-bold text-gray-400">{stats.alerts.length} alertas</span>
                             </div>
                             
                             <div className="space-y-3">
@@ -513,7 +647,9 @@
                                     <div key={idx} className={`p-4 rounded-2xl shadow-sm bg-white dark:bg-gray-800 border-l-4 flex justify-between items-center transition-all ${eq.alertType === 'VENCIDO' ? 'border-red-500' : 'border-yellow-400'}`}>
                                         <div className="flex gap-3 items-center">
                                             <div className={`w-10 h-10 rounded-full flex items-center justify-center ${eq.alertType === 'VENCIDO' ? 'bg-red-50 text-red-500' : 'bg-yellow-50 text-yellow-600'}`}>
-                                                <i className={`fas ${eq.type === 'EXTINTOR' ? 'fa-fire-extinguisher' : 'fa-faucet'}`}></i>
+                                                {eq.type === 'EXTINTOR' && <i className="fas fa-fire-extinguisher"></i>}
+                                                {eq.type === 'HIDRANTE' && <HydrantIcon className="w-5 h-5 inline" />}
+                                                {eq.type === 'SPK' && <SpkIcon className="w-5 h-5 inline" />}
                                             </div>
                                             <div>
                                                 <p className="font-bold text-sm text-gray-800 dark:text-white">{eq.equipmentName}</p>
@@ -570,21 +706,40 @@
                 }
             }, [sortedMonths]);
 
-            const isExtintor = inspectionType === 'EXTINTOR';
-            const bgColorClass = isExtintor ? 'bg-brand-red' : 'bg-brand-orange';
-            const textColorClass = isExtintor ? 'text-brand-red' : 'text-brand-orange';
-            const lightBgClass = isExtintor ? 'bg-red-50 text-brand-red' : 'bg-orange-50 text-brand-orange';
-            const borderLightClass = isExtintor ? 'border-brand-red' : 'border-brand-orange';
-            const title = isExtintor ? 'Extintores' : 'Hidrantes';
-            const icon = isExtintor ? 'fa-fire-extinguisher' : 'fa-faucet';
+            let bgColorClass = 'bg-brand-red';
+            let textColorClass = 'text-brand-red';
+            let lightBgClass = 'bg-red-50 text-brand-red';
+            let borderLightClass = 'border-brand-red';
+            let title = 'Extintores';
+            let IconComp = () => <i className="fas fa-fire-extinguisher mr-2"></i>;
+
+            if (inspectionType === 'HIDRANTE') {
+               bgColorClass = 'bg-brand-orange';
+               textColorClass = 'text-brand-orange';
+               lightBgClass = 'bg-orange-50 text-brand-orange';
+               borderLightClass = 'border-brand-orange';
+               title = 'Hidrantes';
+               IconComp = () => <HydrantIcon className="mr-2 w-5 h-5 inline" />;
+            } else if (inspectionType === 'SPK') {
+               bgColorClass = 'bg-teal-600';
+               textColorClass = 'text-teal-600';
+               lightBgClass = 'bg-teal-50 text-teal-600';
+               borderLightClass = 'border-teal-500';
+               title = 'VGA (SPK)';
+               IconComp = () => <SpkIcon className="mr-2 w-5 h-5 inline" />;
+            }
 
             const renderItem = (item) => {
-                const isHid = item.type === 'HIDRANTE';
                 let statusColor = 'bg-gray-100 text-gray-700';
                 let statusText = '---';
-                if (isHid) { 
+                
+                if (item.type === 'HIDRANTE') { 
                     statusColor = (item.h_complete && item.h_unobstructed && !item.h_seal_broken) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; 
                     statusText = (item.h_complete && item.h_unobstructed && !item.h_seal_broken) ? 'OK' : 'IRREGULAR'; 
+                } else if (item.type === 'SPK') {
+                    const isSpkOk = item.spk_placa && item.spk_valvula && !item.spk_vazamento && item.spk_chave && !item.spk_danos && item.spk_manometro;
+                    statusColor = isSpkOk ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700';
+                    statusText = isSpkOk ? 'OK' : 'IRREGULAR';
                 } else { 
                     statusColor = (!item.q1 && !item.q2) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; 
                     statusText = (!item.q1) ? 'OK' : 'VIOLADO'; 
@@ -621,7 +776,7 @@
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-brand-dark relative animate-fade-in">
                     <div className={`${bgColorClass} p-4 flex justify-between items-center text-white sticky top-0 z-20 shadow-md`}>
                         <button onClick={() => onNavigate('menu')} className="w-10 h-10 flex items-center justify-start text-xl active:scale-90 transition-transform"><i className="fas fa-arrow-left"></i></button>
-                        <h1 className="font-black text-lg tracking-tight uppercase"><i className={`fas ${icon} mr-2`}></i> {title}</h1>
+                        <h1 className="font-black text-lg tracking-tight uppercase flex items-center"><IconComp /> {title}</h1>
                         <div className="w-10"></div>
                     </div>
                     
@@ -689,7 +844,7 @@
             );
         };
 
-        function SubLocationsRegisterScreen({ onNavigate, subLocationsList, onUpdateSubLocation, onDeleteSubLocation, showAlert, showConfirm }) {
+        function SubLocationsRegisterScreen({ onNavigate, subLocationsList, onUpdateSubLocation, onDeleteSubLocation, showAlert, showConfirm, mainLocationsList }) {
             const [selectedMainLocation, setSelectedMainLocation] = useState("");
             const [editingId, setEditingId] = useState(null);
             const [subLocName, setSubLocName] = useState("");
@@ -722,6 +877,7 @@
             };
 
             const filteredList = (subLocationsList || []).filter(sl => sl.mainLocation === selectedMainLocation).sort((a,b) => a.name.localeCompare(b.name));
+            const allMainLocs = [...new Set([...LOCATION_OPTIONS, ...(mainLocationsList || []).map(m => m.name)])].sort();
 
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 overflow-y-auto relative animate-fade-in">
@@ -736,7 +892,7 @@
                     <div className="space-y-4">
                         <select value={selectedMainLocation} onChange={(e) => { setSelectedMainLocation(e.target.value); handleCancelEdit(); }} className="w-full p-4 bg-gray-100 dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 focus:border-brand-orange outline-none dark:text-white font-bold text-gray-700 uppercase">
                             <option value="">Selecione o Local Principal...</option>
-                            {LOCATION_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                            {allMainLocs.map(o => <option key={o} value={o}>{o}</option>)}
                         </select>
 
                         {editingId && (
@@ -776,7 +932,7 @@
         };
 
         function UnitRegisterScreen({ onNavigate, onSaveUnit, unitsList, onUpdateUnit, onDeleteUnit, showAlert, showConfirm }) {
-            const [newUnit, setNewUnit] = useState({ name: '', address: '', modules: ['EXTINTOR', 'HIDRANTE', 'RONDA'] });
+            const [newUnit, setNewUnit] = useState({ name: '', address: '', modules: ['EXTINTOR', 'HIDRANTE', 'SPK', 'RONDA'] });
             const [editingId, setEditingId] = useState(null);
 
             const toggleModule = (mod) => {
@@ -790,9 +946,9 @@
                 if (!newUnit.name) return showAlert("Preencha nome.", "warning");
                 if (editingId) { await onUpdateUnit(editingId, newUnit); setEditingId(null); showAlert("Atualizado!", "success"); } 
                 else { await onSaveUnit(newUnit); showAlert("Cadastrado!", "success"); }
-                setNewUnit({ name: '', address: '', modules: ['EXTINTOR', 'HIDRANTE', 'RONDA'] });
+                setNewUnit({ name: '', address: '', modules: ['EXTINTOR', 'HIDRANTE', 'SPK', 'RONDA'] });
             };
-            const handleEditClick = (u) => { setEditingId(u.id); setNewUnit({ name: u.name, address: u.address, modules: u.modules || ['EXTINTOR', 'HIDRANTE', 'RONDA'] }); };
+            const handleEditClick = (u) => { setEditingId(u.id); setNewUnit({ name: u.name, address: u.address, modules: u.modules || ['EXTINTOR', 'HIDRANTE', 'SPK', 'RONDA'] }); };
             
             return (
                 <div className="flex flex-col h-full bg-white dark:bg-brand-dark p-4 overflow-y-auto">
@@ -805,13 +961,16 @@
                         <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
                             <label className="text-[10px] font-black text-gray-500 dark:text-gray-400 mb-3 block uppercase tracking-wider">Módulos Permitidos na Unidade</label>
                             <div className="space-y-2">
-                                {['EXTINTOR', 'HIDRANTE', 'RONDA'].map(mod => (
+                                {['EXTINTOR', 'HIDRANTE', 'SPK', 'RONDA'].map(mod => (
                                     <label key={mod} className="flex items-center justify-between bg-white dark:bg-gray-900 p-4 rounded-xl shadow-sm cursor-pointer border border-gray-100 dark:border-gray-700 active:scale-95 transition-transform">
                                         <div className="flex items-center gap-3">
-                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${mod === 'EXTINTOR' ? 'bg-red-50 text-red-500' : mod === 'HIDRANTE' ? 'bg-orange-50 text-orange-500' : 'bg-blue-50 text-blue-500'}`}>
-                                                <i className={`fas ${mod === 'EXTINTOR' ? 'fa-fire-extinguisher' : mod === 'HIDRANTE' ? 'fa-faucet' : 'fa-clipboard-check'}`}></i>
+                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${mod === 'EXTINTOR' ? 'bg-red-50 text-red-500' : mod === 'HIDRANTE' ? 'bg-orange-50 text-orange-500' : mod === 'SPK' ? 'bg-teal-50 text-teal-600' : 'bg-blue-50 text-blue-500'}`}>
+                                                {mod === 'EXTINTOR' && <i className="fas fa-fire-extinguisher"></i>}
+                                                {mod === 'HIDRANTE' && <HydrantIcon className="w-4 h-4 inline" />}
+                                                {mod === 'SPK' && <SpkIcon className="w-4 h-4 inline" />}
+                                                {mod === 'RONDA' && <i className="fas fa-clipboard-check"></i>}
                                             </div>
-                                            <span className="font-bold text-gray-700 dark:text-gray-200 text-sm">{mod === 'RONDA' ? 'Ronda Diária' : (mod === 'EXTINTOR' ? 'Extintores' : 'Hidrantes')}</span>
+                                            <span className="font-bold text-gray-700 dark:text-gray-200 text-sm">{mod === 'RONDA' ? 'Ronda Diária' : (mod === 'EXTINTOR' ? 'Extintores' : mod === 'SPK' ? 'VGA (SPK)' : 'Hidrantes')}</span>
                                         </div>
                                         <input type="checkbox" checked={newUnit.modules?.includes(mod)} onChange={() => toggleModule(mod)} className="w-5 h-5 text-brand-orange rounded border-gray-300 focus:ring-brand-orange bg-gray-100 dark:bg-gray-800" />
                                     </label>
@@ -831,8 +990,8 @@
                                     <span className="text-xs text-gray-500 block mb-2">{u.address || 'Sem endereço'}</span>
                                     
                                     <div className="flex gap-1.5 flex-wrap">
-                                        {(u.modules || ['EXTINTOR', 'HIDRANTE', 'RONDA']).map(m => (
-                                            <span key={m} className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase ${m === 'EXTINTOR' ? 'bg-red-100 text-red-700' : m === 'HIDRANTE' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                                        {(u.modules || ['EXTINTOR', 'HIDRANTE', 'SPK', 'RONDA']).map(m => (
+                                            <span key={m} className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase ${m === 'EXTINTOR' ? 'bg-red-100 text-red-700' : m === 'HIDRANTE' ? 'bg-orange-100 text-orange-700' : m === 'SPK' ? 'bg-teal-100 text-teal-700' : 'bg-blue-100 text-blue-700'}`}>
                                                 {m}
                                             </span>
                                         ))}
@@ -919,7 +1078,7 @@
                         <div className="space-y-3">{usersList && usersList.filter(u=>u.name!=='ADMIN').map(u=>(<div key={u.id} onClick={()=>setSelectedUser(u)} className="bg-gray-100 p-4 rounded-xl font-bold">{u.name}</div>))}</div>
                     ) : (
                         <div className="space-y-3">
-                            {['EXTINTOR','HIDRANTE','HISTORICO','RONDA'].map(p=>(
+                            {['EXTINTOR','HIDRANTE','SPK','HISTORICO','RONDA'].map(p=>(
                                 <div key={p} onClick={()=>togglePermission(p)} className={`p-4 rounded-xl font-bold border-2 ${selectedUser.permissions?.includes(p)?'border-green-500 bg-green-50 text-green-700':'border-gray-200 bg-gray-50 text-gray-400'}`}>{p}</div>
                             ))}
                         </div>
@@ -1122,7 +1281,7 @@
 
                         if (inspectionType !== 'RONDA') {
                             const currentMonth = new Date().toISOString().slice(0, 7); 
-                            const isDuplicate = db.some(item => !item.deleted && (item.equipmentId || '').toString() === data.equipmentId.toString() && item.created_at.startsWith(currentMonth));
+                            const isDuplicate = db.some(item => !item.deleted && item.type === inspectionType && (item.equipmentId || '').toString() === data.equipmentId.toString() && item.created_at.startsWith(currentMonth));
                             if (isDuplicate) { showAlert(`⚠️ EQUIPAMENTO JÁ VISTORIADO!\n\nEste código já foi registrado em ${new Date().toLocaleString('pt-BR', { month: 'long' })}.\nNova leitura permitida apenas no mês seguinte.`, "warning"); onNavigate('menu'); return; }
                         }
                         onScanSuccess(data);
@@ -1251,7 +1410,7 @@
             );
         };
 
-        const FormScreen = ({ initialData, onNavigate, onSave, responsibleName, inspectionType, showAlert, subLocationsList, onSaveSubLocation }) => {
+        const FormScreen = ({ initialData, onNavigate, onSave, responsibleName, inspectionType, showAlert, subLocationsList, onSaveSubLocation, mainLocationsList, onSaveMainLocation }) => {
              const savedForm = useMemo(() => {
                 const saved = localStorage.getItem('trfire_temp_form');
                 return saved ? JSON.parse(saved) : null;
@@ -1262,18 +1421,42 @@
                  if (initialData && initialData.id) {
                      return { ...initialData }; 
                  }
-                 return savedForm || { type: inspectionType, equipmentId: initialData?.equipmentId, equipmentName: initialData?.equipmentName, moduleLocation: '', subLocation: '', hasId: null, floorSign: null, q1: null, q2: null, nextRecharge: '', h_complete: null, h_unobstructed: null, h_seal_broken: null, nextHydro: '', photo: null, photo2: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false, extinguisherType: '' };
+                 return savedForm || { 
+                     type: inspectionType, equipmentId: initialData?.equipmentId, equipmentName: initialData?.equipmentName, 
+                     moduleLocation: '', subLocation: '', 
+                     hasId: null, floorSign: null, q1: null, q2: null, nextRecharge: '', 
+                     h_complete: null, h_unobstructed: null, h_seal_broken: null, nextHydro: '', 
+                     spk_placa: null, spk_valvula: null, spk_vazamento: null, spk_chave: null, spk_danos: null, spk_manometro: null,
+                     photo: null, photo2: null, obs: '', responsible: responsibleName, created_at: new Date().toISOString(), deleted: false, extinguisherType: '' 
+                 };
              });
              
              const fileInputRef1 = useRef(null);
              const fileInputRef2 = useRef(null);
 
-             const labelFoto1 = inspectionType === 'EXTINTOR' ? 'Selo do Inmetro *' : 'Etiqueta de Inspeção *';
-             const labelFoto2 = 'Equipamento';
+             let labelFoto1 = 'Foto 1 *';
+             let labelFoto2 = 'Equipamento';
+             
+             if (inspectionType === 'EXTINTOR') { labelFoto1 = 'Selo do Inmetro *'; }
+             else if (inspectionType === 'HIDRANTE') { labelFoto1 = 'Etiq. de Inspeção *'; }
+             else if (inspectionType === 'SPK') { labelFoto1 = 'Válvula Aberta *'; labelFoto2 = 'Conj. Equipamento'; }
              
              const [isAddingSubLoc, setIsAddingSubLoc] = useState(false);
              const [newSubLocName, setNewSubLocName] = useState('');
              const [isSavingSubLoc, setIsSavingSubLoc] = useState(false);
+
+             const [isAddingMainLoc, setIsAddingMainLoc] = useState(false);
+             const [newMainLocName, setNewMainLocName] = useState('');
+             const [isSavingMainLoc, setIsSavingMainLoc] = useState(false);
+
+             const handleMainLocationChange = (e) => {
+                 if (e.target.value === 'ADD_NEW_MAIN') {
+                     setNewMainLocName('');
+                     setIsAddingMainLoc(true);
+                 } else {
+                     setForm({...form, moduleLocation: e.target.value, subLocation: ''});
+                 }
+             };
 
              const handleSubLocationChange = (e) => {
                  if (e.target.value === 'ADD_NEW') {
@@ -1281,6 +1464,27 @@
                      setIsAddingSubLoc(true);
                  } else {
                      setForm({...form, subLocation: e.target.value});
+                 }
+             };
+
+             const saveNewMainLoc = async () => {
+                 const nameUpper = newMainLocName.trim().toUpperCase();
+                 if (!nameUpper) return showAlert("Digite o nome do local.", "warning");
+                 
+                 const allCurrentLocs = [...new Set([...LOCATION_OPTIONS, ...(mainLocationsList || []).map(m => m.name)])];
+                 if (allCurrentLocs.includes(nameUpper)) {
+                     return showAlert("Este local já existe.", "warning");
+                 }
+
+                 setIsSavingMainLoc(true);
+                 const saved = await onSaveMainLocation(nameUpper);
+                 setIsSavingMainLoc(false);
+                 if (saved) {
+                     setForm({...form, moduleLocation: saved.name, subLocation: ''});
+                     setIsAddingMainLoc(false);
+                     showAlert("Local principal cadastrado!", "success");
+                 } else {
+                     showAlert("Erro ao salvar local.", "error");
                  }
              };
 
@@ -1298,12 +1502,13 @@
                  if (saved) {
                      setForm({...form, subLocation: saved.name});
                      setIsAddingSubLoc(false);
-                     showAlert("Sublocal cadastrado com sucesso!", "success");
+                     showAlert("Sublocal cadastrado!", "success");
                  } else {
                      showAlert("Erro ao salvar sublocal.", "error");
                  }
              };
 
+             const allMainLocs = [...new Set([...LOCATION_OPTIONS, ...(mainLocationsList || []).map(m => m.name)])].sort();
              const filteredSubLocs = (subLocationsList || []).filter(sl => sl.mainLocation === form.moduleLocation).sort((a,b) => a.name.localeCompare(b.name));
 
              useEffect(() => {
@@ -1344,18 +1549,23 @@
                  let missing = [];
                  if (!form.equipmentId) missing.push("ID");
                  if (!form.moduleLocation) missing.push("Local");
+                 
                  if (inspectionType === 'EXTINTOR') { 
                      if (form.hasId === null) missing.push("Placa"); if (form.floorSign === null) missing.push("Solo");
                      if (form.q1 === null) missing.push("Lacre"); if (form.q2 === null) missing.push("Obstrução");
                      if (!form.nextRecharge) missing.push("Recarga"); if (!form.nextHydro) missing.push("T. Hidro");
                      if (!form.extinguisherType) missing.push("Tipo");
-                 } else { 
+                 } else if (inspectionType === 'HIDRANTE') { 
                      if (form.h_complete === null) missing.push("Completo"); if (form.h_unobstructed === null) missing.push("Desobstr.");
                      if (form.h_seal_broken === null) missing.push("Lacre"); if (!form.nextHydro) missing.push("T. Hidro");
-                 } 
-                 if(missing.length > 0) return showAlert("Falta: " + missing.join(", "), "warning"); 
+                 } else if (inspectionType === 'SPK') {
+                     if (form.spk_placa === null) missing.push("Placa"); if (form.spk_valvula === null) missing.push("Válvula");
+                     if (form.spk_vazamento === null) missing.push("Vazamento"); if (form.spk_chave === null) missing.push("Chave");
+                     if (form.spk_danos === null) missing.push("Danos"); if (form.spk_manometro === null) missing.push("Manômetro");
+                 }
                  
-                 // Se for uma adição (sem ID prévio), ou se o usuário limpou a foto
+                 if(missing.length > 0) return showAlert("Falta preencher: " + missing.join(", "), "warning"); 
+                 
                  if (!form.id && !form.photo) return showAlert(`⚠️ Registro fotográfico obrigatório (${labelFoto1})!`, "warning");
 
                  setIsSaving(true); 
@@ -1369,8 +1579,22 @@
 
              return (
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-black relative">
-                    <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('menu')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">{inspectionType}</h2><button onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold" type="button">{isSaving ? '...' : 'SALVAR'}</button></div>
+                    <div className="bg-white dark:bg-gray-900 p-3 shadow-sm flex items-center justify-between sticky top-0 z-20"><button onClick={() => onNavigate('menu')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full"><i className="fas fa-arrow-left"></i></button><h2 className="text-lg font-bold">{inspectionType === 'SPK' ? 'VGA (SPK)' : inspectionType}</h2><button onClick={save} disabled={isSaving} className="bg-blue-500 text-white px-4 py-2 rounded font-bold" type="button">{isSaving ? '...' : 'SALVAR'}</button></div>
                     
+                    {isAddingMainLoc && (
+                        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm shadow-2xl">
+                                <h3 className="font-bold mb-1 dark:text-white text-lg">Novo Local Principal</h3>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Adicionar à lista mestre</p>
+                                <input value={newMainLocName} onChange={e=>setNewMainLocName(e.target.value.toUpperCase())} className="w-full p-4 bg-gray-100 dark:bg-gray-700 dark:text-white rounded-xl mb-4 font-bold border-2 border-transparent focus:border-brand-blue outline-none" placeholder="Ex: GALPÃO 4" />
+                                <div className="flex gap-2">
+                                    <button onClick={()=>setIsAddingMainLoc(false)} className="flex-1 py-3 bg-gray-200 text-gray-700 rounded-xl font-bold active:scale-95">Cancelar</button>
+                                    <button onClick={saveNewMainLoc} disabled={isSavingMainLoc} className="flex-1 py-3 bg-brand-blue text-white rounded-xl font-bold active:scale-95">{isSavingMainLoc ? 'Aguarde...' : 'Cadastrar'}</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {isAddingSubLoc && (
                         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
                             <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm shadow-2xl">
@@ -1386,13 +1610,14 @@
                     )}
 
                     <div className="flex-1 overflow-y-auto p-2 space-y-4">
-                        <div className="bg-white p-4 rounded-xl space-y-4 shadow-sm border border-gray-100">
-                            <input value={form.equipmentName} onChange={e=>setForm({...form, equipmentName:e.target.value})} className="w-full bg-gray-100 p-3 rounded font-bold" />
+                        <div className="bg-white p-4 rounded-xl space-y-4 shadow-sm border border-gray-100 dark:border-gray-800">
+                            <input value={form.equipmentName} onChange={e=>setForm({...form, equipmentName:e.target.value})} className="w-full bg-gray-100 p-3 rounded font-bold" placeholder="ID do Equipamento" />
                             
                             <div className={`grid gap-2 ${inspectionType === 'EXTINTOR' ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                                <select value={form.moduleLocation} onChange={e=>{setForm({...form, moduleLocation:e.target.value, subLocation: ''})}} className="w-full p-3 bg-gray-100 rounded font-bold outline-none border-2 border-transparent focus:border-brand-orange">
+                                <select value={form.moduleLocation} onChange={handleMainLocationChange} className="w-full p-3 bg-gray-100 rounded font-bold outline-none border-2 border-transparent focus:border-brand-orange">
                                     <option value="">Local (Obrigatório)...</option>
-                                    {LOCATION_OPTIONS.map(o=><option key={o} value={o}>{o}</option>)}
+                                    <option value="ADD_NEW_MAIN" className="font-black bg-brand-blue text-white">➕ CADASTRAR NOVO LOCAL</option>
+                                    {allMainLocs.map(o=><option key={o} value={o}>{o}</option>)}
                                 </select>
                                 {inspectionType === 'EXTINTOR' && <select value={form.extinguisherType} onChange={e=>setForm({...form, extinguisherType:e.target.value})} className="w-full p-3 bg-gray-100 rounded font-bold"><option value="">Tipo...</option>{EXTINGUISHER_TYPES.map(t=><option key={t} value={t}>{t}</option>)}</select>}
                             </div>
@@ -1407,7 +1632,11 @@
                                 </div>
                             )}
 
-                            {inspectionType === 'EXTINTOR' ? (<><div className="grid grid-cols-2 gap-2"><ColorSelect label="1. Placa Sinal.?" field="hasId" val={form.hasId} onChange={handleSelectChange} /><ColorSelect label="2. Pintura Solo?" field="floorSign" val={form.floorSign} onChange={handleSelectChange} /></div><div className="grid grid-cols-2 gap-2"><ColorSelect label="3. Lacre Rompido?" field="q1" val={form.q1} onChange={handleSelectChange} invert={true} /><ColorSelect label="4. Obstruído?" field="q2" val={form.q2} onChange={handleSelectChange} invert={true} /></div><div className="grid grid-cols-2 gap-2"><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">Próx. Recarga</label><input type="tel" value={form.nextRecharge} onChange={e=>setForm({...form, nextRecharge: handleDateInput(e.target.value)})} placeholder="MMAAAA" className="w-full bg-transparent font-bold dark:text-white"/></div><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">Teste Hidro.</label><input type="tel" value={form.nextHydro} onChange={e=>setForm({...form, nextHydro: handleDateInput(e.target.value)})} placeholder="MMAAAA" className="w-full bg-transparent font-bold dark:text-white"/></div></div></>) : (<><div className="grid grid-cols-2 gap-2"><ColorSelect label="1. Completo?" field="h_complete" val={form.h_complete} onChange={handleSelectChange} /><ColorSelect label="2. Desobstruído?" field="h_unobstructed" val={form.h_unobstructed} onChange={handleSelectChange} /></div><div className="grid grid-cols-2 gap-2"><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">3. Teste Hidro.</label><input type="tel" value={form.nextHydro} onChange={e=>setForm({...form, nextHydro: handleDateInput(e.target.value)})} placeholder="MMAAAA" className="w-full bg-transparent font-bold dark:text-white"/></div><ColorSelect label="4. Lacre Rompido?" field="h_seal_broken" val={form.h_seal_broken} onChange={handleSelectChange} invert={true} /></div></>)}
+                            {inspectionType === 'EXTINTOR' && (<><div className="grid grid-cols-2 gap-2"><ColorSelect label="1. Placa Sinal.?" field="hasId" val={form.hasId} onChange={handleSelectChange} /><ColorSelect label="2. Pintura Solo?" field="floorSign" val={form.floorSign} onChange={handleSelectChange} /></div><div className="grid grid-cols-2 gap-2"><ColorSelect label="3. Lacre Rompido?" field="q1" val={form.q1} onChange={handleSelectChange} invert={true} /><ColorSelect label="4. Obstruído?" field="q2" val={form.q2} onChange={handleSelectChange} invert={true} /></div><div className="grid grid-cols-2 gap-2"><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">Próx. Recarga</label><input type="tel" value={form.nextRecharge} onChange={e=>setForm({...form, nextRecharge: handleDateInput(e.target.value)})} placeholder="MMAAAA" className="w-full bg-transparent font-bold dark:text-white"/></div><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">Teste Hidro.</label><input type="tel" value={form.nextHydro} onChange={e=>setForm({...form, nextHydro: handleDateInput(e.target.value)})} placeholder="MMAAAA" className="w-full bg-transparent font-bold dark:text-white"/></div></div></>)}
+                            
+                            {inspectionType === 'HIDRANTE' && (<><div className="grid grid-cols-2 gap-2"><ColorSelect label="1. Completo?" field="h_complete" val={form.h_complete} onChange={handleSelectChange} /><ColorSelect label="2. Desobstruído?" field="h_unobstructed" val={form.h_unobstructed} onChange={handleSelectChange} /></div><div className="grid grid-cols-2 gap-2"><div className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700"><label className="text-xs text-gray-500 block mb-1">3. Teste Hidro.</label><input type="tel" value={form.nextHydro} onChange={e=>setForm({...form, nextHydro: handleDateInput(e.target.value)})} placeholder="MMAAAA" className="w-full bg-transparent font-bold dark:text-white"/></div><ColorSelect label="4. Lacre Rompido?" field="h_seal_broken" val={form.h_seal_broken} onChange={handleSelectChange} invert={true} /></div></>)}
+
+                            {inspectionType === 'SPK' && (<><div className="grid grid-cols-2 gap-2"><ColorSelect label="1. Placa Sinal.?" field="spk_placa" val={form.spk_placa} onChange={handleSelectChange} /><ColorSelect label="2. Válvula Lacrada?" field="spk_valvula" val={form.spk_valvula} onChange={handleSelectChange} /></div><div className="grid grid-cols-2 gap-2"><ColorSelect label="3. Tem Vazamento?" field="spk_vazamento" val={form.spk_vazamento} onChange={handleSelectChange} invert={true} /><ColorSelect label="4. Chave Fluxo OK?" field="spk_chave" val={form.spk_chave} onChange={handleSelectChange} /></div><div className="grid grid-cols-2 gap-2"><ColorSelect label="5. Danos Mecânicos?" field="spk_danos" val={form.spk_danos} onChange={handleSelectChange} invert={true} /><ColorSelect label="6. Manômetros OK?" field="spk_manometro" val={form.spk_manometro} onChange={handleSelectChange} /></div></>)}
                             
                             <div className="grid grid-cols-2 gap-3 mt-4">
                                 <div className="flex flex-col gap-1.5">
@@ -1485,7 +1714,7 @@
                 const struct = {};
                 activeData.forEach(item => {
                     const monthKey = item.created_at.slice(0, 7); 
-                    if (!struct[monthKey]) struct[monthKey] = { EXTINTOR: [], HIDRANTE: [], RONDA: [] };
+                    if (!struct[monthKey]) struct[monthKey] = { EXTINTOR: [], HIDRANTE: [], SPK: [], RONDA: [] };
                     const type = item.type || 'EXTINTOR';
                     if (struct[monthKey][type]) struct[monthKey][type].push(item);
                 });
@@ -1509,35 +1738,44 @@
                 if (!isAdmin) { return showAlert("Acesso Negado.", "error"); }
                 setShowPdfModal(false); 
                 const reportData = activeData.filter(item => { return (item.type || (type === 'RONDA' ? '' : 'EXTINTOR')) === type && item.created_at.slice(0, 7) === pdfMonth; });
-                if(reportData.length === 0) return showAlert(`Sem dados de ${type} em ${formatMonthFolder(pdfMonth)}.`, "warning"); 
+                if(reportData.length === 0) return showAlert(`Sem dados de ${type === 'SPK' ? 'VGA (SPK)' : type} em ${formatMonthFolder(pdfMonth)}.`, "warning"); 
                 
-                const doc = new jsPDF({ orientation: "landscape" }); doc.setFillColor(243, 244, 246); doc.rect(0, 0, 297, 40, 'F'); doc.setTextColor(33, 33, 33); doc.setFontSize(22); let title = ""; if (type === 'EXTINTOR') title = "CHECK-LIST EXTINTORES MENSAL"; else if (type === 'HIDRANTE') title = "CHECK-LIST HIDRANTES MENSAL"; else if (type === 'RONDA') title = "RELATÓRIO DE RONDAS PREVENTIVAS"; doc.text(title, 14, 25); doc.setFontSize(10); doc.setTextColor(100, 100, 100); doc.text(`Mês de Referência: ${formatMonthFolder(pdfMonth)} | Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 35); doc.setFontSize(9); doc.setTextColor(33, 33, 33); doc.text("Parque Logístico: AERO GRU I", 280, 28, { align: "right" }); doc.text("Empresa: Vilella Assessoria em Segurança do Trabalho", 280, 35, { align: "right" }); 
-                const monthObj = new Date(pdfMonth + '-02'); const monthStr = monthObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase().replace('.', ''); const yearStr = monthObj.getFullYear(); const typeStr = type === 'EXTINTOR' ? 'Extintores' : (type === 'HIDRANTE' ? 'Hidrantes' : 'Rondas');
+                const doc = new jsPDF({ orientation: "landscape" }); doc.setFillColor(243, 244, 246); doc.rect(0, 0, 297, 40, 'F'); doc.setTextColor(33, 33, 33); doc.setFontSize(22); 
+                
+                let title = ""; 
+                if (type === 'EXTINTOR') title = "CHECK-LIST EXTINTORES MENSAL"; 
+                else if (type === 'HIDRANTE') title = "CHECK-LIST HIDRANTES MENSAL"; 
+                else if (type === 'SPK') title = "CHECK-LIST VGA (SPK) MENSAL";
+                else if (type === 'RONDA') title = "RELATÓRIO DE RONDAS PREVENTIVAS"; 
+                
+                doc.text(title, 14, 25); doc.setFontSize(10); doc.setTextColor(100, 100, 100); doc.text(`Mês de Referência: ${formatMonthFolder(pdfMonth)} | Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 35); doc.setFontSize(9); doc.setTextColor(33, 33, 33); doc.text("Parque Logístico: AERO GRU I", 280, 28, { align: "right" }); doc.text("Empresa: Vilella Assessoria em Segurança do Trabalho", 280, 35, { align: "right" }); 
+                const monthObj = new Date(pdfMonth + '-02'); const monthStr = monthObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase().replace('.', ''); const yearStr = monthObj.getFullYear(); const typeStr = type === 'EXTINTOR' ? 'Extintores' : (type === 'HIDRANTE' ? 'Hidrantes' : type === 'SPK' ? 'VGA_SPK' : 'Rondas');
                 const uniqueResponsibles = [...new Set(reportData.map(i => i.responsible).filter(Boolean))]; const responsibleLabel = uniqueResponsibles.length === 1 ? uniqueResponsibles[0] : "Equipe"; const userStr = responsibleLabel.replace(/\s+/g, '-'); const fileName = `TRFIRE_Relatorio_${monthStr}-${yearStr}_${typeStr}_${userStr}.pdf`;
                 let body = []; let head = []; 
                 if (type === 'EXTINTOR') { head = [['Local', 'Equipamento', 'Data/Hora', 'Responsável', 'Tipo', 'Próx. Recarga', 'Próx. T. Hidro.', 'Possui Pictograma?', 'Sinalização de Solo?', 'Lacre Romp.?', 'Obstruído?', 'Observação']]; body = reportData.map(i => [ (i.moduleLocation || '-') + (i.subLocation ? ` - ${i.subLocation}` : ''), i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.extinguisherType || '-', i.nextRecharge || '-', i.nextHydro || '-', i.hasId ? 'SIM' : 'NÃO', i.floorSign ? 'SIM' : 'NÃO', i.q1 ? 'SIM' : 'NÃO', i.q2 ? 'SIM' : 'NÃO', i.obs || '' ]); } 
                 else if (type === 'HIDRANTE') { head = [['Local', 'Equipamento', 'Data/Hora', 'Responsável', 'Equip. Completo?', 'Desobstruído?', 'Lacre Romp.?', 'Próx. T. Hidro.', 'Observação']]; body = reportData.map(i => [ (i.moduleLocation || '-') + (i.subLocation ? ` - ${i.subLocation}` : ''), i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.h_complete ? 'SIM' : 'NÃO', i.h_unobstructed ? 'NÃO' : 'SIM', i.h_seal_broken ? 'SIM' : 'NÃO', i.nextHydro || '-', i.obs || '' ]); } 
+                else if (type === 'SPK') { head = [['Local', 'Equipamento', 'Data/Hora', 'Responsável', 'Placa?', 'Válv. Lacrada?', 'Vazamento?', 'Chave Fluxo?', 'Danos?', 'Manômetros?', 'Observação']]; body = reportData.map(i => [ (i.moduleLocation || '-') + (i.subLocation ? ` - ${i.subLocation}` : ''), i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.spk_placa ? 'SIM' : 'NÃO', i.spk_valvula ? 'SIM' : 'NÃO', i.spk_vazamento ? 'SIM' : 'NÃO', i.spk_chave ? 'SIM' : 'NÃO', i.spk_danos ? 'SIM' : 'NÃO', i.spk_manometro ? 'SIM' : 'NÃO', i.obs || '' ]); } 
                 else if (type === 'RONDA') { head = [['Local', 'Área Técnica', 'Data/Hora', 'Responsável', 'Condições', 'Status', 'Observação']]; body = reportData.map(i => [ i.sector || '-', i.equipmentName || '-', formatDate(i.created_at), i.responsible || '-', i.moduleLocation || '-', i.status || '-', i.obs || '' ]); } 
+                
                 doc.autoTable({ head: head, body: body, startY: 45, theme: 'grid', headStyles: { fillColor: [224, 224, 224], textColor: [0, 0, 0], fontStyle: 'bold', lineWidth: 0.1, lineColor: [200, 200, 200] }, styles: { fontSize: 7, textColor: [50, 50, 50], lineColor: [230, 230, 230], lineWidth: 0.1, overflow: 'linebreak' }, alternateRowStyles: { fillColor: [255, 255, 255] } }); 
                 if (type === 'EXTINTOR') { let finalY = doc.lastAutoTable.finalY + 10; const counts = {}; reportData.forEach(item => { const t = item.extinguisherType || 'Indefinido'; counts[t] = (counts[t] || 0) + 1; }); if (finalY > 150) { doc.addPage(); finalY = 20; } doc.setFontSize(12); doc.setTextColor(33, 33, 33); doc.text("Resumo Quantitativo:", 14, finalY); const summaryBody = Object.entries(counts).map(([t, c]) => [t, c]); doc.autoTable({ head: [['Tipo', 'Quantidade']], body: summaryBody, startY: finalY + 5, theme: 'striped', tableWidth: 'wrap', styles: { fontSize: 9 } }); }
                 doc.save(fileName); 
             };
 
-            // --- NOVO: GERADOR DO RELATÓRIO FOTOGRÁFICO AVANÇADO ---
             const generatePhotoPDF = async (type) => {
                 if (!isAdmin) { return showAlert("Acesso Negado.", "error"); }
                 setShowPdfModal(false); 
                 showAlert("Buscando fotos no banco de dados e organizando PDF...", "info");
                 
                 const reportData = activeData.filter(item => { return (item.type || (type === 'RONDA' ? '' : 'EXTINTOR')) === type && item.created_at.slice(0, 7) === pdfMonth; });
-                if(reportData.length === 0) return showAlert(`Sem dados de ${type} no mês selecionado.`, "warning"); 
+                if(reportData.length === 0) return showAlert(`Sem dados de ${type === 'SPK' ? 'VGA (SPK)' : type} no mês selecionado.`, "warning"); 
                 
                 let photosMap = {};
                 try {
                     if (dbFirestore) {
                         const photosSnapshot = await dbFirestore.collection("inspection_photos")
                             .where("type", "==", type)
-                            .get(); // Busca todas desse tipo e filtra o mês localmente para evitar erro de índice no Firebase
+                            .get(); 
                         
                         photosSnapshot.forEach(doc => {
                             const d = doc.data();
@@ -1551,7 +1789,7 @@
                 const doc = new jsPDF({ orientation: "portrait" }); 
                 doc.setFillColor(243, 244, 246); doc.rect(0, 0, 210, 30, 'F'); 
                 doc.setTextColor(33, 33, 33); doc.setFontSize(16); 
-                let title = `RELATÓRIO FOTOGRÁFICO - ${type}`;
+                let title = `RELATÓRIO FOTOGRÁFICO - ${type === 'SPK' ? 'VGA (SPK)' : type}`;
                 doc.text(title, 14, 15); 
                 doc.setFontSize(10); doc.setTextColor(100, 100, 100); 
                 doc.text(`Mês: ${formatMonthFolder(pdfMonth)} | Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 23); 
@@ -1563,12 +1801,10 @@
                     const item = reportData[i];
                     if (y + cardHeight > 280) { doc.addPage(); y = 20; }
                     
-                    // Desenha o Card / Ficha do item
                     doc.setDrawColor(200, 200, 200);
                     doc.setFillColor(253, 253, 253);
                     doc.roundedRect(12, y, 186, cardHeight, 3, 3, 'FD');
                     
-                    // Coluna da Esquerda: Textos
                     doc.setFontSize(10);
                     doc.setTextColor(0,0,0);
                     doc.setFont("helvetica", "bold");
@@ -1596,14 +1832,15 @@
                     doc.setFont("helvetica", "normal");
                     doc.text(`${item.responsible || '-'}`, 42, y + 40);
 
-                    // Coluna da Direita: Fotos
                     const photoData = photosMap[item.id] || item; 
                     
-                    // Rótulos dinâmicos da Foto baseados no tipo
-                    const labelF1 = type === 'EXTINTOR' ? 'Selo Inmetro' : (type === 'HIDRANTE' ? 'Etiq. Inspeção' : 'Local');
-                    const labelF2 = type === 'RONDA' ? 'Equip/Opcional' : 'Equipamento';
+                    let labelF1 = 'Foto 1';
+                    let labelF2 = 'Foto 2';
+                    if (type === 'EXTINTOR') { labelF1 = 'Selo Inmetro'; labelF2 = 'Equipamento'; }
+                    else if (type === 'HIDRANTE') { labelF1 = 'Etiq. Inspeção'; labelF2 = 'Equipamento'; }
+                    else if (type === 'SPK') { labelF1 = 'Válvula Aberta'; labelF2 = 'Conj. Equipamento'; }
+                    else if (type === 'RONDA') { labelF1 = 'Local da Ronda'; labelF2 = 'Equip/Opcional'; }
                     
-                    // Moldura Foto 1
                     doc.setDrawColor(180, 180, 180);
                     doc.rect(106, y + 5, 38, 44);
                     if (photoData.photo) {
@@ -1612,11 +1849,9 @@
                         doc.setFontSize(8); doc.setTextColor(150, 150, 150);
                         doc.text("Sem Foto 1", 116, y + 26);
                     }
-                    // Legenda Foto 1
                     doc.setFontSize(7); doc.setTextColor(80, 80, 80); doc.setFont("helvetica", "bold");
                     doc.text(labelF1, 106, y + 53);
 
-                    // Moldura Foto 2
                     doc.setDrawColor(180, 180, 180);
                     doc.rect(152, y + 5, 38, 44);
                     if (photoData.photo2) {
@@ -1625,41 +1860,45 @@
                         doc.setFontSize(8); doc.setTextColor(150, 150, 150);
                         doc.text("Sem Foto 2", 162, y + 26);
                     }
-                    // Legenda Foto 2
                     doc.setFontSize(7); doc.setTextColor(80, 80, 80); doc.setFont("helvetica", "bold");
                     doc.text(labelF2, 152, y + 53);
                     
-                    y += cardHeight + 8; // Pula para a próxima ficha
+                    y += cardHeight + 8; 
                 }
                 
                 const monthObj = new Date(pdfMonth + '-02'); const monthStr = monthObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase().replace('.', ''); const yearStr = monthObj.getFullYear();
-                const fileName = `TRFIRE_Fotos_${monthStr}-${yearStr}_${type}.pdf`;
+                const typeNameSafe = type === 'SPK' ? 'VGA_SPK' : type;
+                const fileName = `TRFIRE_Fotos_${monthStr}-${yearStr}_${typeNameSafe}.pdf`;
                 doc.save(fileName);
                 closeNotification();
             };
 
             const renderItem = (item) => {
-                const isHid = item.type === 'HIDRANTE';
-                const isRonda = item.type === 'RONDA';
-                const isSelected = selectedIds.has(item.id);
                 let statusColor = 'bg-gray-100 text-gray-700';
                 let statusText = '---';
-                if (isRonda) { 
+                if (item.type === 'RONDA') { 
                     if(item.status === 'NÃO REALIZADA') { statusColor = 'bg-red-500 text-white border-red-600'; statusText = 'TAREFA NÃO REALIZADA'; } 
                     else { statusColor = item.status === 'Conforme' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = item.status === 'Conforme' ? 'CONFORME' : 'NÃO CONFORME'; }
-                } else if (isHid) { statusColor = (item.h_complete && item.h_unobstructed && !item.h_seal_broken) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = (item.h_complete && item.h_unobstructed && !item.h_seal_broken) ? 'OK' : 'IRREGULAR'; } else { statusColor = (!item.q1 && !item.q2) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = (!item.q1) ? 'OK' : 'VIOLADO'; }
+                } else if (item.type === 'HIDRANTE') { 
+                    statusColor = (item.h_complete && item.h_unobstructed && !item.h_seal_broken) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = (item.h_complete && item.h_unobstructed && !item.h_seal_broken) ? 'OK' : 'IRREGULAR'; 
+                } else if (item.type === 'SPK') {
+                    const isSpkOk = item.spk_placa && item.spk_valvula && !item.spk_vazamento && item.spk_chave && !item.spk_danos && item.spk_manometro;
+                    statusColor = isSpkOk ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = isSpkOk ? 'OK' : 'IRREGULAR';
+                } else { 
+                    statusColor = (!item.q1 && !item.q2) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; statusText = (!item.q1) ? 'OK' : 'VIOLADO'; 
+                }
                 
-                const canDelete = isAdmin || (item.responsible === currentUser && !isRonda);
+                const canDelete = isAdmin || (item.responsible === currentUser && item.type !== 'RONDA');
 
                 return (
-                    <div key={item.id} className={`p-4 rounded-xl shadow-sm border-l-4 flex justify-between items-center transition-all mb-2 ${showBin ? (isSelected ? 'bg-red-100 border-red-600' : 'bg-red-50 dark:bg-red-900/10 border-red-500 opacity-80') : 'bg-white dark:bg-gray-800 border-gray-300'}`}>
+                    <div key={item.id} className={`p-4 rounded-xl shadow-sm border-l-4 flex justify-between items-center transition-all mb-2 ${showBin ? (selectedIds.has(item.id) ? 'bg-red-100 border-red-600' : 'bg-red-50 dark:bg-red-900/10 border-red-500 opacity-80') : 'bg-white dark:bg-gray-800 border-gray-300'}`}>
                         <div className="flex items-center gap-3">
                             {(isAdmin || showBin) && <div onClick={() => toggleSelection(item.id)} className={`w-6 h-6 rounded border-2 flex items-center justify-center cursor-pointer transition-colors ${selectedIds.has(item.id)?'bg-red-600 border-red-600 text-white':'border-gray-300 bg-white'}`}>{selectedIds.has(item.id) && <i className="fas fa-check text-xs"></i>}</div>}
                             <div>
                                 <span className="font-bold text-sm block">{item.equipmentName}</span>
                                 <span className="text-xs text-gray-500 font-bold block mt-0.5">{formatDate(item.created_at)} | {item.responsible}</span>
-                                {isRonda && <div className="text-xs text-gray-400 mt-1">Local: {item.sector} {item.moduleLocation ? `| ${item.moduleLocation}` : ''}</div>}
-                                {!isRonda && <div className="text-[10px] text-gray-400 font-bold mt-1"><i className="fas fa-map-marker-alt mr-1"></i> {item.moduleLocation || 'LOCAL NÃO INFORMADO'} {item.subLocation ? `- ${item.subLocation}` : ''}</div>}
+                                {item.type === 'RONDA' && <div className="text-xs text-gray-400 mt-1">Local: {item.sector} {item.moduleLocation ? `| ${item.moduleLocation}` : ''}</div>}
+                                {item.type !== 'RONDA' && <div className="text-[10px] text-gray-400 font-bold mt-1"><i className="fas fa-map-marker-alt mr-1"></i> {item.moduleLocation || 'LOCAL NÃO INFORMADO'} {item.subLocation ? `- ${item.subLocation}` : ''}</div>}
                             </div>
                             {(item.photo || item.hasPhoto || item.photo2) && <div className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-1 rounded flex items-center gap-1"><i className="fas fa-camera"></i></div>}
                         </div>
@@ -1713,7 +1952,7 @@
                         </div>
                     )}
                     {/* Modais */}
-                    {showFilter && !showBin && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowFilter(false)}><div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-2xl w-64 border border-gray-200 dark:border-gray-700" onClick={e => e.stopPropagation()}><h3 className="font-bold mb-3 dark:text-white text-sm uppercase">Filtrar por</h3><div className="space-y-3"><div><label className="text-xs text-gray-500 block mb-1">De</label><input type="date" value={filters.startDate} onChange={e=>setFilters({...filters, startDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Até</label><input type="date" value={filters.endDate} onChange={e=>setFilters({...filters, endDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Tipo</label><select value={filters.type} onChange={e=>setFilters({...filters, type: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option><option value="EXTINTOR">Extintor</option><option value="HIDRANTE">Hidrante</option><option value="RONDA">Ronda</option></select></div><div><label className="text-xs text-gray-500 block mb-1">Responsável</label><select value={filters.responsible} onChange={e=>setFilters({...filters, responsible: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{responsibles.map(r => <option key={r} value={r}>{r}</option>)}</select></div><div><label className="text-xs text-gray-500 block mb-1">Módulo/Local</label><select value={filters.moduleLocation} onChange={e=>setFilters({...filters, moduleLocation: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{LOCATION_OPTIONS.map(l => <option key={l} value={l}>{l}</option>)}</select></div><div className="flex gap-2 pt-2"><button onClick={() => { setFilters({startDate:'', endDate:'', type:'', responsible:'', moduleLocation:''}); setViewMonth(new Date().toISOString().slice(0, 7)); }} className="flex-1 py-1 text-xs font-bold text-gray-500 bg-gray-200 dark:bg-gray-700 rounded">Limpar</button><button onClick={() => setShowFilter(false)} className="flex-1 py-1 text-xs font-bold text-white bg-brand-red rounded">Fechar</button></div></div></div></div>)}
+                    {showFilter && !showBin && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowFilter(false)}><div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-2xl w-64 border border-gray-200 dark:border-gray-700" onClick={e => e.stopPropagation()}><h3 className="font-bold mb-3 dark:text-white text-sm uppercase">Filtrar por</h3><div className="space-y-3"><div><label className="text-xs text-gray-500 block mb-1">De</label><input type="date" value={filters.startDate} onChange={e=>setFilters({...filters, startDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Até</label><input type="date" value={filters.endDate} onChange={e=>setFilters({...filters, endDate: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white" /></div><div><label className="text-xs text-gray-500 block mb-1">Tipo</label><select value={filters.type} onChange={e=>setFilters({...filters, type: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option><option value="EXTINTOR">Extintor</option><option value="HIDRANTE">Hidrante</option><option value="SPK">VGA (SPK)</option><option value="RONDA">Ronda</option></select></div><div><label className="text-xs text-gray-500 block mb-1">Responsável</label><select value={filters.responsible} onChange={e=>setFilters({...filters, responsible: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{responsibles.map(r => <option key={r} value={r}>{r}</option>)}</select></div><div><label className="text-xs text-gray-500 block mb-1">Módulo/Local</label><select value={filters.moduleLocation} onChange={e=>setFilters({...filters, moduleLocation: e.target.value})} className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm dark:text-white"><option value="">Todos</option>{LOCATION_OPTIONS.map(l => <option key={l} value={l}>{l}</option>)}</select></div><div className="flex gap-2 pt-2"><button onClick={() => { setFilters({startDate:'', endDate:'', type:'', responsible:'', moduleLocation:''}); setViewMonth(new Date().toISOString().slice(0, 7)); }} className="flex-1 py-1 text-xs font-bold text-gray-500 bg-gray-200 dark:bg-gray-700 rounded">Limpar</button><button onClick={() => setShowFilter(false)} className="flex-1 py-1 text-xs font-bold text-white bg-brand-red rounded">Fechar</button></div></div></div></div>)}
                     
                     {showPdfModal && (
                         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
@@ -1724,6 +1963,7 @@
                                 <div className="space-y-3">
                                     <button onClick={() => generateSpecificPDF('EXTINTOR')} className="w-full py-3 bg-brand-red text-white font-bold rounded-xl shadow-md active:scale-95 text-sm uppercase">Relatório de Extintores</button>
                                     <button onClick={() => generateSpecificPDF('HIDRANTE')} className="w-full py-3 bg-brand-orange text-white font-bold rounded-xl shadow-md active:scale-95 text-sm uppercase">Relatório de Hidrantes</button>
+                                    <button onClick={() => generateSpecificPDF('SPK')} className="w-full py-3 bg-teal-600 text-white font-bold rounded-xl shadow-md active:scale-95 text-sm uppercase">Relatório de VGA (SPK)</button>
                                     <button onClick={() => generateSpecificPDF('RONDA')} className="w-full py-3 bg-brand-blue text-white font-bold rounded-xl shadow-md active:scale-95 text-sm uppercase">Relatório de Rondas</button>
                                 </div>
                                 
@@ -1733,6 +1973,7 @@
                                         <div className="space-y-2">
                                             <button onClick={() => generatePhotoPDF('EXTINTOR')} className="w-full py-2.5 bg-red-50 text-red-700 font-bold rounded-xl shadow-sm active:scale-95 border border-red-200 text-xs"><i className="fas fa-camera mr-2"></i> Fotos Extintores</button>
                                             <button onClick={() => generatePhotoPDF('HIDRANTE')} className="w-full py-2.5 bg-orange-50 text-orange-700 font-bold rounded-xl shadow-sm active:scale-95 border border-orange-200 text-xs"><i className="fas fa-camera mr-2"></i> Fotos Hidrantes</button>
+                                            <button onClick={() => generatePhotoPDF('SPK')} className="w-full py-2.5 bg-teal-50 text-teal-700 font-bold rounded-xl shadow-sm active:scale-95 border border-teal-200 text-xs"><i className="fas fa-camera mr-2"></i> Fotos VGA (SPK)</button>
                                             <button onClick={() => generatePhotoPDF('RONDA')} className="w-full py-2.5 bg-blue-50 text-blue-700 font-bold rounded-xl shadow-sm active:scale-95 border border-blue-200 text-xs"><i className="fas fa-camera mr-2"></i> Fotos Rondas</button>
                                         </div>
                                     </div>
@@ -1753,7 +1994,7 @@
                              sortedMonths.map(monthKey => {
                                  const isOpen = openMonths[monthKey];
                                  const monthData = groupedStructure[monthKey];
-                                 const count = monthData.EXTINTOR.length + monthData.HIDRANTE.length + monthData.RONDA.length;
+                                 const count = (monthData.EXTINTOR?.length||0) + (monthData.HIDRANTE?.length||0) + (monthData.SPK?.length||0) + (monthData.RONDA?.length||0);
                                  
                                  return (
                                      <div key={monthKey} className="mb-2 bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
@@ -1767,9 +2008,10 @@
                                          
                                          {isOpen && (
                                              <div className="p-2 bg-white dark:bg-gray-900 space-y-2 animate-fade-in">
-                                                 {monthData.EXTINTOR.length > 0 && (<div className="border-l-4 border-brand-red pl-2 ml-2"><button onClick={() => toggleCategory(`${monthKey}-EXT`)} className="w-full flex justify-between items-center py-2 text-brand-red font-bold text-sm"><span><i className="fas fa-fire-extinguisher mr-2"></i>EXTINTORES ({monthData.EXTINTOR.length})</span><i className={`fas fa-chevron-${openCategories[`${monthKey}-EXT`] ? 'up' : 'down'}`}></i></button>{openCategories[`${monthKey}-EXT`] && <div className="space-y-2 mt-1">{monthData.EXTINTOR.map(item => renderItem(item))}</div>}</div>)}
-                                                 {monthData.HIDRANTE.length > 0 && (<div className="border-l-4 border-brand-orange pl-2 ml-2"><button onClick={() => toggleCategory(`${monthKey}-HID`)} className="w-full flex justify-between items-center py-2 text-brand-orange font-bold text-sm"><span><i className="fas fa-faucet mr-2"></i>HIDRANTES ({monthData.HIDRANTE.length})</span><i className={`fas fa-chevron-${openCategories[`${monthKey}-HID`] ? 'up' : 'down'}`}></i></button>{openCategories[`${monthKey}-HID`] && <div className="space-y-2 mt-1">{monthData.HIDRANTE.map(item => renderItem(item))}</div>}</div>)}
-                                                 {monthData.RONDA.length > 0 && (<div className="border-l-4 border-brand-blue pl-2 ml-2"><button onClick={() => toggleCategory(`${monthKey}-RND`)} className="w-full flex justify-between items-center py-2 text-brand-blue font-bold text-sm"><span><i className="fas fa-clipboard-check mr-2"></i>RONDAS ({monthData.RONDA.length})</span><i className={`fas fa-chevron-${openCategories[`${monthKey}-RND`] ? 'up' : 'down'}`}></i></button>{openCategories[`${monthKey}-RND`] && <div className="space-y-2 mt-1">{monthData.RONDA.map(item => renderItem(item))}</div>}</div>)}
+                                                 {monthData.EXTINTOR && monthData.EXTINTOR.length > 0 && (<div className="border-l-4 border-brand-red pl-2 ml-2"><button onClick={() => toggleCategory(`${monthKey}-EXT`)} className="w-full flex justify-between items-center py-2 text-brand-red font-bold text-sm"><span><i className="fas fa-fire-extinguisher mr-2"></i>EXTINTORES ({monthData.EXTINTOR.length})</span><i className={`fas fa-chevron-${openCategories[`${monthKey}-EXT`] ? 'up' : 'down'}`}></i></button>{openCategories[`${monthKey}-EXT`] && <div className="space-y-2 mt-1">{monthData.EXTINTOR.map(item => renderItem(item))}</div>}</div>)}
+                                                 {monthData.HIDRANTE && monthData.HIDRANTE.length > 0 && (<div className="border-l-4 border-brand-orange pl-2 ml-2"><button onClick={() => toggleCategory(`${monthKey}-HID`)} className="w-full flex justify-between items-center py-2 text-brand-orange font-bold text-sm"><span><HydrantIcon className="mr-2 w-4 h-4 inline" />HIDRANTES ({monthData.HIDRANTE.length})</span><i className={`fas fa-chevron-${openCategories[`${monthKey}-HID`] ? 'up' : 'down'}`}></i></button>{openCategories[`${monthKey}-HID`] && <div className="space-y-2 mt-1">{monthData.HIDRANTE.map(item => renderItem(item))}</div>}</div>)}
+                                                 {monthData.SPK && monthData.SPK.length > 0 && (<div className="border-l-4 border-teal-600 pl-2 ml-2"><button onClick={() => toggleCategory(`${monthKey}-SPK`)} className="w-full flex justify-between items-center py-2 text-teal-600 font-bold text-sm"><span><SpkIcon className="mr-2 w-4 h-4 inline" />VGA (SPK) ({monthData.SPK.length})</span><i className={`fas fa-chevron-${openCategories[`${monthKey}-SPK`] ? 'up' : 'down'}`}></i></button>{openCategories[`${monthKey}-SPK`] && <div className="space-y-2 mt-1">{monthData.SPK.map(item => renderItem(item))}</div>}</div>)}
+                                                 {monthData.RONDA && monthData.RONDA.length > 0 && (<div className="border-l-4 border-brand-blue pl-2 ml-2"><button onClick={() => toggleCategory(`${monthKey}-RND`)} className="w-full flex justify-between items-center py-2 text-brand-blue font-bold text-sm"><span><i className="fas fa-clipboard-check mr-2"></i>RONDAS ({monthData.RONDA.length})</span><i className={`fas fa-chevron-${openCategories[`${monthKey}-RND`] ? 'up' : 'down'}`}></i></button>{openCategories[`${monthKey}-RND`] && <div className="space-y-2 mt-1">{monthData.RONDA.map(item => renderItem(item))}</div>}</div>)}
                                              </div>
                                          )}
                                      </div>
@@ -1810,6 +2052,7 @@
             const [units, setUnits] = useState([]);
             const [roundLocationsList, setRoundLocationsList] = useState([]); 
             const [subLocationsList, setSubLocationsList] = useState([]); 
+            const [mainLocationsList, setMainLocationsList] = useState([]); 
             const [scanRes, setScanRes] = useState(null);
             const [notification, setNotification] = useState({ isOpen: false, message: '', type: 'info', isConfirmation: false, onConfirm: null });
             const [authError, setAuthError] = useState(null);
@@ -1914,11 +2157,15 @@
                     const sl=[]; s.forEach(doc=>sl.push({id:doc.id,...doc.data()})); 
                     setSubLocationsList(sl); 
                 }, err => console.error(err));
+
+                const unsub6 = dbFirestore.collection("main_locations").onSnapshot(s => { 
+                    const ml=[]; s.forEach(doc=>ml.push({id:doc.id,...doc.data()})); 
+                    setMainLocationsList(ml); 
+                }, err => console.error(err));
                 
-                return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); };
+                return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); unsub6(); };
             }, [firebaseUser]);
 
-            // NOVO: Salvamento Otimizado com Banco de Fotos (Lógica de ADD ou UPDATE corrigida para não apagar foto na edição)
             const handleSave = async (d) => { 
                 try { 
                     const { photo, photo2, id, ...mainData } = d;
@@ -1933,8 +2180,6 @@
                         docId = docRef.id;
                     }
                     
-                    // Só atualiza o banco de fotos se as strings da imagem vieram no formulário 
-                    // (evita que edição de texto apenas apague a foto real salva antes)
                     if (photo || photo2) {
                         const photoUpdate = {
                             inspectionId: docId,
@@ -1947,7 +2192,7 @@
                         dbFirestore.collection("inspection_photos").doc(docId).set(photoUpdate, { merge: true }).catch(e => console.error("Sync offline foto:", e));
                     }
 
-                    if (d.type === 'EXTINTOR' || d.type === 'HIDRANTE') {
+                    if (['EXTINTOR', 'HIDRANTE', 'SPK'].includes(d.type)) {
                         setInspectionType(d.type);
                         setPage('equipmentCategory');
                     } else if (d.type === 'RONDA') {
@@ -1959,6 +2204,18 @@
                 } catch(e){ console.error(e); return false; } 
             };
             
+            const handleSaveMainLocation = async (locName) => {
+                if (!dbFirestore) return null;
+                try {
+                    const docRef = dbFirestore.collection("main_locations").doc();
+                    docRef.set({ name: locName }).catch(e => console.error("Sync offline MainLocal:", e));
+                    return { id: docRef.id, name: locName };
+                } catch(e) {
+                    console.error("Erro ao salvar local principal:", e);
+                    return null;
+                }
+            };
+
             const handleSaveSubLocation = async (mainLocation, subLocName) => {
                 if (!dbFirestore) return null;
                 try {
@@ -2109,7 +2366,7 @@
                     <NotificationModal isOpen={notification.isOpen} message={notification.message} type={notification.type} isConfirmation={notification.isConfirmation} onClose={closeNotification} onConfirm={notification.onConfirm} />
                     
                     {page === 'responsible' && <ResponsibleScreen onConfirm={handleLogin} usersList={users} unitsList={units} showAlert={showAlert} onNavigate={navigateTo} isOnline={isOnline} />}
-                    {page === 'menu' && <DashboardScreen db={db} onOpenMenu={() => setIsMenuOpen(true)} responsibleName={responsible} />}
+                    {page === 'menu' && <DashboardScreen db={db} onOpenMenu={() => setIsMenuOpen(true)} responsibleName={responsible} onNavigate={navigateTo} onStartInspection={handleStartInspection} />}
                     {page === 'adminMenu' && <AdminMenuScreen onNavigate={navigateTo} onOpenMenu={() => setIsMenuOpen(true)} />}
                     {page === 'accessControl' && <AccessControlScreen onNavigate={navigateTo} usersList={users} onUpdatePermissions={(id,p)=>dbFirestore.collection("users").doc(id).update({permissions:p})} />}
                     
@@ -2119,13 +2376,13 @@
                     {page === 'userRegister' && <UserRegisterScreen onNavigate={navigateTo} onSaveUser={handleSaveUser} usersList={users} unitsList={units} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser} showAlert={showAlert} showConfirm={showConfirm} />}
                     {page === 'unitRegister' && <UnitRegisterScreen onNavigate={navigateTo} onSaveUnit={handleSaveUnit} unitsList={units} onUpdateUnit={handleUpdateUnit} onDeleteUnit={handleDeleteUnit} showAlert={showAlert} showConfirm={showConfirm} />}
                     {page === 'roundLocRegister' && <RoundLocationsRegisterScreen onNavigate={navigateTo} onSaveLocation={handleSaveRoundLocation} onUpdateLocation={handleUpdateRoundLocation} locationsList={roundLocationsList} onDeleteLocation={handleDeleteRoundLocation} showAlert={showAlert} showConfirm={showConfirm} />}
-                    {page === 'subLocRegister' && <SubLocationsRegisterScreen onNavigate={navigateTo} subLocationsList={subLocationsList} onUpdateSubLocation={handleUpdateSubLocation} onDeleteSubLocation={handleDeleteSubLocation} showAlert={showAlert} showConfirm={showConfirm} />}
+                    {page === 'subLocRegister' && <SubLocationsRegisterScreen onNavigate={navigateTo} subLocationsList={subLocationsList} onUpdateSubLocation={handleUpdateSubLocation} onDeleteSubLocation={handleDeleteSubLocation} showAlert={showAlert} showConfirm={showConfirm} mainLocationsList={mainLocationsList} />}
                     
                     {page === 'scan' && <ScannerScreen onNavigate={(t) => {
                          let nextPage = t;
                          if (t === 'menu') {
                              if (inspectionType === 'RONDA') nextPage = 'roundsLocation';
-                             else if (inspectionType === 'EXTINTOR' || inspectionType === 'HIDRANTE') nextPage = 'equipmentCategory';
+                             else if (['EXTINTOR', 'HIDRANTE', 'SPK'].includes(inspectionType)) nextPage = 'equipmentCategory';
                          }
                          navigateTo(nextPage);
                     }} onScanSuccess={(d)=>{setScanRes(d); navigateTo(inspectionType === 'RONDA' ? 'roundsForm' : 'form')}} db={db} inspectionType={inspectionType} showAlert={showAlert} />}
@@ -2133,7 +2390,7 @@
                     {page === 'form' && <FormScreen initialData={scanRes} onNavigate={(t) => {
                         if (t === 'menu') navigateTo('equipmentCategory');
                         else navigateTo(t);
-                    }} responsibleName={responsible} onSave={handleSave} inspectionType={inspectionType} showAlert={showAlert} subLocationsList={subLocationsList} onSaveSubLocation={handleSaveSubLocation} />}
+                    }} responsibleName={responsible} onSave={handleSave} inspectionType={inspectionType} showAlert={showAlert} subLocationsList={subLocationsList} onSaveSubLocation={handleSaveSubLocation} mainLocationsList={mainLocationsList} onSaveMainLocation={handleSaveMainLocation} />}
                     
                     {page === 'roundsForm' && <RoundsFormScreen initialData={scanRes} onNavigate={navigateTo} responsibleName={responsible} roundLocation={roundLocation} onSave={handleSave} currentUnit={currentUnit} showAlert={showAlert} />}
                     {page === 'list' && <ListScreen data={db} onNavigate={navigateTo} onToggleDelete={onToggleDelete} onDeletePermanently={onDeletePermanently} onImportData={onImportData} currentUser={responsible} userRole={userRole} showAlert={showAlert} showConfirm={showConfirm} onEditItem={handleEditItem} onOpenMenu={() => setIsMenuOpen(true)} />}
